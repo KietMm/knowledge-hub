@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it } from 'vitest'
 import * as categoriesRepo from '@/lib/db/categories.repo'
 import { ConflictError } from '@/lib/db/errors'
 import * as notesRepo from '@/lib/db/notes.repo'
@@ -45,4 +45,28 @@ it('từ chối xoá mảng còn công nghệ', async () => {
   const devops = await categoriesRepo.create(base)
   await topicsRepo.create({ categoryId: devops.id, name: 'Docker', description: '', order: 0 })
   await expect(categoriesRepo.remove(devops.id)).rejects.toBeInstanceOf(ConflictError)
+})
+
+it('update sửa một trường, các trường khác giữ nguyên kể cả khi patch có key undefined', async () => {
+  const devops = await categoriesRepo.create(base)
+  // Mô phỏng đúng tình huống đã gây mất dữ liệu ở Task 5: key "description" CÓ MẶT
+  // trong patch nhưng giá trị là undefined. Nếu update() dùng spread ...data,
+  // description cũ ('Vận hành') sẽ bị ghi đè thành undefined rồi zod default() biến
+  // nó thành ''.
+  const updated = await categoriesRepo.update(devops.id, { name: 'DevOps mới', description: undefined })
+  expect(updated.name).toBe('DevOps mới')
+  expect(updated.description).toBe('Vận hành')
+  expect(updated.icon).toBe('Server')
+  expect(updated.color).toBe('amber')
+  expect(updated.order).toBe(0)
+})
+
+it('update ghi được giá trị falsy hợp lệ: description rỗng và order 0', async () => {
+  const devops = await categoriesRepo.create({ ...base, description: 'Vận hành', order: 5 })
+  // Nếu update() dùng `data.description || current.description` hoặc
+  // `data.order || current.order` thay vì `??`, '' và 0 sẽ bị coi là falsy và
+  // âm thầm rơi về giá trị cũ ('Vận hành', 5) thay vì giá trị mới hợp lệ.
+  const updated = await categoriesRepo.update(devops.id, { description: '', order: 0 })
+  expect(updated.description).toBe('')
+  expect(updated.order).toBe(0)
 })

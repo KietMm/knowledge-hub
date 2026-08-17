@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it } from 'vitest'
 import { ConflictError, NotFoundError } from '@/lib/db/errors'
 import * as notesRepo from '@/lib/db/notes.repo'
 import * as topicsRepo from '@/lib/db/topics.repo'
@@ -62,4 +62,27 @@ it('xoá được topic rỗng', async () => {
 
 it('remove id không tồn tại thì throw NotFoundError', async () => {
   await expect(topicsRepo.remove('khong-co')).rejects.toBeInstanceOf(NotFoundError)
+})
+
+it('update sửa một trường, các trường khác giữ nguyên kể cả khi patch có key undefined', async () => {
+  const topic = await topicsRepo.create(base)
+  // Mô phỏng đúng tình huống đã gây mất dữ liệu ở Task 5: key "description" CÓ MẶT
+  // trong patch nhưng giá trị là undefined (như khi body.description không được gửi
+  // lên nhưng object vẫn có key đó). Nếu update() dùng spread ...data, description
+  // cũ ('Container') sẽ bị ghi đè thành undefined rồi zod default() biến nó thành ''.
+  const updated = await topicsRepo.update(topic.id, { name: 'Docker mới', description: undefined })
+  expect(updated.name).toBe('Docker mới')
+  expect(updated.description).toBe('Container')
+  expect(updated.categoryId).toBe('c1')
+  expect(updated.order).toBe(0)
+})
+
+it('update ghi được giá trị falsy hợp lệ: description rỗng và order 0', async () => {
+  const topic = await topicsRepo.create({ ...base, description: 'Container', order: 5 })
+  // Nếu update() dùng `data.description || current.description` hoặc
+  // `data.order || current.order` thay vì `??`, '' và 0 sẽ bị coi là falsy và
+  // âm thầm rơi về giá trị cũ ('Container', 5) thay vì giá trị mới hợp lệ.
+  const updated = await topicsRepo.update(topic.id, { description: '', order: 0 })
+  expect(updated.description).toBe('')
+  expect(updated.order).toBe(0)
 })
