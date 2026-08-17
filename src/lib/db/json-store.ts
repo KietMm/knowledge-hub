@@ -59,7 +59,11 @@ function serialize<T>(items: T[]): string {
   return `${JSON.stringify(items, null, 2)}\n`
 }
 
-function validate<T>(file: string, schema: z.ZodType<T>, items: unknown): T[] {
+// Input là `unknown`, không phải T: dữ liệu đọc từ file JSON là chưa biết kiểu,
+// safeParse mới là nơi biến nó thành T. Đừng "sửa gọn" về z.ZodType<T> — với schema
+// có trường .default() (vd NoteSchema), z.ZodType<T> ép Input=Output=T, khiến
+// TypeScript suy nhầm T thành dạng Input (trường default hoá thành optional).
+function validate<T>(file: string, schema: z.ZodType<T, z.ZodTypeDef, unknown>, items: unknown): T[] {
   if (!Array.isArray(items)) {
     throw new DataFileError(file, 'nội dung phải là một mảng JSON')
   }
@@ -77,7 +81,11 @@ function validate<T>(file: string, schema: z.ZodType<T>, items: unknown): T[] {
   return out
 }
 
-export async function readCollection<T>(file: string, schema: z.ZodType<T>): Promise<T[]> {
+// Input là `unknown` (xem giải thích ở validate() phía trên) — giữ nguyên khi sửa.
+export async function readCollection<T>(
+  file: string,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+): Promise<T[]> {
   let raw: string
   try {
     raw = await fs.readFile(fullPath(file), 'utf8')
@@ -100,9 +108,10 @@ export async function readCollection<T>(file: string, schema: z.ZodType<T>): Pro
   return validate(file, schema, parsed)
 }
 
+// Input là `unknown` (xem giải thích ở validate() phía trên) — giữ nguyên khi sửa.
 export async function writeCollection<T>(
   file: string,
-  schema: z.ZodType<T>,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   items: T[],
 ): Promise<void> {
   // Validate TRƯỚC khi đụng vào file: sai schema thì file cũ còn nguyên.
@@ -114,9 +123,10 @@ export async function writeCollection<T>(
  * Đọc - biến đổi - ghi trong một lượt của hàng đợi. Đây là API duy nhất repo dùng
  * để thay đổi dữ liệu, nhờ vậy không có lost update giữa hai mutation song song.
  */
+// Input là `unknown` (xem giải thích ở validate() phía trên) — giữ nguyên khi sửa.
 export function mutate<T, R>(
   file: string,
-  schema: z.ZodType<T>,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   fn: (items: T[]) => { items: T[]; result: R },
 ): Promise<R> {
   return enqueue(async () => {
