@@ -91,6 +91,23 @@ describe('update', () => {
   it('id không tồn tại thì throw NotFoundError', async () => {
     await expect(notesRepo.update('khong-co', { title: 'x' })).rejects.toBeInstanceOf(NotFoundError)
   })
+
+  it('patch có key hiện diện nhưng giá trị undefined thì KHÔNG xoá dữ liệu cũ', async () => {
+    const note = await notesRepo.create({ ...base, tags: ['js', 'async'] })
+    const starred = await notesRepo.toggleStar(note.id)
+    expect(starred.starred).toBe(true)
+
+    const updated = await notesRepo.update(note.id, {
+      title: 'Tiêu đề mới',
+      summary: undefined,
+      tags: undefined,
+    })
+
+    expect(updated.title).toBe('Tiêu đề mới')
+    expect(updated.summary).toBe(note.summary)
+    expect(updated.tags).toEqual(['js', 'async'])
+    expect(updated.starred).toBe(true)
+  })
 })
 
 describe('remove và toggleStar', () => {

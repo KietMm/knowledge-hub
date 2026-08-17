@@ -102,10 +102,21 @@ export async function update(id: string, patch: NoteUpdateInput): Promise<Note> 
             notes.filter((n) => n.id !== id).map((n) => n.slug),
           )
 
+    // Dựng từng trường bằng ?? thay vì spread ...data: nếu người gọi truyền một
+    // key có mặt với giá trị undefined (vd { summary: body.summary } khi
+    // body.summary vắng mặt), spread sẽ ghi đè dữ liệu cũ thành undefined, và
+    // NoteSchema.safeParse() trong mutate() sẽ âm thầm biến nó thành default
+    // rỗng ('', [], false) — xoá mất nội dung cũ mà không có lỗi nào báo.
     const updated: Note = {
-      ...current,
-      ...data,
+      id: current.id,
+      topicId: data.topicId ?? current.topicId,
+      title: data.title ?? current.title,
       slug,
+      summary: data.summary ?? current.summary,
+      content: data.content ?? current.content,
+      tags: data.tags ?? current.tags,
+      starred: data.starred ?? current.starred,
+      createdAt: current.createdAt,
       updatedAt: new Date().toISOString(),
     }
     const items = [...notes]
