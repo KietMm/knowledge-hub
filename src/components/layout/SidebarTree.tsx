@@ -1,0 +1,94 @@
+'use client'
+
+import { ChevronRight } from 'lucide-react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import type { CategoryWithTopics } from '@/lib/db/categories.repo'
+import { getIcon } from '@/lib/icons'
+import { cn } from '@/lib/utils'
+
+const STORAGE_KEY = 'kh:sidebar-open'
+
+export function SidebarTree({ tree }: { tree: CategoryWithTopics[] }) {
+  const pathname = usePathname()
+  const [open, setOpen] = useState<Record<string, boolean>>({})
+
+  // Đọc localStorage trong effect (không đọc lúc render) để server và client khớp nhau.
+  useEffect(() => {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (raw !== null) {
+      try {
+        setOpen(JSON.parse(raw) as Record<string, boolean>)
+      } catch {
+        window.localStorage.removeItem(STORAGE_KEY)
+      }
+    }
+  }, [])
+
+  function toggle(slug: string) {
+    setOpen((prev) => {
+      const next = { ...prev, [slug]: !(prev[slug] ?? true) }
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+      return next
+    })
+  }
+
+  return (
+    <nav aria-label="Danh mục kiến thức" className="space-y-1">
+      {tree.map((category) => {
+        const Icon = getIcon(category.icon)
+        const containsActive = category.topics.some((t) => pathname === `/t/${t.slug}`)
+        const isOpen = open[category.slug] ?? true // mặc định mở; nhánh đang xem luôn mở
+        const expanded = isOpen || containsActive
+
+        return (
+          <div key={category.id}>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                aria-expanded={expanded}
+                aria-label={`${expanded ? 'Thu gọn' : 'Mở rộng'} mảng ${category.name}`}
+                onClick={() => toggle(category.slug)}
+                className="rounded p-1 hover:bg-accent"
+              >
+                <ChevronRight className={cn('h-4 w-4 transition-transform', expanded && 'rotate-90')} />
+              </button>
+              <Link
+                href={`/c/${category.slug}`}
+                className={cn(
+                  'flex flex-1 items-center gap-2 rounded px-2 py-1.5 text-sm font-medium hover:bg-accent',
+                  pathname === `/c/${category.slug}` && 'bg-accent',
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {category.name}
+                <span className="ml-auto text-xs text-muted-foreground">{category.noteCount}</span>
+              </Link>
+            </div>
+
+            {expanded && (
+              <ul className="ml-6 border-l pl-2">
+                {category.topics.map((topic) => (
+                  <li key={topic.id}>
+                    <Link
+                      href={`/t/${topic.slug}`}
+                      aria-current={pathname === `/t/${topic.slug}` ? 'page' : undefined}
+                      className={cn(
+                        'flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent',
+                        pathname === `/t/${topic.slug}` && 'bg-accent font-medium',
+                      )}
+                    >
+                      {topic.name}
+                      <span className="ml-auto text-xs text-muted-foreground">{topic.noteCount}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )
+      })}
+    </nav>
+  )
+}
