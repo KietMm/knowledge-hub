@@ -1,3 +1,11 @@
+# pnpm 11 chặn chạy postinstall/build script của các gói lạ theo mặc định để tránh
+# supply-chain attack; file này ghi lại quyết định cho từng gói.
 allowBuilds:
-  sharp: false
+  # sharp: gói chính thức của Vercel/Next dùng cho tối ưu ảnh phía server (next/image).
+  # Cho phép chạy build script vì đây là dependency đáng tin cậy và task sau có thể
+  # dùng ảnh raster thật (không chỉ SVG như scaffold hiện tại) qua next/image.
+  sharp: true
+  # unrs-resolver: resolver nội bộ của ESLint, chỉ dùng khi dev (pnpm lint), không
+  # nằm trong runtime của app. Đã xác nhận `pnpm lint` chạy sạch khi build script bị
+  # chặn nên giữ false để giảm bề mặt chạy script lạ không cần thiết.
   unrs-resolver: false
