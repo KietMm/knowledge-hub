@@ -1,8 +1,9 @@
 import { z } from 'zod'
 
 /**
- * Đây là nguồn sự thật duy nhất của mô hình dữ liệu: type TypeScript được suy ra
- * từ schema bằng z.infer, nên type và validate không bao giờ lệch nhau.
+ * Đây là nguồn sự thật duy nhất của mô hình dữ liệu.
+ * - Entity type (Category, Topic, Note) dùng z.infer: kiểu ĐẦU RA sau khi parse.
+ * - Input type (*CreateInput, *UpdateInput) dùng z.input: kiểu ĐẦU VÀO, trường có .default() là tuỳ chọn với người gọi.
  */
 
 /** Slug là khoá điều hướng trên URL: chỉ chữ thường, số, và dấu gạch nối ở giữa. */
@@ -18,21 +19,21 @@ export const IsoDateSchema = z
 
 export const CategorySchema = z.object({
   id: z.string().min(1),
-  name: z.string().trim().min(1),
+  name: z.string().trim().min(1, 'Tên danh mục không được để trống'),
   slug: SlugSchema,
   description: z.string().default(''),
-  icon: z.string().min(1),
-  color: z.string().min(1),
-  order: z.number().int().nonnegative(),
+  icon: z.string().min(1, 'Biểu tượng không được để trống'),
+  color: z.string().min(1, 'Màu sắc không được để trống'),
+  order: z.number().int().nonnegative('Thứ tự phải là số không âm'),
 })
 
 export const TopicSchema = z.object({
   id: z.string().min(1),
   categoryId: z.string().min(1),
-  name: z.string().trim().min(1),
+  name: z.string().trim().min(1, 'Tên chủ đề không được để trống'),
   slug: SlugSchema,
   description: z.string().default(''),
-  order: z.number().int().nonnegative(),
+  order: z.number().int().nonnegative('Thứ tự phải là số không âm'),
 })
 
 export const NoteSchema = z.object({
@@ -42,7 +43,7 @@ export const NoteSchema = z.object({
   slug: SlugSchema,
   summary: z.string().trim().default(''),
   content: z.string().default(''),
-  tags: z.array(z.string().trim().min(1)).default([]),
+  tags: z.array(z.string().trim().min(1, 'Thẻ không được để trống')).default([]),
   starred: z.boolean().default(false),
   createdAt: IsoDateSchema,
   updatedAt: IsoDateSchema,
