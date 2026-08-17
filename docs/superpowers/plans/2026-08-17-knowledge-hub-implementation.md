@@ -412,9 +412,10 @@ git commit -m "feat(db): zod schema cho Category, Topic, Note"
 - Produces:
   - `class DataFileError extends Error { file: string }`
   - `dataDir(): string` — thư mục dữ liệu, đọc `process.env.KH_DATA_DIR` mỗi lần gọi
-  - `readCollection<T>(file: string, schema: z.ZodType<T>): Promise<T[]>`
-  - `writeCollection<T>(file: string, schema: z.ZodType<T>, items: T[]): Promise<void>`
-  - `mutate<T, R>(file: string, schema: z.ZodType<T>, fn: (items: T[]) => { items: T[]; result: R }): Promise<R>`
+  - `readCollection<T>(file: string, schema: z.ZodType<T, z.ZodTypeDef, unknown>): Promise<T[]>`
+  - `writeCollection<T>(file: string, schema: z.ZodType<T, z.ZodTypeDef, unknown>, items: T[]): Promise<void>`
+  - `mutate<T, R>(file: string, schema: z.ZodType<T, z.ZodTypeDef, unknown>, fn: (items: T[]) => { items: T[]; result: R }): Promise<R>`
+  - Ba tham số kiểu là bắt buộc: `z.ZodType<T>` ép `Input = Output`, nên schema có `.default()` (Note, Category, Topic) sẽ khiến TypeScript suy `T` ra kiểu ĐẦU VÀO và mọi repo đỏ typecheck.
 
 - [ ] **Step 1: Viết test**
 
@@ -583,7 +584,7 @@ function serialize<T>(items: T[]): string {
   return `${JSON.stringify(items, null, 2)}\n`
 }
 
-function validate<T>(file: string, schema: z.ZodType<T>, items: unknown): T[] {
+function validate<T>(file: string, schema: z.ZodType<T, z.ZodTypeDef, unknown>, items: unknown): T[] {
   if (!Array.isArray(items)) {
     throw new DataFileError(file, 'nội dung phải là một mảng JSON')
   }
@@ -601,7 +602,12 @@ function validate<T>(file: string, schema: z.ZodType<T>, items: unknown): T[] {
   return out
 }
 
-export async function readCollection<T>(file: string, schema: z.ZodType<T>): Promise<T[]> {
+export async function readCollection<T>(
+  file: string,
+  // Input = unknown: dữ liệu đọc từ file JSON là chưa biết kiểu, schema mới là thứ dựng ra T.
+  // Viết z.ZodType<T> sẽ ép Input = Output, khiến schema có .default() suy T ra kiểu đầu vào.
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+): Promise<T[]> {
   let raw: string
   try {
     raw = await fs.readFile(fullPath(file), 'utf8')
@@ -626,7 +632,7 @@ export async function readCollection<T>(file: string, schema: z.ZodType<T>): Pro
 
 export async function writeCollection<T>(
   file: string,
-  schema: z.ZodType<T>,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   items: T[],
 ): Promise<void> {
   // Validate TRƯỚC khi đụng vào file: sai schema thì file cũ còn nguyên.
@@ -640,7 +646,7 @@ export async function writeCollection<T>(
  */
 export function mutate<T, R>(
   file: string,
-  schema: z.ZodType<T>,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   fn: (items: T[]) => { items: T[]; result: R },
 ): Promise<R> {
   return enqueue(async () => {
