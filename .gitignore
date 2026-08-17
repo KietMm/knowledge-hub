@@ -2,4 +2,7 @@ node_modules/
 .next/
 .DS_Store
 *.tmp
+settings.local.json
+coverage/
+*.tsbuildinfo
 .superpowers/
