@@ -1075,9 +1075,17 @@ export async function update(id: string, patch: NoteUpdateInput): Promise<Note> 
             notes.filter((n) => n.id !== id).map((n) => n.slug),
           )
 
+    // Dựng theo từng trường thay vì spread `...data`: nếu caller truyền key có mặt nhưng
+    // giá trị `undefined` (rất hay gặp: `{ summary: body.summary }`), spread sẽ ghi đè
+    // dữ liệu cũ bằng `undefined`, rồi zod lặng lẽ thay bằng giá trị `.default()` — mất dữ liệu.
     const updated: Note = {
       ...current,
-      ...data,
+      topicId: data.topicId ?? current.topicId,
+      title: data.title ?? current.title,
+      summary: data.summary ?? current.summary,
+      content: data.content ?? current.content,
+      tags: data.tags ?? current.tags,
+      starred: data.starred ?? current.starred,
       slug,
       updatedAt: new Date().toISOString(),
     }
@@ -1283,7 +1291,15 @@ export async function update(id: string, patch: Partial<TopicCreateInput>): Prom
         ? current.slug
         : uniqueSlug(data.slug, topics.filter((t) => t.id !== id).map((t) => t.slug))
 
-    const updated: Topic = { ...current, ...data, slug }
+    // Theo từng trường, không spread `...data` — xem ghi chú ở notes.repo.update().
+    const updated: Topic = {
+      ...current,
+      categoryId: data.categoryId ?? current.categoryId,
+      name: data.name ?? current.name,
+      description: data.description ?? current.description,
+      order: data.order ?? current.order,
+      slug,
+    }
     const items = [...topics]
     items[index] = updated
     return { items, result: updated }
@@ -1439,7 +1455,16 @@ export async function update(id: string, patch: Partial<CategoryCreateInput>): P
         ? current.slug
         : uniqueSlug(data.slug, categories.filter((c) => c.id !== id).map((c) => c.slug))
 
-    const updated: Category = { ...current, ...data, slug }
+    // Theo từng trường, không spread `...data` — xem ghi chú ở notes.repo.update().
+    const updated: Category = {
+      ...current,
+      name: data.name ?? current.name,
+      description: data.description ?? current.description,
+      icon: data.icon ?? current.icon,
+      color: data.color ?? current.color,
+      order: data.order ?? current.order,
+      slug,
+    }
     const items = [...categories]
     items[index] = updated
     return { items, result: updated }
