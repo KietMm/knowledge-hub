@@ -53,6 +53,12 @@ describe('tính toàn vẹn của dữ liệu seed', () => {
       expect(note.content, `thiếu code mẫu: ${note.slug}`).toContain('```')
     }
   })
+
+  it('có đủ 26 ghi chú trải khắp 8 công nghệ', () => {
+    expect(SEED_NOTES).toHaveLength(26)
+    const topicIds = new Set(SEED_NOTES.map((n) => n.topicId))
+    expect(topicIds.size).toBe(SEED_TOPICS.length)
+  })
 })
 
 describe('seedIfEmpty', () => {
