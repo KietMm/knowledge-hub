@@ -50,4 +50,23 @@ describe('searchNotes', () => {
     const many = Array.from({ length: 30 }, (_, i) => item({ id: `n${i}`, title: `Index ${i}` }))
     expect(searchNotes(many, 'index', 5)).toHaveLength(5)
   })
+
+  it('chỉ tính trường khớp đầu tiên, không cộng dồn', () => {
+    const multiMatch = [
+      item({
+        id: 'multi',
+        title: 'Index Performance',
+        tags: ['index', 'database'],
+        summary: 'Tối ưu hóa',
+        content: 'CREATE INDEX là một lệnh index',
+      }),
+    ]
+    const results = searchNotes(multiMatch, 'index')
+    expect(results).toHaveLength(1)
+    const result = results[0]!
+    expect(result.matchedIn).toBe('title')
+    // Score should be title score (100) + prefix bonus (15) = 115
+    // NOT title (100) + tag (60) + content (10) = 170 if additive
+    expect(result.score).toBe(115)
+  })
 })
