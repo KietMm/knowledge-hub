@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { DataFileError, mutate, readCollection, writeCollection } from '@/lib/db/json-store'
 
@@ -56,6 +56,20 @@ describe('writeCollection', () => {
     await writeCollection('items.json', ItemSchema, [{ id: 'a', n: 1 }])
     const bad = [{ id: 'b' }] as unknown as Item[]
     await expect(writeCollection('items.json', ItemSchema, bad)).rejects.toBeInstanceOf(DataFileError)
+    expect(await readCollection('items.json', ItemSchema)).toEqual([{ id: 'a', n: 1 }])
+  })
+
+  it('dọn file .tmp mồ côi khi rename thất bại giữa chừng', async () => {
+    await writeCollection('items.json', ItemSchema, [{ id: 'a', n: 1 }])
+    const renameSpy = vi.spyOn(fs, 'rename').mockRejectedValueOnce(new Error('rename thất bại (giả lập)'))
+
+    await expect(writeCollection('items.json', ItemSchema, [{ id: 'b', n: 2 }])).rejects.toThrow(
+      'rename thất bại (giả lập)',
+    )
+    renameSpy.mockRestore()
+
+    const files = await fs.readdir(dir)
+    expect(files.some((f) => f.endsWith('.tmp'))).toBe(false)
     expect(await readCollection('items.json', ItemSchema)).toEqual([{ id: 'a', n: 1 }])
   })
 })

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { z } from 'zod'
@@ -41,9 +42,17 @@ function enqueue<R>(task: () => Promise<R>): Promise<R> {
 
 async function writeAtomic(target: string, contents: string): Promise<void> {
   await fs.mkdir(path.dirname(target), { recursive: true })
-  const tmp = `${target}.tmp`
-  await fs.writeFile(tmp, contents, 'utf8')
-  await fs.rename(tmp, target)
+  // Tên tạm duy nhất theo mỗi lượt gọi: hai lượt ghi cùng target (vd hai request
+  // cùng gọi ensureSeeded() lúc khởi động) không được phép đụng chung một file .tmp.
+  const tmp = `${target}.${process.pid}.${randomUUID()}.tmp`
+  try {
+    await fs.writeFile(tmp, contents, 'utf8')
+    await fs.rename(tmp, target)
+  } catch (error) {
+    // Lỗi giữa chừng (rename thất bại, đĩa đầy, ...) không được để lại rác .tmp.
+    await fs.rm(tmp, { force: true })
+    throw error
+  }
 }
 
 function serialize<T>(items: T[]): string {
