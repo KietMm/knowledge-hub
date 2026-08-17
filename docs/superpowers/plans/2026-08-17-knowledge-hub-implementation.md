@@ -204,7 +204,7 @@ git commit -m "chore: khởi tạo Next.js 15 + Tailwind v4 + vitest"
   - `CategorySchema`, `TopicSchema`, `NoteSchema` (zod objects)
   - `type Category`, `type Topic`, `type Note`
   - `CategoryCreateSchema`, `TopicCreateSchema`, `NoteCreateSchema`, `NoteUpdateSchema`
-  - `type NoteCreateInput = z.infer<typeof NoteCreateSchema>`, `type NoteUpdateInput`
+  - `type NoteCreateInput = z.input<typeof NoteCreateSchema>`, `type NoteUpdateInput`, `type CategoryCreateInput`, `type TopicCreateInput` (dùng `z.input`, không phải `z.infer`)
   - `SlugSchema`, `IsoDateSchema`
   - `ExportBundleSchema` + `type ExportBundle`
 
@@ -367,10 +367,14 @@ export const TopicCreateSchema = TopicSchema.omit({ id: true, slug: true }).exte
   slug: SlugSchema.optional(),
 })
 
-export type NoteCreateInput = z.infer<typeof NoteCreateSchema>
-export type NoteUpdateInput = z.infer<typeof NoteUpdateSchema>
-export type CategoryCreateInput = z.infer<typeof CategoryCreateSchema>
-export type TopicCreateInput = z.infer<typeof TopicCreateSchema>
+/**
+ * Dùng z.input (không phải z.infer): trường có .default() là TUỲ CHỌN với người gọi,
+ * và chỉ chắc chắn có giá trị sau khi schema.parse() chạy bên trong repo.
+ */
+export type NoteCreateInput = z.input<typeof NoteCreateSchema>
+export type NoteUpdateInput = z.input<typeof NoteUpdateSchema>
+export type CategoryCreateInput = z.input<typeof CategoryCreateSchema>
+export type TopicCreateInput = z.input<typeof TopicCreateSchema>
 
 /** Định dạng file backup của /api/export và /api/import. */
 export const ExportBundleSchema = z.object({
@@ -2024,7 +2028,7 @@ export const SEED_TOPICS: Topic[] = [
 
 - [ ] **Step 4: Thêm 3 ghi chú mẫu vào cuối `seed-data.ts`**
 
-Ba note này là **chuẩn văn phong** cho 21 note còn lại ở Task 10: mở đầu một câu nêu vấn đề, có heading `##`, có code block chạy được, kết bằng phần "Ghi nhớ".
+Ba note này là **chuẩn văn phong** cho 23 note còn lại ở Task 10: mở đầu một câu nêu vấn đề, có heading `##`, có code block chạy được, kết bằng phần "Ghi nhớ".
 
 ```ts
 export const SEED_NOTES: Note[] = [
@@ -2257,7 +2261,7 @@ git commit -m "feat(db): seed 4 mảng, 8 công nghệ và 3 ghi chú mẫu"
 
 ---
 
-### Task 10: Viết nốt 21 ghi chú seed
+### Task 10: Viết nốt 23 ghi chú seed
 
 **Files:**
 - Modify: `src/lib/db/seed-data.ts` (thêm phần tử vào `SEED_NOTES`)
@@ -2265,7 +2269,7 @@ git commit -m "feat(db): seed 4 mảng, 8 công nghệ và 3 ghi chú mẫu"
 
 **Interfaces:**
 - Consumes: `SEED_NOTES` từ Task 9. Không thêm export mới.
-- Produces: `SEED_NOTES` có đúng 24 phần tử.
+- Produces: `SEED_NOTES` có đúng 26 phần tử (3 từ Task 9 + 23 ở đây).
 
 **Chuẩn cho từng ghi chú** (test ở Task 9 đã ép các mức tối thiểu — đây là yêu cầu chất lượng đầy đủ):
 - `id`: `note-<slug>`; `slug`: slug hoá tiêu đề không dấu; `createdAt`/`updatedAt`: `NOW`.
@@ -2304,7 +2308,7 @@ git commit -m "feat(db): seed 4 mảng, 8 công nghệ và 3 ghi chú mẫu"
 | `topic-cicd` | Cache dependency trong CI | Cache pnpm store để job không cài lại toàn bộ package mỗi lần chạy. | `ci-cd`, `cache` |
 | `topic-cicd` | Secret trong GitHub Actions | Cách truyền khoá vào workflow an toàn và những chỗ secret dễ bị lộ. | `ci-cd`, `secret` |
 
-- [ ] **Step 1: Viết 8 ghi chú đầu (Dev + SQL)**
+- [ ] **Step 1: Viết 9 ghi chú đầu (Dev + SQL)**
 
 Thêm vào `SEED_NOTES` theo đúng thứ tự trong bảng, theo đúng chuẩn ở trên và văn phong của 3 note mẫu ở Task 9.
 
@@ -2319,14 +2323,14 @@ Expected: PASS (test tính toàn vẹn bắt ngay id/slug trùng và nội dung 
 
 Run: `pnpm test tests/lib/db/seed.test.ts` → PASS.
 
-- [ ] **Step 5: Viết 7 ghi chú cuối (Docker + CI/CD)**
+- [ ] **Step 5: Viết 6 ghi chú cuối (Docker + CI/CD)**
 
 - [ ] **Step 6: Kiểm tra đủ số lượng**
 
 Thêm test vào `tests/lib/db/seed.test.ts`:
 ```ts
-it('có đủ 24 ghi chú trải khắp 8 công nghệ', () => {
-  expect(SEED_NOTES).toHaveLength(24)
+it('có đủ 26 ghi chú trải khắp 8 công nghệ', () => {
+  expect(SEED_NOTES).toHaveLength(26)
   const topicIds = new Set(SEED_NOTES.map((n) => n.topicId))
   expect(topicIds.size).toBe(SEED_TOPICS.length)
 })
@@ -2344,7 +2348,7 @@ Expected: in ra "Đã nạp dữ liệu mẫu vào data/".
 
 ```bash
 git add src/lib/db/seed-data.ts tests/lib/db/seed.test.ts data
-git commit -m "feat(db): viết đủ 24 ghi chú seed"
+git commit -m "feat(db): viết đủ 26 ghi chú seed"
 ```
 
 ---
