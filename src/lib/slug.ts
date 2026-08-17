@@ -8,7 +8,7 @@
 export function normalizeText(input: string): string {
   return input
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '') // xoá dải Combining Diacritical Marks
+    .replace(/[\u0300-\u036f]/g, '') // xoá dải Combining Diacritical Marks
     .replace(/đ/g, 'd')
     .replace(/Đ/g, 'D')
     .toLowerCase()
