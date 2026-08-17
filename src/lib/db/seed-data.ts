@@ -1056,4 +1056,284 @@ const publicKey = process.env.NEXT_PUBLIC_STRIPE_KEY
     createdAt: NOW,
     updatedAt: NOW,
   },
+  {
+    id: 'note-dockerfile-nhieu-stage',
+    topicId: 'topic-docker',
+    title: 'Dockerfile nhiều stage',
+    slug: 'dockerfile-nhieu-stage',
+    summary: 'Tách stage build và stage chạy để image nhỏ hơn và ít lỗ hổng hơn.',
+    content: `Build một app Node.js bằng Dockerfile một stage duy nhất — kết quả là image nặng cả gigabyte, dù code thực sự chạy chỉ vài chục megabyte. Toàn bộ devDependencies, TypeScript compiler, và cache cài đặt đều bị kẹt lại trong image production.
+
+## Một stage: mọi thứ bị gộp vào image cuối
+
+\`\`\`dockerfile
+FROM node:20
+WORKDIR /app
+COPY . .
+RUN npm install && npm run build
+CMD ["npm", "start"]
+\`\`\`
+
+Image này chứa nguyên vẹn \`devDependencies\`, source TypeScript gốc, và toàn bộ cache của \`npm install\` — không thứ nào trong đó cần thiết lúc chạy \`npm start\`.
+
+## Multi-stage: tách build và runtime
+
+\`\`\`dockerfile
+# Stage 1: cài đủ công cụ để build
+FROM node:20 AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+# Stage 2: chỉ giữ những gì cần để chạy
+FROM node:20-slim AS runner
+WORKDIR /app
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+CMD ["node", "dist/main.js"]
+\`\`\`
+
+\`COPY --from=builder\` chỉ lấy đúng file cần thiết từ stage trước sang stage cuối; mọi thứ khác của stage \`builder\` (TypeScript compiler, source gốc, cache) bị bỏ lại, không nằm trong image cuối cùng.
+
+## Ghi nhớ
+
+- Stage build cài đủ công cụ để biên dịch; stage runtime chỉ copy đúng file cần chạy qua \`COPY --from=\`.
+- Image nhỏ hơn tải nhanh hơn, và ít công cụ hơn nghĩa là ít bề mặt tấn công hơn.
+- \`devDependencies\` (TypeScript, ESLint, test runner...) không nên có mặt trong image chạy production.`,
+    tags: ['docker', 'dockerfile'],
+    starred: true,
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
+  {
+    id: 'note-volume-va-bind-mount',
+    topicId: 'topic-docker',
+    title: 'Volume và bind mount',
+    slug: 'volume-va-bind-mount',
+    summary: 'Hai cách giữ dữ liệu sống lâu hơn container, dùng cái nào cho việc gì.',
+    content: `Container database bị xoá để cập nhật image mới, và toàn bộ dữ liệu bên trong biến mất theo — vì mọi thứ ghi vào filesystem của container chỉ tồn tại đúng vòng đời của container đó.
+
+## Volume: Docker tự quản lý nơi lưu
+
+\`\`\`bash
+docker volume create pgdata
+docker run -d --name db -v pgdata:/var/lib/postgresql/data postgres:16
+\`\`\`
+
+Xoá container \`db\` rồi tạo lại với cùng \`-v pgdata:/var/lib/postgresql/data\`, dữ liệu vẫn còn nguyên — nó nằm trong volume do Docker quản lý, tách biệt khỏi vòng đời của container.
+
+## Bind mount: gắn thẳng thư mục trên máy host
+
+\`\`\`bash
+docker run -d --name app -v "$(pwd)/src:/app/src" node:20 npm run dev
+\`\`\`
+
+Sửa file trong \`./src\` trên máy host phản ánh ngay vào container đang chạy — hữu ích khi dev cần hot reload, nhưng phụ thuộc cấu trúc thư mục cụ thể của máy host nên ít phù hợp cho production.
+
+## Ghi nhớ
+
+- Volume: Docker quản lý vị trí lưu, phù hợp cho dữ liệu cần bền (database) và chạy production.
+- Bind mount: gắn thẳng thư mục host vào container, phù hợp cho dev để sửa code không cần build lại image.
+- Cả hai đều giữ dữ liệu sống ngoài vòng đời container — khác với dữ liệu ghi trực tiếp vào filesystem container, sẽ mất khi container bị xoá.`,
+    tags: ['docker', 'volume'],
+    starred: false,
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
+  {
+    id: 'note-docker-compose-cho-moi-truong-dev',
+    topicId: 'topic-docker',
+    title: 'docker compose cho môi trường dev',
+    slug: 'docker-compose-cho-moi-truong-dev',
+    summary: 'Dựng app kèm database bằng một file yaml và một lệnh.',
+    content: `Môi trường dev cần app, Postgres và đúng biến kết nối giữa chúng chạy cùng lúc. Chạy tay ba lệnh \`docker run\` với đúng network, đúng port, đúng thứ tự khởi động mỗi lần onboarding một thành viên mới — rất dễ quên một cờ và mất cả buổi debug vì sao app không kết nối được database.
+
+## Định nghĩa nhiều service trong một file
+
+\`\`\`yaml
+services:
+  app:
+    build: .
+    ports:
+      - '3000:3000'
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/app
+    depends_on:
+      - db
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
+\`\`\`
+
+\`app\` kết nối tới \`db\` bằng đúng tên service (\`db\`) làm hostname — Compose tự tạo network nội bộ giữa các service, không cần biết IP thật của container.
+
+## Một lệnh cho toàn bộ môi trường
+
+\`\`\`bash
+docker compose up -d
+docker compose down
+\`\`\`
+
+\`up -d\` dựng và chạy nền toàn bộ service theo đúng thứ tự \`depends_on\`; \`down\` dừng và dọn sạch container (dữ liệu trong \`volumes\` vẫn giữ nguyên trừ khi thêm cờ \`-v\`).
+
+## Ghi nhớ
+
+- Mỗi service trong \`docker-compose.yml\` là một container, gọi nhau bằng tên service làm hostname.
+- \`docker compose up -d\` dựng toàn bộ môi trường bằng một lệnh, \`down\` dọn sạch.
+- Khai báo \`volumes:\` cho service cần giữ dữ liệu qua các lần \`docker compose down\`/\`up\`.`,
+    tags: ['docker', 'compose'],
+    starred: false,
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
+  {
+    id: 'note-cau-truc-mot-workflow-github-actions',
+    topicId: 'topic-cicd',
+    title: 'Cấu trúc một workflow GitHub Actions',
+    slug: 'cau-truc-mot-workflow-github-actions',
+    summary: 'trigger, job, step, runner — bộ khung tối thiểu của một file workflow.',
+    content: `PR mở lên, ai đó quên chạy test ở máy mình, code lỗi vẫn được merge vào \`main\` — không có ai đứng canh, cần một cơ chế tự động chặn việc đó trước khi merge được phép xảy ra.
+
+## Bộ khung: trigger, job, step, runner
+
+\`\`\`yaml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm test
+\`\`\`
+
+Workflow này chạy mỗi khi có \`push\` vào \`main\` hoặc mở \`pull_request\`, tải code, cài Node 20, cài dependency rồi chạy test.
+
+## Bốn khái niệm
+
+- **trigger** (\`on\`): sự kiện khởi động workflow — \`push\`, \`pull_request\`, lịch chạy định kỳ...
+- **job**: một nhóm \`steps\` chạy trên cùng một máy ảo (\`runs-on\`); nhiều job không phụ thuộc nhau chạy song song mặc định.
+- **step**: từng lệnh hoặc action trong job, luôn chạy tuần tự từ trên xuống.
+- **runner**: máy ảo GitHub cấp phát để chạy job, ví dụ \`ubuntu-latest\`.
+
+## Ghi nhớ
+
+- \`on\` định nghĩa khi nào chạy, \`jobs\` định nghĩa chạy gì; mỗi job chạy trên một runner riêng.
+- Job không khai báo \`needs\` sẽ chạy song song, không tuần tự.
+- Step dùng \`uses\` để gọi action có sẵn, dùng \`run\` để chạy thẳng lệnh shell.`,
+    tags: ['ci-cd', 'github-actions'],
+    starred: false,
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
+  {
+    id: 'note-cache-dependency-trong-ci',
+    topicId: 'topic-cicd',
+    title: 'Cache dependency trong CI',
+    slug: 'cache-dependency-trong-ci',
+    summary: 'Cache pnpm store để job không cài lại toàn bộ package mỗi lần chạy.',
+    content: `Mỗi lần push, CI mất vài phút chỉ để cài lại toàn bộ \`node_modules\` từ đầu — tải lại đúng những package không hề đổi so với lần chạy trước, trong khi thời gian đó cộng dồn lại là hàng giờ chờ đợi mỗi tuần.
+
+## Cache thư mục store của pnpm
+
+\`\`\`yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+\`\`\`
+
+\`cache: 'pnpm'\` trong \`setup-node\` tự khoá cache theo hash của \`pnpm-lock.yaml\` — lockfile không đổi thì lấy lại cache cũ, lockfile đổi thì tự cài mới từ đầu.
+
+## Tự khai báo cache khi cần kiểm soát chi tiết hơn
+
+\`\`\`yaml
+- uses: actions/cache@v4
+  with:
+    path: ~/.local/share/pnpm/store
+    key: pnpm-store-\${{ hashFiles('pnpm-lock.yaml') }}
+\`\`\`
+
+\`key\` gắn trực tiếp với nội dung lockfile: chỉ cần một dòng trong \`pnpm-lock.yaml\` đổi, key đổi theo và cache cũ tự động không còn được dùng.
+
+## Ghi nhớ
+
+- Cache theo key gắn với hash của lockfile: lockfile đổi thì cache tự vô hiệu, không dùng nhầm dependency cũ.
+- \`pnpm install --frozen-lockfile\` (hay \`npm ci\`) đảm bảo CI cài đúng phiên bản đã lock, không tự ý cập nhật.
+- Cache dependency đã tải, không cache kết quả build cuối cùng — hai thứ khác mục đích.`,
+    tags: ['ci-cd', 'cache'],
+    starred: false,
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
+  {
+    id: 'note-secret-trong-github-actions',
+    topicId: 'topic-cicd',
+    title: 'Secret trong GitHub Actions',
+    slug: 'secret-trong-github-actions',
+    summary: 'Cách truyền khoá vào workflow an toàn và những chỗ secret dễ bị lộ.',
+    content: `Khoá deploy được viết thẳng vào file workflow \`.yml\` rồi commit vào git — ai đọc lại lịch sử repository, kể cả sau khi đã sửa xoá dòng đó ở commit sau, vẫn thấy được khoá cũ nằm nguyên trong lịch sử.
+
+## Khai báo secret ở repository, dùng qua context secrets
+
+\`\`\`yaml
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy
+        env:
+          DEPLOY_TOKEN: \${{ secrets.DEPLOY_TOKEN }}
+        run: ./scripts/deploy.sh
+\`\`\`
+
+Secret khai ở Settings > Secrets and variables > Actions của repository, không nằm trong file yaml. GitHub tự động che giá trị secret bằng \`***\` trong log, kể cả khi nó vô tình bị in ra.
+
+## Những chỗ secret dễ bị lộ
+
+- Nối secret thẳng vào chuỗi lệnh thay vì truyền qua \`env\` — luôn dùng \`env:\`, đừng viết \`run: curl -H "Authorization: \${{ secrets.DEPLOY_TOKEN }}"\` trực tiếp trong \`run\`.
+- Workflow chạy trên \`pull_request\` từ fork bên ngoài mặc định không thấy secret của repo gốc — cố tình bỏ qua giới hạn này (ví dụ đổi sang \`pull_request_target\` mà không cẩn thận) mới là nơi rò rỉ thật sự.
+- Secret bị \`echo\` ra trong bước debug tạm thời rồi quên xoá trước khi merge.
+
+## Ghi nhớ
+
+- Secret khai báo ở Settings của repository, tham chiếu bằng \`\${{ secrets.TEN_SECRET }}\`, không bao giờ hardcode trong file workflow.
+- Luôn truyền secret qua \`env\`, không nối trực tiếp vào chuỗi lệnh của \`run\`.
+- \`pull_request\` từ fork ngoài mặc định không thấy được secret của repo gốc — đây là cơ chế bảo vệ, không phải giới hạn cần né tránh.`,
+    tags: ['ci-cd', 'secret'],
+    starred: false,
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
 ]
