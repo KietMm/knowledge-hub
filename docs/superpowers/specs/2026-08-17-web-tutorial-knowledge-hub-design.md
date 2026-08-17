@@ -1,7 +1,7 @@
 # Knowledge Hub — Sổ tay tra cứu kiến thức dev cá nhân
 
 Ngày: 2026-08-17
-Trạng thái: đã duyệt design, chờ lập kế hoạch implement
+Trạng thái: đã duyệt design — plan implement ở `docs/superpowers/plans/2026-08-17-knowledge-hub-implementation.md`
 
 ## 1. Mục tiêu
 
