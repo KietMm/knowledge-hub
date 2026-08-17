@@ -1,0 +1,66 @@
+[
+  {
+    "id": "topic-typescript",
+    "categoryId": "cat-dev",
+    "name": "JavaScript / TypeScript",
+    "slug": "javascript-typescript",
+    "description": "Nền tảng của cả frontend lẫn Node.js.",
+    "order": 1
+  },
+  {
+    "id": "topic-python",
+    "categoryId": "cat-dev",
+    "name": "Python",
+    "slug": "python",
+    "description": "Script, xử lý dữ liệu, và backend.",
+    "order": 2
+  },
+  {
+    "id": "topic-nextjs",
+    "categoryId": "cat-dev",
+    "name": "Next.js",
+    "slug": "nextjs",
+    "description": "React framework với App Router và Server Components.",
+    "order": 3
+  },
+  {
+    "id": "topic-sql",
+    "categoryId": "cat-database",
+    "name": "SQL cơ bản",
+    "slug": "sql-co-ban",
+    "description": "Truy vấn nền tảng dùng được ở mọi hệ quản trị.",
+    "order": 1
+  },
+  {
+    "id": "topic-postgresql",
+    "categoryId": "cat-database",
+    "name": "PostgreSQL",
+    "slug": "postgresql",
+    "description": "Index, kế hoạch thực thi và các tính năng riêng của Postgres.",
+    "order": 2
+  },
+  {
+    "id": "topic-owasp",
+    "categoryId": "cat-security",
+    "name": "OWASP Top 10",
+    "slug": "owasp-top-10",
+    "description": "Mười nhóm lỗ hổng phổ biến nhất của ứng dụng web.",
+    "order": 1
+  },
+  {
+    "id": "topic-docker",
+    "categoryId": "cat-devops",
+    "name": "Docker",
+    "slug": "docker",
+    "description": "Đóng gói ứng dụng thành image chạy được ở mọi nơi.",
+    "order": 1
+  },
+  {
+    "id": "topic-cicd",
+    "categoryId": "cat-devops",
+    "name": "CI/CD (GitHub Actions)",
+    "slug": "ci-cd-github-actions",
+    "description": "Tự động kiểm thử và triển khai mỗi lần push.",
+    "order": 2
+  }
+]

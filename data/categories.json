@@ -1,0 +1,38 @@
+[
+  {
+    "id": "cat-dev",
+    "name": "Dev",
+    "slug": "dev",
+    "description": "Ngôn ngữ và framework để viết ứng dụng.",
+    "icon": "Code2",
+    "color": "sky",
+    "order": 1
+  },
+  {
+    "id": "cat-database",
+    "name": "Database",
+    "slug": "database",
+    "description": "Lưu trữ, truy vấn và tối ưu dữ liệu.",
+    "icon": "Database",
+    "color": "emerald",
+    "order": 2
+  },
+  {
+    "id": "cat-security",
+    "name": "Security",
+    "slug": "security",
+    "description": "Các lỗ hổng thường gặp và cách phòng tránh.",
+    "icon": "ShieldCheck",
+    "color": "rose",
+    "order": 3
+  },
+  {
+    "id": "cat-devops",
+    "name": "DevOps",
+    "slug": "devops",
+    "description": "Đóng gói, triển khai và tự động hoá.",
+    "icon": "Server",
+    "color": "amber",
+    "order": 4
+  }
+]

@@ -1,0 +1,49 @@
+[
+  {
+    "id": "note-async-await",
+    "topicId": "topic-typescript",
+    "title": "async/await và event loop",
+    "slug": "async-await-va-event-loop",
+    "summary": "Vì sao code bất đồng bộ không chặn luồng chính, và async/await thực chất là gì.",
+    "content": "JavaScript chỉ có **một luồng** thực thi. Mọi thao tác chờ (đọc file, gọi API) đều phải giao cho môi trường bên ngoài rồi nhận kết quả qua hàng đợi callback — nếu không, giao diện sẽ đứng.\n\n## Event loop trong một câu\n\nStack chạy hết code đồng bộ, sau đó event loop lấy việc từ hàng đợi ra chạy. Microtask (promise) được ưu tiên hơn macrotask (setTimeout):\n\n```ts\nconsole.log('1')\nsetTimeout(() => console.log('2 - macrotask'), 0)\nPromise.resolve().then(() => console.log('3 - microtask'))\nconsole.log('4')\n// Thứ tự in ra: 1, 4, 3 - microtask, 2 - macrotask\n```\n\n## async/await là promise viết cho dễ đọc\n\n`await` tạm dừng **hàm hiện tại**, không tạm dừng chương trình. Hàm `async` luôn trả về Promise:\n\n```ts\nasync function layNguoiDung(id: string): Promise<User> {\n  const res = await fetch(`/api/users/${id}`)\n  if (!res.ok) throw new Error(`HTTP ${res.status}`)\n  return res.json() as Promise<User>\n}\n```\n\n## Lỗi hay gặp: await tuần tự việc chạy song song được\n\n```ts\n// Chậm: 2 lượt chờ nối tiếp nhau\nconst a = await layNguoiDung('1')\nconst b = await layNguoiDung('2')\n\n// Nhanh: cùng khởi động, chờ một lần\nconst [a2, b2] = await Promise.all([layNguoiDung('1'), layNguoiDung('2')])\n```\n\n## Ghi nhớ\n\n- `await` chỉ dừng hàm chứa nó.\n- Việc độc lập nhau thì gộp bằng `Promise.all`.\n- Microtask luôn chạy trước macrotask.",
+    "tags": [
+      "javascript",
+      "bat-dong-bo",
+      "event-loop"
+    ],
+    "starred": true,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-type-vs-interface",
+    "topicId": "topic-typescript",
+    "title": "Type và Interface khác nhau ở đâu",
+    "slug": "type-va-interface-khac-nhau-o-dau",
+    "summary": "Khi nào nên dùng type alias, khi nào nên dùng interface, và vì sao đừng tranh cãi quá nhiều.",
+    "content": "Cả hai đều mô tả hình dạng của dữ liệu. Khác biệt thật sự chỉ nằm ở vài điểm.\n\n## Interface gộp được, type thì không\n\n```ts\ninterface User { id: string }\ninterface User { email: string }\n// User giờ có cả id lẫn email (declaration merging)\n\ntype Product = { id: string }\n// type Product = { price: number }  // Lỗi: định nghĩa trùng tên\n```\n\nTính chất này hữu ích khi mở rộng type của thư viện ngoài, nhưng trong code của mình thì thường là bất ngờ không mong muốn.\n\n## Type làm được những thứ interface không làm được\n\n```ts\ntype Id = string | number                    // union\ntype Keys = keyof User                       // toán tử trên type\ntype Nullable<T> = T | null                  // generic alias\ntype Point = [number, number]                // tuple\n```\n\n## Quy ước dùng trong dự án này\n\n- Mô tả object công khai, có khả năng được mở rộng: `interface`.\n- Mọi thứ còn lại (union, tuple, type suy ra từ zod): `type`.\n\n```ts\ntype Note = z.infer<typeof NoteSchema> // suy ra từ schema, không viết tay\n```\n\n## Ghi nhớ\n\nChọn một quy ước rồi giữ nhất quán quan trọng hơn việc chọn cái nào.",
+    "tags": [
+      "typescript",
+      "type-system"
+    ],
+    "starred": false,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "id": "note-server-vs-client-component",
+    "topicId": "topic-nextjs",
+    "title": "Server Component và Client Component",
+    "slug": "server-component-va-client-component",
+    "summary": "Mặc định mọi component trong App Router chạy ở server; chỉ đánh dấu \"use client\" khi thật sự cần.",
+    "content": "Trong App Router, component **mặc định chạy ở server**: nó không được gửi xuống trình duyệt, nên không tốn JavaScript phía client và được phép đọc dữ liệu trực tiếp.\n\n## Server Component\n\n```tsx\n// Không có \"use client\" -> chạy ở server\nimport * as notesRepo from '@/lib/db/notes.repo'\n\nexport default async function NotesPage() {\n  const notes = await notesRepo.listAll() // đọc dữ liệu ngay trong component\n  return <ul>{notes.map((n) => <li key={n.id}>{n.title}</li>)}</ul>\n}\n```\n\n## Client Component\n\nChỉ cần khi có **trạng thái**, **hiệu ứng**, hoặc **sự kiện của trình duyệt**:\n\n```tsx\n'use client'\nimport { useState } from 'react'\n\nexport function CopyButton({ text }: { text: string }) {\n  const [copied, setCopied] = useState(false)\n  return (\n    <button onClick={() => { void navigator.clipboard.writeText(text); setCopied(true) }}>\n      {copied ? 'Đã chép' : 'Chép'}\n    </button>\n  )\n}\n```\n\n## Quy tắc thực dụng\n\nĐẩy `\"use client\"` xuống càng sâu càng tốt. Một component client kéo theo toàn bộ cây con của nó xuống client, nên đặt nó ở lá thay vì ở layout.\n\n## Ghi nhớ\n\n- Mặc định: server.\n- `\"use client\"` khi cần `useState`/`useEffect`/`onClick`.\n- Server Component **được** render Client Component; chiều ngược lại chỉ qua `children`.",
+    "tags": [
+      "nextjs",
+      "react",
+      "server-component"
+    ],
+    "starred": true,
+    "createdAt": "2026-08-17T00:00:00.000Z",
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  }
+]
