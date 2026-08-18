@@ -12,6 +12,12 @@ export async function AppSidebar() {
         Knowledge Hub
       </Link>
       <SidebarTree tree={tree} />
+      <a
+        href="/api/export"
+        className="mt-auto text-xs text-muted-foreground hover:text-foreground hover:underline"
+      >
+        Tải bản sao lưu (JSON)
+      </a>
     </div>
   )
 }
