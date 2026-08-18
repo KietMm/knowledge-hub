@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Toaster } from '@/components/ui/sonner'
 import { AppSidebar } from '@/components/layout/AppSidebar'
+import { SidebarShell } from '@/components/layout/SidebarShell'
 import { ThemeProvider } from '@/components/layout/ThemeProvider'
 import { Topbar } from '@/components/layout/Topbar'
 import { SearchPalette } from '@/components/search/SearchPalette'
@@ -26,9 +27,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-screen bg-background text-foreground antialiased">
         <ThemeProvider>
           <div className="flex min-h-screen">
-            <aside className="hidden lg:block">
+            <SidebarShell>
               <AppSidebar />
-            </aside>
+            </SidebarShell>
             <div className="flex min-w-0 flex-1 flex-col">
               <Topbar search={<SearchPalette items={searchIndex} />} />
               <main className="flex-1 px-6 py-6">{children}</main>
