@@ -21,12 +21,8 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  NoteFormSchema,
-  createNoteAction,
-  updateNoteAction,
-  type NoteFormValues,
-} from '@/lib/actions/note.actions'
+import { createNoteAction, updateNoteAction } from '@/lib/actions/note.actions'
+import { NoteFormSchema, isNoteFormField, type NoteFormValues } from '@/lib/actions/note-form.schema'
 import type { Note, Topic } from '@/lib/db/schema'
 import { slugify } from '@/lib/slug'
 
@@ -78,7 +74,10 @@ export function NoteForm({
 
     if (!result.ok) {
       for (const [field, messages] of Object.entries(result.fieldErrors ?? {})) {
-        form.setError(field as keyof NoteFormValues, { message: messages[0] })
+        const message = messages?.[0]
+        if (message !== undefined && isNoteFormField(field)) {
+          form.setError(field, { message })
+        }
       }
       toast.error(result.error)
       return

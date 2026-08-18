@@ -1,24 +1,11 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { z } from 'zod'
 import { NotFoundError } from '@/lib/db/errors'
 import * as notesRepo from '@/lib/db/notes.repo'
-import { SlugSchema } from '@/lib/db/schema'
 import * as topicsRepo from '@/lib/db/topics.repo'
+import { NoteFormSchema } from './note-form.schema'
 import type { ActionResult } from './types'
-
-/** Schema của form: dùng chung cho client (react-hook-form) và server (kiểm tra lại). */
-export const NoteFormSchema = z.object({
-  topicId: z.string().min(1, 'Hãy chọn công nghệ'),
-  title: z.string().trim().min(1, 'Tiêu đề không được để trống'),
-  slug: z.union([SlugSchema, z.literal('')]).optional(),
-  summary: z.string().trim().max(300, 'Tóm tắt nên dưới 300 ký tự').default(''),
-  content: z.string().default(''),
-  tags: z.array(z.string().trim().min(1)).default([]),
-})
-
-export type NoteFormValues = z.infer<typeof NoteFormSchema>
 
 function fail(error: unknown): ActionResult<never> {
   if (error instanceof NotFoundError) return { ok: false, error: error.message }
@@ -42,7 +29,7 @@ export async function createNoteAction(input: unknown): Promise<ActionResult<{ s
     return {
       ok: false,
       error: 'Dữ liệu chưa hợp lệ',
-      fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+      fieldErrors: parsed.error.flatten().fieldErrors,
     }
   }
 
@@ -70,18 +57,27 @@ export async function updateNoteAction(
     return {
       ok: false,
       error: 'Dữ liệu chưa hợp lệ',
-      fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+      fieldErrors: parsed.error.flatten().fieldErrors,
     }
   }
 
   try {
+    // Đọc ghi chú TRƯỚC khi sửa để biết topic cũ: nếu người dùng đổi Công nghệ
+    // trong form, trang /t/{topic-cũ} vẫn còn cache ghi chú này nếu không revalidate.
+    const before = await notesRepo.findById(id)
+    if (before === null) throw new NotFoundError(`ghi chú "${id}"`)
+    const oldTopic = await topicsRepo.findById(before.topicId)
+
     const { slug, ...rest } = parsed.data
     const note = await notesRepo.update(id, {
       ...rest,
       ...(slug === undefined || slug === '' ? {} : { slug }),
     })
-    const topic = await topicsRepo.findById(note.topicId)
-    revalidateAll(note.slug, topic?.slug)
+
+    const newTopic = await topicsRepo.findById(note.topicId)
+    revalidateAll(note.slug, newTopic?.slug)
+    if (oldTopic !== null && oldTopic.id !== newTopic?.id) revalidatePath(`/t/${oldTopic.slug}`)
+
     return { ok: true, data: { slug: note.slug } }
   } catch (error) {
     return fail(error)
