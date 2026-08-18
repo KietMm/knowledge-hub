@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Button } from '@/components/ui/button'
+import { buttonVariants } from '@/components/ui/button'
 
 export default function NotFound() {
   return (
@@ -8,7 +8,9 @@ export default function NotFound() {
       <p className="text-sm text-muted-foreground">
         Đường dẫn có thể đã đổi hoặc ghi chú đã bị xoá.
       </p>
-      <Button render={<Link href="/" />}>Về trang chủ</Button>
+      <Link href="/" className={buttonVariants()}>
+        Về trang chủ
+      </Link>
     </div>
   )
 }

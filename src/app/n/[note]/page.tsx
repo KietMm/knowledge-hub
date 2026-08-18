@@ -4,7 +4,7 @@ import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { NoteContent } from '@/components/notes/NoteContent'
 import { TagBadge } from '@/components/notes/TagBadge'
 import { Toc } from '@/components/notes/Toc'
-import { Button } from '@/components/ui/button'
+import { buttonVariants } from '@/components/ui/button'
 import * as categoriesRepo from '@/lib/db/categories.repo'
 import * as notesRepo from '@/lib/db/notes.repo'
 import * as topicsRepo from '@/lib/db/topics.repo'
@@ -43,9 +43,12 @@ export default async function NotePage({ params }: { params: Promise<{ note: str
             </span>
           </div>
           {/* Nút ghim, Sửa, Xoá được lắp ở Task 14 khi đã có Server Actions. */}
-          <Button variant="outline" size="sm" render={<Link href={`/n/${note.slug}/edit`} />}>
+          <Link
+            href={`/n/${note.slug}/edit`}
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+          >
             Sửa
-          </Button>
+          </Link>
         </header>
 
         <NoteContent html={html} />
