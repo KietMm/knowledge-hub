@@ -1,7 +1,9 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
+import { DeleteNoteButton } from '@/components/notes/DeleteNoteButton'
 import { NoteContent } from '@/components/notes/NoteContent'
+import { StarButton } from '@/components/notes/StarButton'
 import { TagBadge } from '@/components/notes/TagBadge'
 import { Toc } from '@/components/notes/Toc'
 import { buttonVariants } from '@/components/ui/button'
@@ -42,13 +44,16 @@ export default async function NotePage({ params }: { params: Promise<{ note: str
               Cập nhật {new Date(note.updatedAt).toLocaleDateString('vi-VN')}
             </span>
           </div>
-          {/* Nút ghim, Sửa, Xoá được lắp ở Task 14 khi đã có Server Actions. */}
-          <Link
-            href={`/n/${note.slug}/edit`}
-            className={buttonVariants({ variant: 'outline', size: 'sm' })}
-          >
-            Sửa
-          </Link>
+          <div className="flex gap-2">
+            <StarButton noteId={note.id} starred={note.starred} />
+            <Link
+              href={`/n/${note.slug}/edit`}
+              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            >
+              Sửa
+            </Link>
+            <DeleteNoteButton noteId={note.id} title={note.title} />
+          </div>
         </header>
 
         <NoteContent html={html} />
