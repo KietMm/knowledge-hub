@@ -3,6 +3,8 @@ import { Toaster } from '@/components/ui/sonner'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 import { ThemeProvider } from '@/components/layout/ThemeProvider'
 import { Topbar } from '@/components/layout/Topbar'
+import { SearchPalette } from '@/components/search/SearchPalette'
+import { buildSearchIndex } from '@/lib/db/search-index'
 import { ensureSeeded } from '@/lib/db/seed'
 import './globals.css'
 
@@ -17,6 +19,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // đầu, MỌI request sau sẽ lỗi theo cho tới khi restart tiến trình — chấp nhận được
   // với app chạy local, nhưng cần biết để không bất ngờ khi debug.
   await ensureSeeded()
+  const searchIndex = await buildSearchIndex()
 
   return (
     <html lang="vi" suppressHydrationWarning>
@@ -27,7 +30,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <AppSidebar />
             </aside>
             <div className="flex min-w-0 flex-1 flex-col">
-              <Topbar />
+              <Topbar search={<SearchPalette items={searchIndex} />} />
               <main className="flex-1 px-6 py-6">{children}</main>
             </div>
           </div>
