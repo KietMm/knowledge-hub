@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { z } from 'zod'
+import { getCategoryColorClassName } from '@/lib/category-color'
 import type { CategoryWithTopics } from '@/lib/db/categories.repo'
 import { getIcon } from '@/lib/icons'
 import { cn } from '@/lib/utils'
@@ -76,7 +77,14 @@ export function SidebarTree({ tree }: { tree: CategoryWithTopics[] }) {
                   pathname === `/c/${category.slug}` && 'bg-accent',
                 )}
               >
-                <Icon className="h-4 w-4" />
+                <span
+                  className={cn(
+                    'inline-flex shrink-0 items-center justify-center rounded p-1',
+                    getCategoryColorClassName(category.color),
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                </span>
                 {category.name}
                 <span className="ml-auto text-xs text-muted-foreground">{category.noteCount}</span>
               </Link>

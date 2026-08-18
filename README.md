@@ -34,15 +34,10 @@ bằng SQLite — giao diện repository giữ nguyên nên `src/app/` và `src/
 
 - `src/lib/db/` — nơi **duy nhất** chạm tới dữ liệu. Không file nào trong `app/` hay `components/` được đọc file trực tiếp.
 - `src/lib/actions/` — Server Actions, luôn trả `{ok:true|false}`, không throw ra UI.
-- `src/lib/{slug,search,markdown}.ts` — hàm thuần, có unit test.
+- `src/lib/{slug,search,markdown,tags,category-color}.ts` — hàm thuần, có unit test.
 
 ## Chưa có trong bản này
 
-- **Lọc theo tag ở trang công nghệ** (`/t/[topic]`). Hiện trang chỉ liệt kê toàn bộ ghi
-  chú của công nghệ đó, chưa lọc được theo tag.
-- **Màu accent riêng cho từng mảng**. Mỗi mảng có màu (`sky`, `emerald`, `rose`, `amber`)
-  nhưng giao diện hiện chưa dùng tới màu này — sidebar và trang mảng đang hiển thị đồng
-  màu.
 - **Thêm/sửa/xoá mảng hoặc công nghệ qua giao diện**. Chưa có form hay nút nào cho việc
   này. Cách duy nhất hiện tại là sửa tay hai file dưới đây:
 

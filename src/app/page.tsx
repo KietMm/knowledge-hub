@@ -1,10 +1,12 @@
 import Link from 'next/link'
 import { NoteCard } from '@/components/notes/NoteCard'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { getCategoryColorClassName } from '@/lib/category-color'
 import * as categoriesRepo from '@/lib/db/categories.repo'
 import * as notesRepo from '@/lib/db/notes.repo'
 import * as topicsRepo from '@/lib/db/topics.repo'
 import { getIcon } from '@/lib/icons'
+import { cn } from '@/lib/utils'
 
 export default async function DashboardPage() {
   const [tree, starred, recent, topics] = await Promise.all([
@@ -34,7 +36,14 @@ export default async function DashboardPage() {
                 <Card className="h-full transition-colors hover:border-foreground/30">
                   <CardHeader className="pb-2">
                     <CardTitle className="flex items-center gap-2 text-base">
-                      <Icon className="h-4 w-4" />
+                      <span
+                        className={cn(
+                          'inline-flex shrink-0 items-center justify-center rounded-md p-1.5',
+                          getCategoryColorClassName(category.color),
+                        )}
+                      >
+                        <Icon className="h-4 w-4" />
+                      </span>
                       {category.name}
                     </CardTitle>
                   </CardHeader>
