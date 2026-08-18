@@ -16,9 +16,9 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // Lần chạy đầu trên máy mới: tự nạp dữ liệu mẫu để app không rỗng trơn.
-  // Đánh đổi: ensureSeeded() nhớ promise lỗi đầu tiên, nên nếu seed thất bại ở request
-  // đầu, MỌI request sau sẽ lỗi theo cho tới khi restart tiến trình — chấp nhận được
-  // với app chạy local, nhưng cần biết để không bất ngờ khi debug.
+  // Lỗi ở đây (vd file dữ liệu hỏng) không được error.tsx bắt vì nó ném từ chính root
+  // layout — global-error.tsx mới là nơi xử lý. ensureSeeded() không nhớ promise lỗi,
+  // nên sau khi sửa file và bấm "Thử lại", request kế tiếp sẽ đọc lại thật sự.
   await ensureSeeded()
   const searchIndex = await buildSearchIndex()
 

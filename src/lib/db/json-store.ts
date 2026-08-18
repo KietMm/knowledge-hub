@@ -31,6 +31,11 @@ function fullPath(file: string): string {
   return path.join(dataDir(), file)
 }
 
+/** Type guard thay cho `as NodeJS.ErrnoException`: lỗi fs có thêm field `code` tuỳ chọn. */
+function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error
+}
+
 /** Hàng đợi ghi: các mutate nối đuôi nhau, lỗi của cái trước không chặn cái sau. */
 let queue: Promise<unknown> = Promise.resolve()
 
@@ -90,7 +95,7 @@ export async function readCollection<T>(
   try {
     raw = await fs.readFile(fullPath(file), 'utf8')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+    if (isErrnoException(error) && error.code === 'ENOENT') {
       // File chưa có là trạng thái hợp lệ của app mới cài: tạo file rỗng.
       await writeAtomic(fullPath(file), '[]')
       return []
@@ -102,7 +107,8 @@ export async function readCollection<T>(
   try {
     parsed = JSON.parse(raw)
   } catch (error) {
-    throw new DataFileError(file, `không parse được JSON (${(error as Error).message})`)
+    const message = error instanceof Error ? error.message : String(error)
+    throw new DataFileError(file, `không parse được JSON (${message})`)
   }
 
   return validate(file, schema, parsed)

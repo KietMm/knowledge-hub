@@ -30,7 +30,7 @@ export function DeleteNoteButton({ noteId, title }: { noteId: string; title: str
         <AlertDialogHeader>
           <AlertDialogTitle>Xoá ghi chú &quot;{title}&quot;?</AlertDialogTitle>
           <AlertDialogDescription>
-            Hành động này không hoàn tác được. Nội dung ghi chú sẽ bị xoá khỏi data/notes.json.
+            Hành động này không hoàn tác được. Nội dung ghi chú sẽ bị xoá khỏi dữ liệu của bạn.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

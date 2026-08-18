@@ -4569,3 +4569,26 @@ git commit -m "polish: mobile sheet, phím tắt, trạng thái tải, README"
 
 **Hai điểm lệch spec đã ghi rõ lý do ngay tại task:** render markdown bằng pipeline `unified`
 thay vì `react-markdown` (Task 8), và breadcrumb đặt ở đầu mỗi trang thay vì trong topbar (Task 11).
+
+## Ba mục spec bị bỏ sót khi lập plan (ghi lại sau vòng review toàn nhánh, 2026-08-17)
+
+Khác với hai điểm lệch ở trên, ba mục dưới đây **không phải quyết định thiết kế** — chúng
+rơi mất ngay từ khâu lập plan này (không task nào nhắc tới), nên không task nào triển khai
+và không review từng task nào bắt được. Ghi lại ở đây cho trung thực; **không implement
+trong đợt sửa lỗi review cuối** — để lại cho một plan sau nếu được quyết định làm.
+
+1. **Lọc theo tag ở `/t/[topic]`** (spec §6, dòng "lọc theo tag" trong mô tả trang). Plan
+   không có task nào tạo UI lọc theo tag trên trang công nghệ — bảng "Đối chiếu với spec"
+   ở trên gán mục 6 cho Task 12/14 nhưng cả hai task đó chỉ dựng trang và form, không có
+   bộ lọc tag.
+2. **Màu accent của mảng** (spec §7.1: "Cấp 1 là mảng (có icon + màu accent)"). Trường
+   `Category.color` có trong schema (`src/lib/db/schema.ts`), được validate, và được seed
+   với các giá trị `sky/emerald/rose/amber` (`src/lib/db/seed-data.ts`) — nhưng không task
+   nào giao cho component nào đọc `.color` để tô màu. Đây là một trường dữ liệu chết trong
+   bản hiện tại.
+3. **`src/lib/actions/topic.actions.ts`** có tên trong bảng "File Structure" ở đầu plan này
+   nhưng không task nào tạo file đó. Hệ quả: `categoriesRepo.create/update/remove` và
+   `topicsRepo.create/update/remove` (đã viết, đã test) không có Server Action nào gọi tới
+   ngoài test; không có UI nào để thêm/sửa/xoá mảng hoặc công nghệ; `ConflictError` của hai
+   repo này không bao giờ tới được UI. Cách duy nhất để thêm mảng/công nghệ mới hiện nay là
+   sửa tay `data/categories.json` / `data/topics.json`.

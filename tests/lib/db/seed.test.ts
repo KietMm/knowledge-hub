@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as categoriesRepo from '@/lib/db/categories.repo'
 import * as notesRepo from '@/lib/db/notes.repo'
 import { SEED_CATEGORIES, SEED_NOTES, SEED_TOPICS } from '@/lib/db/seed-data'
@@ -75,5 +75,46 @@ describe('seedIfEmpty', () => {
     const notes = await notesRepo.listAll()
     expect(notes).toHaveLength(1)
     expect(notes[0]?.title).toBe('Ghi chú của tôi')
+  })
+})
+
+describe('ensureSeeded', () => {
+  // Mỗi test import lại module 'seed' từ đầu (vi.resetModules) để singleton nội bộ
+  // seedOnce không rò rỉ giữa các test — mô phỏng đúng "một tiến trình mới".
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  it('không nhớ lỗi: sửa file hỏng xong, gọi lại phải seed thật chứ không trả lỗi cũ', async () => {
+    // File JSON hỏng (không parse được) khiến readCollection ném DataFileError —
+    // đây là kịch bản spec §8 mô tả và cũng là kịch bản I1 nêu ra.
+    await fs.writeFile(path.join(dir, 'categories.json'), '{ đây không phải JSON hợp lệ', 'utf8')
+
+    const { ensureSeeded } = await import('@/lib/db/seed')
+
+    await expect(ensureSeeded()).rejects.toThrow(/không parse được JSON/)
+
+    // "Sửa file" — ghi lại một mảng rỗng hợp lệ để các collection còn lại (topics,
+    // notes) cũng đang rỗng, cho phép seedIfEmpty() chạy thật ở lần gọi kế tiếp.
+    await fs.writeFile(path.join(dir, 'categories.json'), '[]', 'utf8')
+
+    await expect(ensureSeeded()).resolves.toBeUndefined()
+    expect(await categoriesRepo.listAll()).toHaveLength(SEED_CATEGORIES.length)
+    expect(await topicsRepo.listAll()).toHaveLength(SEED_TOPICS.length)
+    expect(await notesRepo.listAll()).toHaveLength(SEED_NOTES.length)
+  })
+
+  it('trong điều kiện bình thường, gọi nhiều lần chỉ seed một lần (memo hoá thành công)', async () => {
+    const { ensureSeeded } = await import('@/lib/db/seed')
+
+    await ensureSeeded()
+    await notesRepo.create({ topicId: 't1', title: 'Ghi tay sau khi đã seed', summary: '', content: '' })
+
+    // Lần gọi thứ hai không được chạy lại seedIfEmpty() (nó sẽ no-op vì data không rỗng
+    // nên khó phân biệt trực tiếp) — kiểm tra gián tiếp bằng cách chắc chắn promise trả
+    // về vẫn resolve và không tạo lại dữ liệu seed đè lên ghi chú vừa tạo tay.
+    await ensureSeeded()
+    const notes = await notesRepo.listAll()
+    expect(notes.some((n) => n.title === 'Ghi tay sau khi đã seed')).toBe(true)
   })
 })

@@ -8,8 +8,8 @@ export default function Error({ error, reset }: { error: Error; reset: () => voi
       <h1 className="text-2xl font-semibold">Có lỗi xảy ra</h1>
       <p className="text-sm text-muted-foreground">{error.message}</p>
       <p className="text-xs text-muted-foreground">
-        Nếu lỗi nhắc tới một file trong <code>data/</code>, hãy mở file đó ra kiểm tra —
-        ứng dụng cố tình không tự ghi đè file hỏng.
+        Nếu lỗi nhắc tới một mục dữ liệu cụ thể, hãy kiểm tra lại kho dữ liệu của bạn —
+        ứng dụng cố tình không tự ghi đè dữ liệu hỏng.
       </p>
       <Button onClick={reset}>Thử lại</Button>
     </div>

@@ -24,12 +24,20 @@ export async function seedIfEmpty(): Promise<{ seeded: boolean }> {
 }
 
 /**
- * Dùng ở root layout. Promise được nhớ lại nên mỗi tiến trình chỉ kiểm tra một lần,
- * thay vì đọc lại ba file ở mọi request.
+ * Dùng ở root layout. Promise thành công được nhớ lại nên mỗi tiến trình chỉ kiểm tra
+ * một lần, thay vì đọc lại ba file ở mọi request.
  */
 let seedOnce: Promise<void> | null = null
 
 export function ensureSeeded(): Promise<void> {
-  seedOnce ??= seedIfEmpty().then(() => undefined)
+  seedOnce ??= seedIfEmpty()
+    .then(() => undefined)
+    .catch((error: unknown) => {
+      // KHÔNG nhớ promise lỗi: nếu seed thất bại (vd file dữ liệu bị hỏng), xoá memo
+      // ngay để lần gọi kế tiếp (request sau, hoặc nút "Thử lại") thử đọc lại thật sự
+      // thay vì trả mãi mãi cùng một lỗi cũ tới khi restart tiến trình.
+      seedOnce = null
+      throw error
+    })
   return seedOnce
 }

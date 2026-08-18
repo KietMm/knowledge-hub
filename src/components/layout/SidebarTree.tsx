@@ -4,11 +4,25 @@ import { ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { z } from 'zod'
 import type { CategoryWithTopics } from '@/lib/db/categories.repo'
 import { getIcon } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 
 const STORAGE_KEY = 'kh:sidebar-open'
+
+// localStorage là dữ liệu ngoài tiến trình (người dùng có thể sửa tay, phiên bản cũ của
+// app có thể để lại hình dạng khác) — validate bằng zod thay vì khẳng định kiểu bằng `as`.
+const SidebarOpenStateSchema = z.record(z.string(), z.boolean())
+
+/** JSON.parse ném lỗi trên chuỗi không hợp lệ — quy về `undefined` để zod tự từ chối. */
+function safeJsonParse(raw: string): unknown {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return undefined
+  }
+}
 
 export function SidebarTree({ tree }: { tree: CategoryWithTopics[] }) {
   const pathname = usePathname()
@@ -18,9 +32,10 @@ export function SidebarTree({ tree }: { tree: CategoryWithTopics[] }) {
   useEffect(() => {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (raw !== null) {
-      try {
-        setOpen(JSON.parse(raw) as Record<string, boolean>)
-      } catch {
+      const parsed = SidebarOpenStateSchema.safeParse(safeJsonParse(raw))
+      if (parsed.success) {
+        setOpen(parsed.data)
+      } else {
         window.localStorage.removeItem(STORAGE_KEY)
       }
     }
