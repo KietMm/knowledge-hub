@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button'
 import {
   Command,
   CommandDialog,
-  CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
@@ -33,6 +32,13 @@ export function SearchPalette({ items }: { items: SearchItem[] }) {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [])
 
+  // Xoá truy vấn cũ ở MỌI đường đóng dialog (Esc, click ra ngoài, chọn hành động,
+  // điều hướng...), không chỉ đường điều hướng — nếu không, lần mở ⌘K sau vẫn còn
+  // truy vấn của lần trước.
+  useEffect(() => {
+    if (!open) setQuery('')
+  }, [open])
+
   // Xếp hạng do lib/search.ts quyết định; cmdk chỉ lo phần hiển thị và bàn phím.
   const results = useMemo(() => searchNotes(items, query), [items, query])
 
@@ -47,7 +53,6 @@ export function SearchPalette({ items }: { items: SearchItem[] }) {
 
   function go(href: string) {
     setOpen(false)
-    setQuery('')
     router.push(href)
   }
 
@@ -63,7 +68,12 @@ export function SearchPalette({ items }: { items: SearchItem[] }) {
         <kbd className="ml-auto rounded border px-1.5 text-xs">⌘K</kbd>
       </Button>
 
-      <CommandDialog open={open} onOpenChange={setOpen}>
+      <CommandDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="Tìm kiếm"
+        description="Tìm ghi chú theo tiêu đề, tag, tóm tắt, nội dung, hoặc chạy nhanh một hành động."
+      >
         {/*
           command.tsx của repo này KHÔNG tự bọc <Command> bên trong <CommandDialog>
           (khác với bản shadcn mặc định) — nếu thiếu, CommandInput/CommandList sẽ
@@ -78,9 +88,18 @@ export function SearchPalette({ items }: { items: SearchItem[] }) {
             onValueChange={setQuery}
           />
           <CommandList>
-            <CommandEmpty>
-              {query === '' ? 'Gõ để bắt đầu tìm.' : 'Không tìm thấy ghi chú nào.'}
-            </CommandEmpty>
+            {/*
+              KHÔNG dùng <CommandEmpty>: điều kiện hiện của nó dựa vào bộ đếm nội
+              bộ của cmdk (filtered.count), và khi shouldFilter={false} bộ đếm đó
+              tính theo số item đang MOUNT (kể cả 2 mục "Hành động" luôn hiện diện),
+              không bao giờ về 0 — nên CommandEmpty sẽ không bao giờ hiện. Tự tính
+              trạng thái rỗng từ query/results.length của searchNotes thay vào đó.
+            */}
+            {grouped.length === 0 && (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                {query === '' ? 'Gõ để bắt đầu tìm.' : 'Không tìm thấy ghi chú nào.'}
+              </div>
+            )}
 
             {grouped.map(([topicName, group]) => (
               <CommandGroup key={topicName} heading={topicName}>
