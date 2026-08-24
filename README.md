@@ -129,26 +129,40 @@ giao diện repository giữ nguyên nên `src/app/` và `src/components/` khôn
 
 ### Giao diện
 
-- **Font — bốn vai trò, bốn khuôn chữ.** Trước đây một mình `Be Vietnam Pro` gánh cả tiêu đề
-  lẫn thân bài, nên trang không có tương phản nào giữa hai vai trò và đọc rất phẳng.
+- **Font — bốn vai trò, một superfamily (IBM Plex).** Bản trước ghép bốn họ chữ của bốn xưởng
+  khác nhau (Fraunces / Source Serif 4 / Be Vietnam Pro / JetBrains Mono): tương phản mạnh,
+  nhưng chiều cao chữ x, độ dày nét và cách đặt dấu của chúng không bao giờ khớp hẳn — thấy rõ
+  nhất ở chỗ một nhãn mono nằm ngay cạnh một dòng thân bài. Plex vẽ cả ba kiểu trên cùng một bộ
+  xương nên mọi chỗ tiếp giáp đều khớp; giá phải trả là **ít cá tính hơn**.
 
   | Vai trò | Font | Biến | Vì sao |
   |---|---|---|---|
-  | Display (h1, h2) | `Fraunces` | `--font-heading` | Serif biến thiên, bật `SOFT 25` + `WONK 1` cho có giọng riêng |
-  | Body (văn xuôi bài học) | `Source Serif 4` | `--font-body` | Adobe vẽ cho đọc dài trên màn hình; giáo trình là ~14,5 giờ đọc |
-  | Utility (vỏ giao diện) | `Be Vietnam Pro` | `--font-sans` | Người Việt vẽ riêng cho tiếng Việt — dấu chuẩn nhất, và vỏ là nơi chữ nhỏ nhất |
-  | Code (dữ kiện máy móc) | `JetBrains Mono` | `--font-mono` | Có tiếng Việt, cần cho comment tiếng Việt trong khối code |
+  | Display (h1, h2) | `IBM Plex Sans` | `--font-heading` | 600 + `letter-spacing: -0.02em`; sans ở cỡ tiêu đề phải siết mới thành một khối |
+  | Body (văn xuôi bài học) | `IBM Plex Serif` | `--font-body` | Chỗ duy nhất dùng serif; giáo trình là ~14,5 giờ đọc nên chọn theo tiêu chí đọc lâu |
+  | Utility (vỏ giao diện) | `IBM Plex Sans` | `--font-sans` | 400–500, không siết tracking — cỡ 13–14px cần thưa mới dễ quét mắt |
+  | Code (dữ kiện máy móc) | `IBM Plex Mono` | `--font-mono` | Có tiếng Việt, cần cho comment tiếng Việt trong khối code |
 
-  Ràng buộc loại: **cả bốn phải có subset `vietnamese`**. Thiếu nó thì dấu chồng (ế, ữ, ỗ) rơi
+  **Ba họ cho bốn vai trò thì buộc phải có đúng một chỗ trùng, và đặt nó ở đâu là quyết định
+  chính của bảng trên**: trùng ở Display ↔ Utility, *không* trùng ở Display ↔ Body. Tương phản
+  đáng tiền là tương phản giữa tiêu đề và thân bài, vì đó là hai thứ người đọc thấy cạnh nhau
+  suốt bài; còn tiêu đề với breadcrumb thì đã cách nhau 18px cỡ chữ và 200 đơn vị độ dày rồi.
+
+  Ràng buộc loại: **cả ba phải có subset `vietnamese`**. Thiếu nó thì dấu chồng (ế, ữ, ỗ) rơi
   về font dự phòng và lệch hẳn khỏi phần chữ còn lại — rất nhiều font đẹp trượt ở đúng chỗ này
-  (Instrument Serif, Onest, Red Hat, Fira Code). Hai trục `SOFT`/`WONK` chỉ có mặt nếu được kê
-  tên ở `axes` trong `layout.tsx`.
+  (Instrument Serif, Onest, Red Hat, Fira Code). Cả ba kiểu của Plex đều có.
+
+  Hai chi tiết đi kèm việc đổi font, không phải trang trí: Plex Serif là font **tĩnh** nên
+  `style: ['normal', 'italic']` phải kê tay, nếu không trình duyệt làm nghiêng giả và với serif
+  thì lộ ngay ở chân nét; và Plex Mono có chiều cao chữ x nhỏ hơn JetBrains Mono nên cỡ khối
+  code nhích từ `0.855rem` lên `0.9rem` (code trong câu: `0.86em` → `0.91em`) để vẫn cân với
+  dòng serif bên cạnh.
 
   Quy ước cũ giữ nguyên: cái gì máy biết thì monospace — code, nhãn ngôn ngữ, `Bài 3/6`, thời gian đọc.
 
-  *Hai lỗi đã sửa ở đây, cùng một dạng "biến tự vô hiệu hoá": `--font-sans: var(--font-sans)`
-  tự tham chiếu khiến cả trang rơi về serif mặc định; và `--font-heading` trỏ về đúng
-  `--font-sans-loaded` nên tiêu đề với thân bài luôn cùng một font.*
+  *Một lỗi cần tránh khi sửa lại chỗ này: `--font-sans: var(--font-sans)` tự tham chiếu nên vô
+  hiệu, cả trang rơi về serif mặc định của trình duyệt. Và đừng lẫn `--font-heading` trỏ về
+  cùng `--font-sans-loaded` (cố ý, xem trên) với lỗi cũ là nó trỏ về đúng font **thân bài** —
+  lúc đó tiêu đề với văn xuôi y hệt nhau.*
 
 - **Màu**: neutral lệch xanh lạnh (hue 258, chroma 0.003–0.02) thay cho `oklch(... 0 0)` phẳng
   tuyệt đối. Bốn màu mảng (sky/emerald/rose/amber) là nơi **duy nhất** được phép rực — chúng

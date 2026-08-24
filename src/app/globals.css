@@ -7,21 +7,26 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  /* Trỏ vào biến do next/font sinh ra. Bản cũ viết `--font-sans: var(--font-sans)` —
-     khai báo tự tham chiếu nên vô hiệu, khiến CẢ trang lẫn khối code rơi về font serif
-     mặc định của trình duyệt. Đó là lý do code trông sai trước đây. */
-  /* Bốn vai trò, bốn font — xem giải thích đầy đủ ở `layout.tsx`.
+  /* Trỏ vào biến do next/font sinh ra. Đừng viết `--font-sans: var(--font-sans)` —
+     khai báo tự tham chiếu nên vô hiệu, và CẢ trang lẫn khối code rơi về font serif
+     mặc định của trình duyệt. */
+  /* BỐN VAI TRÒ, BA HỌ CHỮ (IBM Plex) — xem giải thích đầy đủ ở `layout.tsx`.
 
-     `--font-sans` là vai trò VỎ GIAO DIỆN (Tailwind lấy nó làm mặc định cho cả trang),
-     nên nó trỏ vào Be Vietnam Pro chứ không phải font thân bài. Văn xuôi bài học lấy
-     `--font-body` ở `.note-content`, tiêu đề lấy `--font-heading`.
+     `--font-sans` là vai trò VỎ GIAO DIỆN, và Tailwind lấy nó làm mặc định cho cả
+     trang. Văn xuôi bài học lấy `--font-body` ở `.note-content`, tiêu đề lấy
+     `--font-heading`.
 
-     Ba biến dưới đây đều trỏ vào font RIÊNG. Bản cũ để `--font-heading` trỏ về đúng
-     `--font-sans-loaded` — tự vô hiệu hoá, và là lý do tiêu đề với thân bài không có
-     tương phản nào. */
-  --font-sans: var(--font-ui-loaded), ui-sans-serif, system-ui, sans-serif;
-  --font-body: var(--font-body-loaded), Georgia, "Times New Roman", serif;
-  --font-heading: var(--font-heading-loaded), Georgia, "Times New Roman", serif;
+     `--font-heading` CỐ Ý trỏ về cùng một file font với `--font-sans`: Plex là một
+     superfamily, Display và Utility chia nhau Plex Sans rồi tách nhau bằng độ dày với
+     letter-spacing (xem `.font-heading` bên dưới). Đây không phải lỗi cũ — lỗi cũ là
+     heading trỏ về đúng font THÂN BÀI, nên tiêu đề với văn xuôi y hệt nhau. Ở đây thân
+     bài là Plex Serif, tương phản tiêu đề ↔ thân bài còn nguyên.
+
+     Font dự phòng phải cùng loại với font chính, nếu không thì trong lúc font đang tải
+     chữ nhảy từ serif sang sans (hoặc ngược lại) chứ không chỉ đổi hình dáng. */
+  --font-sans: var(--font-sans-loaded), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-sans-loaded), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-serif-loaded), Georgia, "Times New Roman", serif;
   --font-mono: var(--font-mono-loaded), ui-monospace, SFMono-Regular, Menlo, monospace;
   --color-code: var(--code);
   --color-code-foreground: var(--code-foreground);
@@ -181,12 +186,16 @@
   html {
     @apply font-sans;
   }
-  /* Tiện ích `font-heading` của Tailwind chỉ đặt font-family. Hai trục riêng của
-     Fraunces phải khai ở đây, nếu không thì tiêu đề cấp trang (h1 trang chủ, trang
-     mảng, trang bài học) sẽ là Fraunces "phẳng" còn tiêu đề trong bài lại có SOFT/WONK
-     — cùng một font mà hai giọng khác nhau. */
+  /* Tiện ích `font-heading` của Tailwind chỉ đặt font-family — mà Display với Utility
+     dùng chung Plex Sans, nên nếu dừng ở font-family thì hai vai trò trông y hệt nhau.
+     Phần tách chúng nằm ở đây: sans ở cỡ tiêu đề bị thưa chữ, siết lại thì cụm tiêu đề
+     mới đọc thành MỘT khối thay vì một hàng chữ rời. Vỏ giao diện ở 13–14px thì không
+     được siết — cỡ nhỏ cần thưa mới dễ quét mắt.
+
+     Đặt ở layer base nên tiện ích `tracking-*` (layer utilities, xếp sau) vẫn thắng
+     được ở những chỗ muốn siết mạnh hơn. */
   .font-heading {
-    font-variation-settings: 'SOFT' 25, 'WONK' 1;
+    letter-spacing: -0.02em;
   }
 }
 
@@ -223,7 +232,9 @@
   border: 1px solid var(--code-border);
   border-radius: var(--radius);
   padding: 0;                          /* padding chuyển vào <code>, chừa chỗ cho chrome */
-  font-size: 0.855rem;
+  /* Plex Mono có chiều cao chữ x nhỏ hơn JetBrains Mono, nên ở cùng số px nó trông nhỏ
+     hơn thật. Nhích cỡ lên để khối code vẫn cân với dòng thân bài serif bên cạnh. */
+  font-size: 0.9rem;
   line-height: 1.65;
 }
 
@@ -266,7 +277,7 @@
 /* Code trong câu văn: là một chip nhỏ, không phải chữ trần lệch font. */
 .note-content :not(pre) > code {
   font-family: var(--font-mono);
-  font-size: 0.86em;
+  font-size: 0.91em;                   /* cùng lý do x-height như khối code bên trên */
   font-variant-ligatures: none;
   background-color: var(--code);
   border: 1px solid var(--code-border);
@@ -313,12 +324,10 @@
 .note-content :is(h1, h2, h3, h4) {
   scroll-margin-top: 5.5rem;
   font-family: var(--font-heading);
-  letter-spacing: -0.011em;
-  /* Hai trục riêng của Fraunces, đặt nhẹ tay: SOFT bo đầu nét cho bớt gắt, WONK đổi
-     sang dạng chữ lệch chuẩn ở a/e/g/y. Đủ để tiêu đề có giọng, chưa tới mức thành
-     font trang trí — bài kỹ thuật cần đọc được trước đã. Trục phải được kê tên ở
-     `axes` trong layout.tsx thì mới có mặt trong file font để chỉnh ở đây. */
-  font-variation-settings: 'SOFT' 25, 'WONK' 1;
+  /* Cùng một con số với `.font-heading` để tiêu đề TRONG bài và tiêu đề cấp trang
+     (h1 trang chủ, trang mảng, đầu trang bài học) nói cùng một giọng. HTML này do
+     markdown sinh ra nên không mang class được, phải nhắc lại ở đây. */
+  letter-spacing: -0.02em;
 }
 
 /* Heading cần khoảng nghỉ TRÊN nhiều hơn DƯỚI: khoảng trống phải gắn tiêu đề với phần
