@@ -1,0 +1,378 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  /* Trỏ vào biến do next/font sinh ra. Đừng viết `--font-sans: var(--font-sans)` —
+     khai báo tự tham chiếu nên vô hiệu, và CẢ trang lẫn khối code rơi về font serif
+     mặc định của trình duyệt. */
+  /* BỐN VAI TRÒ, BA HỌ CHỮ (IBM Plex) — xem giải thích đầy đủ ở `layout.tsx`.
+
+     `--font-sans` là vai trò VỎ GIAO DIỆN, và Tailwind lấy nó làm mặc định cho cả
+     trang. Văn xuôi bài học lấy `--font-body` ở `.note-content`, tiêu đề lấy
+     `--font-heading`.
+
+     `--font-heading` CỐ Ý trỏ về cùng một file font với `--font-sans`: Plex là một
+     superfamily, Display và Utility chia nhau Plex Sans rồi tách nhau bằng độ dày với
+     letter-spacing (xem `.font-heading` bên dưới). Đây không phải lỗi cũ — lỗi cũ là
+     heading trỏ về đúng font THÂN BÀI, nên tiêu đề với văn xuôi y hệt nhau. Ở đây thân
+     bài là Plex Serif, tương phản tiêu đề ↔ thân bài còn nguyên.
+
+     Font dự phòng phải cùng loại với font chính, nếu không thì trong lúc font đang tải
+     chữ nhảy từ serif sang sans (hoặc ngược lại) chứ không chỉ đổi hình dáng. */
+  --font-sans: var(--font-sans-loaded), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-sans-loaded), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-serif-loaded), Georgia, "Times New Roman", serif;
+  --font-mono: var(--font-mono-loaded), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --color-code: var(--code);
+  --color-code-foreground: var(--code-foreground);
+  --color-code-border: var(--code-border);
+  --color-code-chrome: var(--code-chrome);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  /* Neutral lệch xanh lạnh (chroma 0.003-0.02) thay cho oklch(... 0 0) phẳng tuyệt đối
+     của bản cũ. Xám không chroma đọc ra "chưa ai chọn màu"; một lượng chroma rất nhỏ
+     cùng hue 258 làm cả giao diện có một thân nhiệt nhất quán mà vẫn không tranh màu
+     với bốn màu mảng (sky/emerald/rose/amber) — nơi DUY NHẤT được phép rực. */
+  --background: oklch(0.988 0.003 258);
+  --foreground: oklch(0.22 0.021 262);
+
+  /* Bề mặt nâng lên: tối hơn nền một bậc thấy được. Bản cũ cho card = background =
+     trắng tuyệt đối nên mọi thẻ đều vô hình, chỉ còn thấy viền. */
+  --card: oklch(0.999 0.002 258);
+  --card-foreground: oklch(0.22 0.021 262);
+  --popover: oklch(0.999 0.002 258);
+  --popover-foreground: oklch(0.22 0.021 262);
+
+  /* Mực chàm, không phải đen: dùng cho nút chính, link, focus ring. */
+  --primary: oklch(0.36 0.086 264);
+  --primary-foreground: oklch(0.985 0.004 258);
+  --secondary: oklch(0.955 0.007 258);
+  --secondary-foreground: oklch(0.28 0.03 262);
+  --muted: oklch(0.958 0.006 258);
+  --muted-foreground: oklch(0.505 0.018 260);
+  --accent: oklch(0.945 0.012 258);
+  --accent-foreground: oklch(0.26 0.035 262);
+  --destructive: oklch(0.55 0.2 25);
+
+  --border: oklch(0.913 0.008 258);
+  --input: oklch(0.9 0.009 258);
+  /* Ring cùng họ với primary: ring xám của bản cũ trông như một lỗi render. */
+  --ring: oklch(0.58 0.11 264);
+
+  /* Bề mặt khối code. Phải KHÁC nền trang thấy rõ — bản cũ để shiki tự đặt nền
+     (github-light = #fff) trùng đúng nền trang, nên khối code không có hình khối nào. */
+  --code: oklch(0.968 0.008 258);
+  --code-foreground: oklch(0.28 0.02 262);
+  --code-border: oklch(0.9 0.01 258);
+  --code-chrome: oklch(0.945 0.011 258);
+
+  --chart-1: oklch(0.62 0.14 250);
+  --chart-2: oklch(0.66 0.13 165);
+  --chart-3: oklch(0.68 0.15 45);
+  --chart-4: oklch(0.6 0.16 20);
+  --chart-5: oklch(0.55 0.12 295);
+  --radius: 0.625rem;
+
+  --sidebar: oklch(0.968 0.006 258);
+  --sidebar-foreground: oklch(0.22 0.021 262);
+  --sidebar-primary: oklch(0.36 0.086 264);
+  --sidebar-primary-foreground: oklch(0.985 0.004 258);
+  --sidebar-accent: oklch(0.94 0.012 258);
+  --sidebar-accent-foreground: oklch(0.26 0.035 262);
+  --sidebar-border: oklch(0.908 0.008 258);
+  --sidebar-ring: oklch(0.58 0.11 264);
+}
+
+.dark {
+  /* Slate nâng lên, không phải đen gần tuyệt đối. Bản cũ dùng oklch(0.145 0 0) — gần đen
+     hoàn toàn — nên (a) chữ trắng trên đó gây loá khi đọc lâu, và (b) không còn chỗ nào
+     TỐI HƠN để đẩy xuống, buộc mọi bề mặt phải sáng lên và khối code thì lẫn vào nền. */
+  --background: oklch(0.196 0.013 258);
+  --foreground: oklch(0.935 0.006 258);
+
+  /* Bề mặt nâng LÊN so với nền — hướng ngược với theme sáng, đúng cách vật thể nổi lên
+     trong bóng tối. */
+  --card: oklch(0.234 0.015 258);
+  --card-foreground: oklch(0.935 0.006 258);
+  --popover: oklch(0.244 0.016 258);
+  --popover-foreground: oklch(0.935 0.006 258);
+
+  --primary: oklch(0.79 0.086 262);
+  --primary-foreground: oklch(0.2 0.03 262);
+  --secondary: oklch(0.268 0.016 258);
+  --secondary-foreground: oklch(0.935 0.006 258);
+  --muted: oklch(0.268 0.016 258);
+  --muted-foreground: oklch(0.7 0.016 258);
+  --accent: oklch(0.298 0.019 258);
+  --accent-foreground: oklch(0.96 0.005 258);
+  --destructive: oklch(0.68 0.17 22);
+
+  /* Viền theo alpha: nó tự hoà theo bề mặt bên dưới, nên cùng một giá trị dùng được
+     cho cả nền trang lẫn thẻ đã nâng lên. */
+  --border: oklch(1 0 0 / 11%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.68 0.1 262);
+
+  --code: oklch(0.243 0.017 258);
+  --code-foreground: oklch(0.9 0.008 258);
+  --code-border: oklch(1 0 0 / 9%);
+  --code-chrome: oklch(0.278 0.019 258);
+
+  --chart-1: oklch(0.7 0.13 250);
+  --chart-2: oklch(0.72 0.12 165);
+  --chart-3: oklch(0.76 0.14 55);
+  --chart-4: oklch(0.68 0.15 20);
+  --chart-5: oklch(0.68 0.12 295);
+
+  --sidebar: oklch(0.222 0.014 258);
+  --sidebar-foreground: oklch(0.935 0.006 258);
+  --sidebar-primary: oklch(0.79 0.086 262);
+  --sidebar-primary-foreground: oklch(0.2 0.03 262);
+  --sidebar-accent: oklch(0.298 0.019 258);
+  --sidebar-accent-foreground: oklch(0.96 0.005 258);
+  --sidebar-border: oklch(1 0 0 / 11%);
+  --sidebar-ring: oklch(0.68 0.1 262);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+  /* Tiện ích `font-heading` của Tailwind chỉ đặt font-family — mà Display với Utility
+     dùng chung Plex Sans, nên nếu dừng ở font-family thì hai vai trò trông y hệt nhau.
+     Phần tách chúng nằm ở đây: sans ở cỡ tiêu đề bị thưa chữ, siết lại thì cụm tiêu đề
+     mới đọc thành MỘT khối thay vì một hàng chữ rời. Vỏ giao diện ở 13–14px thì không
+     được siết — cỡ nhỏ cần thưa mới dễ quét mắt.
+
+     Đặt ở layer base nên tiện ích `tracking-*` (layer utilities, xếp sau) vẫn thắng
+     được ở những chỗ muốn siết mạnh hơn. */
+  .font-heading {
+    letter-spacing: -0.02em;
+  }
+}
+
+@plugin "@tailwindcss/typography";
+
+/* ------------------------------------------------------------------ *
+ * Khối code
+ *
+ * Nguyên tắc: shiki chỉ được quyết định màu CHỮ. Nền, viền và hình khối do token của
+ * app quyết định. Bản cũ để shiki đặt cả nền, mà nền của github-light là #fff và của
+ * github-dark là #24292e — trùng gần khít nền trang ở cả hai theme, nên khối code không
+ * có ranh giới nào và trông như một đoạn văn bị lệch font.
+ * ------------------------------------------------------------------ */
+
+.shiki,
+.shiki span {
+  color: var(--shiki-light);
+}
+
+.dark .shiki,
+.dark .shiki span {
+  color: var(--shiki-dark);
+}
+
+/* Nền do app quyết định, không lấy từ --shiki-*-bg. */
+.note-content pre.shiki {
+  background-color: var(--code);
+}
+
+.note-content pre {
+  position: relative;
+  margin: 1.75rem 0;
+  overflow: hidden;                    /* để bo góc cắt được dải chrome bên trong */
+  border: 1px solid var(--code-border);
+  border-radius: var(--radius);
+  padding: 0;                          /* padding chuyển vào <code>, chừa chỗ cho chrome */
+  /* Plex Mono có chiều cao chữ x nhỏ hơn JetBrains Mono, nên ở cùng số px nó trông nhỏ
+     hơn thật. Nhích cỡ lên để khối code vẫn cân với dòng thân bài serif bên cạnh. */
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
+
+/* Dải chrome: nhãn ngôn ngữ bên trái, nút Chép bên phái. Là một dải THẬT có nền và
+   đường phân cách, không phải hai phần tử trôi nổi đè lên dòng code đầu tiên như trước. */
+.note-content pre > .code-chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  background-color: var(--code-chrome);
+  border-bottom: 1px solid var(--code-border);
+  padding: 0.375rem 0.5rem 0.375rem 0.75rem;
+}
+
+.note-content pre .code-lang {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.note-content pre > code {
+  display: block;
+  overflow-x: auto;                    /* dòng dài cuộn TRONG khối, không đẩy cả trang */
+  padding: 0.9rem 1rem;
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;        /* => != trong code đọc đúng từng ký tự */
+  tab-size: 2;
+}
+
+/* Số dòng cho khối dài: chỉ bật khi thật cần, khối 3 dòng đánh số là nhiễu. */
+.note-content pre > code .line {
+  display: inline-block;
+  width: 100%;
+}
+
+/* Code trong câu văn: là một chip nhỏ, không phải chữ trần lệch font. */
+.note-content :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.91em;                   /* cùng lý do x-height như khối code bên trên */
+  font-variant-ligatures: none;
+  background-color: var(--code);
+  border: 1px solid var(--code-border);
+  border-radius: calc(var(--radius) * 0.45);
+  padding: 0.1em 0.32em;
+  color: var(--code-foreground);
+}
+
+/* prose của Tailwind chèn dấu ` quanh code trong câu — bỏ đi vì đã có chip. */
+.note-content :not(pre) > code::before,
+.note-content :not(pre) > code::after {
+  content: none;
+}
+
+/* ------------------------------------------------------------------ *
+ * Văn xuôi bài học
+ * ------------------------------------------------------------------ */
+
+/* Liên kết chéo sang bài khác: gạch chân mảnh dạng chấm để phân biệt với link ngoài,
+   không đổi màu chữ — trong một đoạn có ba bốn liên kết, tô màu hết thành nhiễu. */
+.note-content a.wiki-link {
+  color: inherit;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--ring);
+  text-underline-offset: 0.2em;
+}
+
+.note-content a.wiki-link:hover {
+  color: var(--primary);
+  text-decoration-style: solid;
+}
+
+/* Topbar sticky cao 3.5rem: tiêu đề nhảy tới từ mục lục phải dừng BÊN DƯỚI nó, nếu
+   không dòng tiêu đề bị header che đúng lúc người đọc cần thấy nó nhất. */
+/* Văn xuôi bài học là chỗ DUY NHẤT dùng font thân bài. Phần còn lại của app (sidebar,
+   nút, nhãn, thẻ bài học) giữ font vỏ giao diện, vì serif ở cỡ chữ nhỏ trong một
+   sidebar 25 mục thì khó quét mắt hơn hẳn. */
+.note-content {
+  font-family: var(--font-body);
+}
+
+.note-content :is(h1, h2, h3, h4) {
+  scroll-margin-top: 5.5rem;
+  font-family: var(--font-heading);
+  /* Cùng một con số với `.font-heading` để tiêu đề TRONG bài và tiêu đề cấp trang
+     (h1 trang chủ, trang mảng, đầu trang bài học) nói cùng một giọng. HTML này do
+     markdown sinh ra nên không mang class được, phải nhắc lại ở đây. */
+  letter-spacing: -0.02em;
+}
+
+/* Heading cần khoảng nghỉ TRÊN nhiều hơn DƯỚI: khoảng trống phải gắn tiêu đề với phần
+   nội dung của nó, không chia đều hai bên (định luật gần kề). */
+.note-content h2 {
+  margin-top: 2.5rem;
+  margin-bottom: 0.85rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.note-content h3 {
+  margin-top: 1.9rem;
+  margin-bottom: 0.6rem;
+}
+
+/* Blockquote "Sau bài này bạn sẽ" mở đầu mọi bài — là mục tiêu học, nên có sức nặng
+   thị giác riêng thay vì kiểu trích dẫn in nghiêng mặc định của prose. */
+.note-content blockquote {
+  font-style: normal;
+  border-left: 3px solid var(--primary);
+  background-color: var(--muted);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 0.85rem 1.1rem;
+  margin: 1.5rem 0;
+}
+
+.note-content blockquote p:first-child { margin-top: 0; }
+.note-content blockquote p:last-child { margin-bottom: 0; }
+.note-content blockquote p::before,
+.note-content blockquote p::after { content: none; }
+
+/* Bảng "Lỗi hay gặp" có ở mọi bài: header cần nền để mắt tách được khỏi thân bảng. */
+.note-content table {
+  display: block;
+  overflow-x: auto;                    /* bảng 3 cột trên mobile cuộn trong chính nó */
+  width: 100%;
+  font-size: 0.9rem;
+}
+
+.note-content thead {
+  background-color: var(--muted);
+}
+
+.note-content :is(th, td) {
+  padding: 0.5rem 0.75rem;
+  vertical-align: top;
+}

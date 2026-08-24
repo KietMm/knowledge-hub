@@ -22,6 +22,10 @@
 - Mọi test dùng thư mục data tạm riêng qua biến môi trường `KH_DATA_DIR` — không test nào chạm `data/` thật.
 - `id` do `nanoid` sinh; `slug` là khoá điều hướng URL. Sửa tiêu đề **không** đổi slug.
 - Xoá có con (Category còn Topic, Topic còn Note) → **từ chối**, không cascade.
+- **shadcn ở bản này sinh component bọc `@base-ui/react`, KHÔNG phải Radix**: không có prop `asChild`.
+  Thay bằng prop `render` khi khớp thẻ (ví dụ `<AlertDialogTrigger render={<Button/>} />`), và với
+  link thì style thẳng thẻ `<a>`: `<Link className={buttonVariants({ variant, size })}>` — bọc Link
+  trong Button sẽ chèn `type="button"` không hợp lệ vào `<a>` và gây console.error ở chế độ dev.
 - Commit sau mỗi task (theo Conventional Commits, message tiếng Việt hoặc tiếng Anh nhất quán trong repo — dùng tiếng Việt cho phần mô tả như commit hiện có).
 
 ## File Structure
@@ -204,7 +208,7 @@ git commit -m "chore: khởi tạo Next.js 15 + Tailwind v4 + vitest"
   - `CategorySchema`, `TopicSchema`, `NoteSchema` (zod objects)
   - `type Category`, `type Topic`, `type Note`
   - `CategoryCreateSchema`, `TopicCreateSchema`, `NoteCreateSchema`, `NoteUpdateSchema`
-  - `type NoteCreateInput = z.infer<typeof NoteCreateSchema>`, `type NoteUpdateInput`
+  - `type NoteCreateInput = z.input<typeof NoteCreateSchema>`, `type NoteUpdateInput`, `type CategoryCreateInput`, `type TopicCreateInput` (dùng `z.input`, không phải `z.infer`)
   - `SlugSchema`, `IsoDateSchema`
   - `ExportBundleSchema` + `type ExportBundle`
 
@@ -367,10 +371,14 @@ export const TopicCreateSchema = TopicSchema.omit({ id: true, slug: true }).exte
   slug: SlugSchema.optional(),
 })
 
-export type NoteCreateInput = z.infer<typeof NoteCreateSchema>
-export type NoteUpdateInput = z.infer<typeof NoteUpdateSchema>
-export type CategoryCreateInput = z.infer<typeof CategoryCreateSchema>
-export type TopicCreateInput = z.infer<typeof TopicCreateSchema>
+/**
+ * Dùng z.input (không phải z.infer): trường có .default() là TUỲ CHỌN với người gọi,
+ * và chỉ chắc chắn có giá trị sau khi schema.parse() chạy bên trong repo.
+ */
+export type NoteCreateInput = z.input<typeof NoteCreateSchema>
+export type NoteUpdateInput = z.input<typeof NoteUpdateSchema>
+export type CategoryCreateInput = z.input<typeof CategoryCreateSchema>
+export type TopicCreateInput = z.input<typeof TopicCreateSchema>
 
 /** Định dạng file backup của /api/export và /api/import. */
 export const ExportBundleSchema = z.object({
@@ -408,9 +416,10 @@ git commit -m "feat(db): zod schema cho Category, Topic, Note"
 - Produces:
   - `class DataFileError extends Error { file: string }`
   - `dataDir(): string` — thư mục dữ liệu, đọc `process.env.KH_DATA_DIR` mỗi lần gọi
-  - `readCollection<T>(file: string, schema: z.ZodType<T>): Promise<T[]>`
-  - `writeCollection<T>(file: string, schema: z.ZodType<T>, items: T[]): Promise<void>`
-  - `mutate<T, R>(file: string, schema: z.ZodType<T>, fn: (items: T[]) => { items: T[]; result: R }): Promise<R>`
+  - `readCollection<T>(file: string, schema: z.ZodType<T, z.ZodTypeDef, unknown>): Promise<T[]>`
+  - `writeCollection<T>(file: string, schema: z.ZodType<T, z.ZodTypeDef, unknown>, items: T[]): Promise<void>`
+  - `mutate<T, R>(file: string, schema: z.ZodType<T, z.ZodTypeDef, unknown>, fn: (items: T[]) => { items: T[]; result: R }): Promise<R>`
+  - Ba tham số kiểu là bắt buộc: `z.ZodType<T>` ép `Input = Output`, nên schema có `.default()` (Note, Category, Topic) sẽ khiến TypeScript suy `T` ra kiểu ĐẦU VÀO và mọi repo đỏ typecheck.
 
 - [ ] **Step 1: Viết test**
 
@@ -579,7 +588,7 @@ function serialize<T>(items: T[]): string {
   return `${JSON.stringify(items, null, 2)}\n`
 }
 
-function validate<T>(file: string, schema: z.ZodType<T>, items: unknown): T[] {
+function validate<T>(file: string, schema: z.ZodType<T, z.ZodTypeDef, unknown>, items: unknown): T[] {
   if (!Array.isArray(items)) {
     throw new DataFileError(file, 'nội dung phải là một mảng JSON')
   }
@@ -597,7 +606,12 @@ function validate<T>(file: string, schema: z.ZodType<T>, items: unknown): T[] {
   return out
 }
 
-export async function readCollection<T>(file: string, schema: z.ZodType<T>): Promise<T[]> {
+export async function readCollection<T>(
+  file: string,
+  // Input = unknown: dữ liệu đọc từ file JSON là chưa biết kiểu, schema mới là thứ dựng ra T.
+  // Viết z.ZodType<T> sẽ ép Input = Output, khiến schema có .default() suy T ra kiểu đầu vào.
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+): Promise<T[]> {
   let raw: string
   try {
     raw = await fs.readFile(fullPath(file), 'utf8')
@@ -622,7 +636,7 @@ export async function readCollection<T>(file: string, schema: z.ZodType<T>): Pro
 
 export async function writeCollection<T>(
   file: string,
-  schema: z.ZodType<T>,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   items: T[],
 ): Promise<void> {
   // Validate TRƯỚC khi đụng vào file: sai schema thì file cũ còn nguyên.
@@ -636,7 +650,7 @@ export async function writeCollection<T>(
  */
 export function mutate<T, R>(
   file: string,
-  schema: z.ZodType<T>,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   fn: (items: T[]) => { items: T[]; result: R },
 ): Promise<R> {
   return enqueue(async () => {
@@ -1065,9 +1079,17 @@ export async function update(id: string, patch: NoteUpdateInput): Promise<Note> 
             notes.filter((n) => n.id !== id).map((n) => n.slug),
           )
 
+    // Dựng theo từng trường thay vì spread `...data`: nếu caller truyền key có mặt nhưng
+    // giá trị `undefined` (rất hay gặp: `{ summary: body.summary }`), spread sẽ ghi đè
+    // dữ liệu cũ bằng `undefined`, rồi zod lặng lẽ thay bằng giá trị `.default()` — mất dữ liệu.
     const updated: Note = {
       ...current,
-      ...data,
+      topicId: data.topicId ?? current.topicId,
+      title: data.title ?? current.title,
+      summary: data.summary ?? current.summary,
+      content: data.content ?? current.content,
+      tags: data.tags ?? current.tags,
+      starred: data.starred ?? current.starred,
       slug,
       updatedAt: new Date().toISOString(),
     }
@@ -1273,7 +1295,15 @@ export async function update(id: string, patch: Partial<TopicCreateInput>): Prom
         ? current.slug
         : uniqueSlug(data.slug, topics.filter((t) => t.id !== id).map((t) => t.slug))
 
-    const updated: Topic = { ...current, ...data, slug }
+    // Theo từng trường, không spread `...data` — xem ghi chú ở notes.repo.update().
+    const updated: Topic = {
+      ...current,
+      categoryId: data.categoryId ?? current.categoryId,
+      name: data.name ?? current.name,
+      description: data.description ?? current.description,
+      order: data.order ?? current.order,
+      slug,
+    }
     const items = [...topics]
     items[index] = updated
     return { items, result: updated }
@@ -1429,7 +1459,16 @@ export async function update(id: string, patch: Partial<CategoryCreateInput>): P
         ? current.slug
         : uniqueSlug(data.slug, categories.filter((c) => c.id !== id).map((c) => c.slug))
 
-    const updated: Category = { ...current, ...data, slug }
+    // Theo từng trường, không spread `...data` — xem ghi chú ở notes.repo.update().
+    const updated: Category = {
+      ...current,
+      name: data.name ?? current.name,
+      description: data.description ?? current.description,
+      icon: data.icon ?? current.icon,
+      color: data.color ?? current.color,
+      order: data.order ?? current.order,
+      slug,
+    }
     const items = [...categories]
     items[index] = updated
     return { items, result: updated }
@@ -2024,7 +2063,7 @@ export const SEED_TOPICS: Topic[] = [
 
 - [ ] **Step 4: Thêm 3 ghi chú mẫu vào cuối `seed-data.ts`**
 
-Ba note này là **chuẩn văn phong** cho 21 note còn lại ở Task 10: mở đầu một câu nêu vấn đề, có heading `##`, có code block chạy được, kết bằng phần "Ghi nhớ".
+Ba note này là **chuẩn văn phong** cho 23 note còn lại ở Task 10: mở đầu một câu nêu vấn đề, có heading `##`, có code block chạy được, kết bằng phần "Ghi nhớ".
 
 ```ts
 export const SEED_NOTES: Note[] = [
@@ -2257,7 +2296,7 @@ git commit -m "feat(db): seed 4 mảng, 8 công nghệ và 3 ghi chú mẫu"
 
 ---
 
-### Task 10: Viết nốt 21 ghi chú seed
+### Task 10: Viết nốt 23 ghi chú seed
 
 **Files:**
 - Modify: `src/lib/db/seed-data.ts` (thêm phần tử vào `SEED_NOTES`)
@@ -2265,7 +2304,7 @@ git commit -m "feat(db): seed 4 mảng, 8 công nghệ và 3 ghi chú mẫu"
 
 **Interfaces:**
 - Consumes: `SEED_NOTES` từ Task 9. Không thêm export mới.
-- Produces: `SEED_NOTES` có đúng 24 phần tử.
+- Produces: `SEED_NOTES` có đúng 26 phần tử (3 từ Task 9 + 23 ở đây).
 
 **Chuẩn cho từng ghi chú** (test ở Task 9 đã ép các mức tối thiểu — đây là yêu cầu chất lượng đầy đủ):
 - `id`: `note-<slug>`; `slug`: slug hoá tiêu đề không dấu; `createdAt`/`updatedAt`: `NOW`.
@@ -2304,7 +2343,7 @@ git commit -m "feat(db): seed 4 mảng, 8 công nghệ và 3 ghi chú mẫu"
 | `topic-cicd` | Cache dependency trong CI | Cache pnpm store để job không cài lại toàn bộ package mỗi lần chạy. | `ci-cd`, `cache` |
 | `topic-cicd` | Secret trong GitHub Actions | Cách truyền khoá vào workflow an toàn và những chỗ secret dễ bị lộ. | `ci-cd`, `secret` |
 
-- [ ] **Step 1: Viết 8 ghi chú đầu (Dev + SQL)**
+- [ ] **Step 1: Viết 9 ghi chú đầu (Dev + SQL)**
 
 Thêm vào `SEED_NOTES` theo đúng thứ tự trong bảng, theo đúng chuẩn ở trên và văn phong của 3 note mẫu ở Task 9.
 
@@ -2319,14 +2358,14 @@ Expected: PASS (test tính toàn vẹn bắt ngay id/slug trùng và nội dung 
 
 Run: `pnpm test tests/lib/db/seed.test.ts` → PASS.
 
-- [ ] **Step 5: Viết 7 ghi chú cuối (Docker + CI/CD)**
+- [ ] **Step 5: Viết 6 ghi chú cuối (Docker + CI/CD)**
 
 - [ ] **Step 6: Kiểm tra đủ số lượng**
 
 Thêm test vào `tests/lib/db/seed.test.ts`:
 ```ts
-it('có đủ 24 ghi chú trải khắp 8 công nghệ', () => {
-  expect(SEED_NOTES).toHaveLength(24)
+it('có đủ 26 ghi chú trải khắp 8 công nghệ', () => {
+  expect(SEED_NOTES).toHaveLength(26)
   const topicIds = new Set(SEED_NOTES.map((n) => n.topicId))
   expect(topicIds.size).toBe(SEED_TOPICS.length)
 })
@@ -2344,7 +2383,7 @@ Expected: in ra "Đã nạp dữ liệu mẫu vào data/".
 
 ```bash
 git add src/lib/db/seed-data.ts tests/lib/db/seed.test.ts data
-git commit -m "feat(db): viết đủ 24 ghi chú seed"
+git commit -m "feat(db): viết đủ 26 ghi chú seed"
 ```
 
 ---
@@ -3043,20 +3082,20 @@ export default async function TopicPage({ params }: { params: Promise<{ topic: s
           <h1 className="text-2xl font-semibold">{topic.name}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{topic.description}</p>
         </div>
-        <Button asChild>
-          <Link href={`/n/new?topic=${topic.slug}`}>
-            <Plus className="mr-1 h-4 w-4" />
-            Thêm ghi chú
-          </Link>
-        </Button>
+        {/* base-ui: KHÔNG bọc Link trong Button (Button ép ngữ nghĩa <button> và chèn
+            type="button" vào thẻ <a>). Style thẳng thẻ <a> bằng buttonVariants. */}
+        <Link href={`/n/new?topic=${topic.slug}`} className={buttonVariants()}>
+          <Plus className="mr-1 h-4 w-4" />
+          Thêm ghi chú
+        </Link>
       </div>
 
       {notes.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center">
           <p className="text-sm text-muted-foreground">Chưa có ghi chú nào trong {topic.name}.</p>
-          <Button asChild variant="link">
-            <Link href={`/n/new?topic=${topic.slug}`}>Viết ghi chú đầu tiên</Link>
-          </Button>
+          <Link href={`/n/new?topic=${topic.slug}`} className={buttonVariants({ variant: 'link' })}>
+            Viết ghi chú đầu tiên
+          </Link>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -3118,9 +3157,12 @@ export default async function NotePage({ params }: { params: Promise<{ note: str
             </span>
           </div>
           {/* Nút ghim, Sửa, Xoá được lắp ở Task 14 khi đã có Server Actions. */}
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/n/${note.slug}/edit`}>Sửa</Link>
-          </Button>
+          <Link
+            href={`/n/${note.slug}/edit`}
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+          >
+            Sửa
+          </Link>
         </header>
 
         <NoteContent html={html} />
@@ -3146,9 +3188,9 @@ export default function NotFound() {
       <p className="text-sm text-muted-foreground">
         Đường dẫn có thể đã đổi hoặc ghi chú đã bị xoá.
       </p>
-      <Button asChild>
-        <Link href="/">Về trang chủ</Link>
-      </Button>
+      <Link href="/" className={buttonVariants()}>
+        Về trang chủ
+      </Link>
     </div>
   )
 }
@@ -3959,9 +4001,9 @@ export function DeleteNoteButton({ noteId, title }: { noteId: string; title: str
 
   return (
     <AlertDialog>
-      <AlertDialogTrigger asChild>
-        <Button variant="outline" size="sm">Xoá</Button>
-      </AlertDialogTrigger>
+      {/* base-ui dùng prop `render`, không có `asChild`. Ở đây khớp thẻ (<button> -> <button>)
+          nên bọc Button qua `render` là đúng cách. */}
+      <AlertDialogTrigger render={<Button variant="outline" size="sm">Xoá</Button>} />
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Xoá ghi chú "{title}"?</AlertDialogTitle>
@@ -4058,9 +4100,12 @@ Trong `src/app/n/[note]/page.tsx`, thay khối chỉ có nút "Sửa" bằng:
 ```tsx
 <div className="flex gap-2">
   <StarButton noteId={note.id} starred={note.starred} />
-  <Button asChild variant="outline" size="sm">
-    <Link href={`/n/${note.slug}/edit`}>Sửa</Link>
-  </Button>
+  <Link
+    href={`/n/${note.slug}/edit`}
+    className={buttonVariants({ variant: 'outline', size: 'sm' })}
+  >
+    Sửa
+  </Link>
   <DeleteNoteButton noteId={note.id} title={note.title} />
 </div>
 ```
@@ -4348,11 +4393,13 @@ export function SidebarShell({ children }: { children: ReactNode }) {
       {/* Mobile: nút hamburger nổi ở góc trái topbar */}
       <div className="fixed left-3 top-3 z-50 lg:hidden">
         <Sheet>
-          <SheetTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label="Mở danh mục">
-              <Menu className="h-5 w-5" />
-            </Button>
-          </SheetTrigger>
+          <SheetTrigger
+            render={
+              <Button variant="ghost" size="icon" aria-label="Mở danh mục">
+                <Menu className="h-5 w-5" />
+              </Button>
+            }
+          />
           <SheetContent side="left" className="w-[280px] p-0">
             <SheetTitle className="sr-only">Danh mục kiến thức</SheetTitle>
             {children}
@@ -4522,3 +4569,35 @@ git commit -m "polish: mobile sheet, phím tắt, trạng thái tải, README"
 
 **Hai điểm lệch spec đã ghi rõ lý do ngay tại task:** render markdown bằng pipeline `unified`
 thay vì `react-markdown` (Task 8), và breadcrumb đặt ở đầu mỗi trang thay vì trong topbar (Task 11).
+
+## Ba mục spec bị bỏ sót khi lập plan (ghi lại sau vòng review toàn nhánh, 2026-08-17)
+
+Khác với hai điểm lệch ở trên, ba mục dưới đây **không phải quyết định thiết kế** — chúng
+rơi mất ngay từ khâu lập plan này (không task nào nhắc tới), nên không task nào triển khai
+và không review từng task nào bắt được. Ghi lại ở đây cho trung thực.
+
+Mục 1 và 2 đã được làm bù ở một task riêng sau vòng review (2026-08-18), trước khi bàn
+giao; mục 3 **vẫn cố tình chưa làm**, để lại cho một plan sau nếu được quyết định làm.
+
+1. ~~**Lọc theo tag ở `/t/[topic]`**~~ (spec §6, dòng "lọc theo tag" trong mô tả trang). Plan
+   không có task nào tạo UI lọc theo tag trên trang công nghệ — bảng "Đối chiếu với spec"
+   ở trên gán mục 6 cho Task 12/14 nhưng cả hai task đó chỉ dựng trang và form, không có
+   bộ lọc tag. **Đã làm bù**: `src/lib/tags.ts` (`collectTagCounts`, `filterByTag` — hàm
+   thuần, có test ở `tests/lib/tags.test.ts`) và `src/app/t/[topic]/page.tsx` đọc
+   `searchParams` (`?tag=`) để lọc, dùng `<Link>` thay vì state phía client nên trang vẫn
+   là Server Component thuần; tag rác trên URL không gọi `notFound()` mà hiện trạng thái
+   rỗng có link bỏ lọc.
+2. ~~**Màu accent của mảng**~~ (spec §7.1: "Cấp 1 là mảng (có icon + màu accent)"). Trường
+   `Category.color` có trong schema (`src/lib/db/schema.ts`), được validate, và được seed
+   với các giá trị `sky/emerald/rose/amber` (`src/lib/db/seed-data.ts`) — nhưng không task
+   nào giao cho component nào đọc `.color` để tô màu. **Đã làm bù**: `src/lib/category-color.ts`
+   map `color` qua bảng trắng class Tailwind cố định (có test ở
+   `tests/lib/category-color.test.ts`, bao gồm ca màu lạ), dùng ở `SidebarTree` (icon mảng)
+   và `src/app/page.tsx` (thẻ mảng trên dashboard) dưới dạng chip nhỏ quanh icon.
+3. **`src/lib/actions/topic.actions.ts`** có tên trong bảng "File Structure" ở đầu plan này
+   nhưng không task nào tạo file đó. Hệ quả: `categoriesRepo.create/update/remove` và
+   `topicsRepo.create/update/remove` (đã viết, đã test) không có Server Action nào gọi tới
+   ngoài test; không có UI nào để thêm/sửa/xoá mảng hoặc công nghệ; `ConflictError` của hai
+   repo này không bao giờ tới được UI. Cách duy nhất để thêm mảng/công nghệ mới hiện nay là
+   sửa tay `data/categories.json` / `data/topics.json`. **Vẫn cố tình chưa làm** (xem
+   README mục "Chưa có trong bản này").

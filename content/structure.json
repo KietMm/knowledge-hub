@@ -1,0 +1,234 @@
+{
+  "categories": [
+    {
+      "id": "cat-nen-tang",
+      "name": "Nền tảng",
+      "slug": "nen-tang",
+      "description": "Logic nằm dưới mọi ngôn ngữ: đổi từ Python sang Go thì cú pháp mất, phần này ở lại.",
+      "icon": "Blocks",
+      "color": "lime",
+      "topics": [
+        {
+          "id": "topic-tu-duy-lap-trinh",
+          "name": "Tư duy lập trình",
+          "slug": "tu-duy-lap-trinh",
+          "description": "Trạng thái, hàm, đệ quy và ba lối viết — mô hình trong đầu bạn trước khi gõ dòng nào."
+        },
+        {
+          "id": "topic-cau-truc-du-lieu",
+          "name": "Cấu trúc dữ liệu và độ phức tạp",
+          "slug": "cau-truc-du-lieu-va-do-phuc-tap",
+          "description": "Chọn đúng chỗ chứa dữ liệu, và đọc được cái giá của một vòng lặp lồng nhau."
+        },
+        {
+          "id": "topic-nguyen-ly-thiet-ke-code",
+          "name": "Nguyên lý thiết kế code",
+          "slug": "nguyen-ly-thiet-ke-code",
+          "description": "OOP, SOLID và mẫu thiết kế — giải thích bằng code thật, kể cả lúc chúng mâu thuẫn nhau."
+        }
+      ]
+    },
+    {
+      "id": "cat-dev",
+      "name": "Lập trình",
+      "slug": "dev",
+      "description": "Ngôn ngữ, framework và công cụ để viết ứng dụng.",
+      "icon": "Code2",
+      "color": "sky",
+      "topics": [
+        {
+          "id": "topic-typescript",
+          "name": "JavaScript / TypeScript",
+          "slug": "javascript-typescript",
+          "description": "Nền tảng của cả frontend lẫn Node.js: kiểu dữ liệu, bất đồng bộ, module và hệ thống kiểu."
+        },
+        {
+          "id": "topic-react",
+          "name": "React",
+          "slug": "react",
+          "description": "Tư duy khai báo, state, hook và các bẫy render thường gặp."
+        },
+        {
+          "id": "topic-nextjs",
+          "name": "Next.js",
+          "slug": "nextjs",
+          "description": "App Router, Server Components, Server Actions và tầng cache bốn lớp."
+        },
+        {
+          "id": "topic-python",
+          "name": "Python",
+          "slug": "python",
+          "description": "Cú pháp, môi trường ảo, kiểu tĩnh và cách viết script gọn."
+        },
+        {
+          "id": "topic-git",
+          "name": "Git",
+          "slug": "git",
+          "description": "Mô hình ba vùng, nhánh, rebase và cách gỡ khi lỡ tay."
+        },
+        {
+          "id": "topic-http-api",
+          "name": "HTTP & REST API",
+          "slug": "http-va-rest-api",
+          "description": "Mã trạng thái, phương thức, thiết kế endpoint, idempotency và phân trang."
+        },
+        {
+          "id": "topic-testing",
+          "name": "Kiểm thử",
+          "slug": "kiem-thu",
+          "description": "Test cái gì và đừng test cái gì, test double, và kim tự tháp kiểm thử."
+        }
+      ]
+    },
+    {
+      "id": "cat-database",
+      "name": "Cơ sở dữ liệu",
+      "slug": "database",
+      "description": "Thiết kế, truy vấn và tối ưu dữ liệu.",
+      "icon": "Database",
+      "color": "emerald",
+      "topics": [
+        {
+          "id": "topic-sql",
+          "name": "SQL cơ bản",
+          "slug": "sql-co-ban",
+          "description": "Truy vấn nền tảng dùng được ở mọi hệ quản trị: SELECT, JOIN, GROUP BY, transaction."
+        },
+        {
+          "id": "topic-db-design",
+          "name": "Thiết kế cơ sở dữ liệu",
+          "slug": "thiet-ke-co-so-du-lieu",
+          "description": "Từ yêu cầu nghiệp vụ tới bảng: khoá, quan hệ, chuẩn hoá và ràng buộc."
+        },
+        {
+          "id": "topic-postgresql",
+          "name": "PostgreSQL",
+          "slug": "postgresql",
+          "description": "Index, kế hoạch thực thi, kiểu dữ liệu và các tính năng riêng của Postgres."
+        }
+      ]
+    },
+    {
+      "id": "cat-security",
+      "name": "Bảo mật",
+      "slug": "security",
+      "description": "Lỗ hổng thường gặp và cách phòng tránh khi viết ứng dụng web.",
+      "icon": "ShieldCheck",
+      "color": "rose",
+      "topics": [
+        {
+          "id": "topic-owasp",
+          "name": "OWASP Top 10",
+          "slug": "owasp-top-10",
+          "description": "Mười nhóm lỗ hổng phổ biến nhất của ứng dụng web, kèm cách sửa."
+        },
+        {
+          "id": "topic-auth",
+          "name": "Xác thực & Phân quyền",
+          "slug": "xac-thuc-phan-quyen",
+          "description": "Mật khẩu, phiên đăng nhập, JWT, OAuth và cách kiểm soát quyền truy cập."
+        }
+      ]
+    },
+    {
+      "id": "cat-devops",
+      "name": "DevOps",
+      "slug": "devops",
+      "description": "Đóng gói, triển khai, tự động hoá và vận hành.",
+      "icon": "Server",
+      "color": "amber",
+      "topics": [
+        {
+          "id": "topic-linux",
+          "name": "Linux & Shell",
+          "slug": "linux-va-shell",
+          "description": "Hệ thống file, tiến trình, quyền và bộ công cụ dòng lệnh dùng hằng ngày."
+        },
+        {
+          "id": "topic-docker",
+          "name": "Docker",
+          "slug": "docker",
+          "description": "Image, container, volume, network và cách viết Dockerfile gọn nhẹ."
+        },
+        {
+          "id": "topic-cicd",
+          "name": "CI/CD (GitHub Actions)",
+          "slug": "ci-cd-github-actions",
+          "description": "Tự động kiểm thử và triển khai mỗi lần push, an toàn với secret."
+        },
+        {
+          "id": "topic-deploy",
+          "name": "Nginx & Triển khai",
+          "slug": "nginx-va-trien-khai",
+          "description": "Reverse proxy, HTTPS, biến môi trường và theo dõi ứng dụng chạy thật."
+        }
+      ]
+    },
+    {
+      "id": "cat-architecture",
+      "name": "Kiến trúc",
+      "slug": "kien-truc",
+      "description": "Thiết kế hệ thống chịu tải, chịu lỗi, và còn sửa được sau ba năm.",
+      "icon": "Network",
+      "color": "violet",
+      "topics": [
+        {
+          "id": "topic-system-design",
+          "name": "Thiết kế hệ thống",
+          "slug": "thiet-ke-he-thong",
+          "description": "Ước lượng tải, tìm điểm nghẽn, mở rộng, cache và hàng đợi."
+        },
+        {
+          "id": "topic-distributed",
+          "name": "Hệ thống phân tán",
+          "slug": "he-thong-phan-tan",
+          "description": "Chịu lỗi, dữ liệu ở quy mô, và ranh giới service."
+        }
+      ]
+    },
+    {
+      "id": "cat-operations",
+      "name": "Vận hành",
+      "slug": "van-hanh",
+      "description": "Biết hệ thống đang sống thế nào, và xử lý khi nó không sống.",
+      "icon": "Activity",
+      "color": "cyan",
+      "topics": [
+        {
+          "id": "topic-observability",
+          "name": "Quan sát và độ tin cậy",
+          "slug": "quan-sat-va-do-tin-cay",
+          "description": "Log, metric, trace, SLO, error budget, và xử lý sự cố."
+        },
+        {
+          "id": "topic-delivery",
+          "name": "Triển khai và hiệu năng",
+          "slug": "trien-khai-va-hieu-nang",
+          "description": "Canary, feature flag, profiling, kiểm thử tải và chi phí hạ tầng."
+        }
+      ]
+    },
+    {
+      "id": "cat-leadership",
+      "name": "Dẫn dắt kỹ thuật",
+      "slug": "dan-dat-ky-thuat",
+      "description": "Phần việc của tech lead mà trình biên dịch không kiểm được.",
+      "icon": "Users",
+      "color": "fuchsia",
+      "topics": [
+        {
+          "id": "topic-decisions",
+          "name": "Quyết định và chất lượng",
+          "slug": "quyet-dinh-va-chat-luong",
+          "description": "ADR, review code như hành động dạy, và nợ kỹ thuật."
+        },
+        {
+          "id": "topic-people",
+          "name": "Làm việc với người",
+          "slug": "lam-viec-voi-nguoi",
+          "description": "Ước lượng, cắt phạm vi, giao tiếp, uỷ quyền và onboarding."
+        }
+      ]
+    }
+  ]
+}
