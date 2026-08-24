@@ -105,6 +105,12 @@
           "name": "PostgreSQL",
           "slug": "postgresql",
           "description": "Index, kế hoạch thực thi, kiểu dữ liệu và các tính năng riêng của Postgres."
+        },
+        {
+          "id": "topic-mongodb",
+          "name": "MongoDB & NoSQL",
+          "slug": "mongodb",
+          "description": "Mô hình document, thiết kế lồng nhau hay tham chiếu, index, aggregation và vận hành replica set."
         }
       ]
     },
