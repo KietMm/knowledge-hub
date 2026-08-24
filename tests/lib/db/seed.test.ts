@@ -4,6 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as categoriesRepo from '@/lib/db/categories.repo'
 import * as notesRepo from '@/lib/db/notes.repo'
+import { getLevelRank } from '@/lib/level'
 import { SEED_CATEGORIES, SEED_NOTES, SEED_TOPICS } from '@/lib/db/seed-data'
 import { seedIfEmpty } from '@/lib/db/seed'
 import * as topicsRepo from '@/lib/db/topics.repo'
@@ -54,10 +55,48 @@ describe('tính toàn vẹn của dữ liệu seed', () => {
     }
   })
 
-  it('có đủ 26 ghi chú trải khắp 8 công nghệ', () => {
-    expect(SEED_NOTES).toHaveLength(26)
-    const topicIds = new Set(SEED_NOTES.map((n) => n.topicId))
-    expect(topicIds.size).toBe(SEED_TOPICS.length)
+  it('mọi công nghệ đều có bài học, không công nghệ nào rỗng', () => {
+    // Không khẳng định một con số tổng cố định: giáo trình còn được bổ sung, và một
+    // con số cứng sẽ hỏng ở mỗi lần thêm bài mà không nói lên điều gì về chất lượng.
+    // Điều đáng bảo vệ là: không có công nghệ nào rỗng trơn khi mở ra.
+    const soBai = new Map<string, number>()
+    for (const note of SEED_NOTES) {
+      soBai.set(note.topicId, (soBai.get(note.topicId) ?? 0) + 1)
+    }
+    for (const topic of SEED_TOPICS) {
+      expect(soBai.get(topic.id) ?? 0, `công nghệ rỗng: ${topic.slug}`).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it('thứ tự bài trong mỗi công nghệ liền mạch từ 1', () => {
+    // Lỗ trong thứ tự (1,2,4) nghĩa là một file bài học bị xoá mà không đánh số lại —
+    // người học sẽ thấy "Bài 3/8" nhảy sang "Bài 5/8" ở phần điều hướng.
+    for (const topic of SEED_TOPICS) {
+      const orders = SEED_NOTES.filter((n) => n.topicId === topic.id)
+        .map((n) => n.order)
+        .sort((a, b) => a - b)
+      expect(orders, `thứ tự không liền mạch: ${topic.slug}`).toEqual(
+        orders.map((_, index) => index + 1),
+      )
+    }
+  })
+
+  it('độ khó trong mỗi công nghệ tăng dần, không nhảy ngược', () => {
+    // Đây là ràng buộc làm nên "lộ trình": một bài cơ bản nằm sau bài nâng cao nghĩa
+    // là thứ tự sai, chứ không phải một cách trình bày khác. Không đòi bài đầu phải
+    // luôn là cơ bản — có công nghệ (vd triển khai) mặc định giả thiết người đọc đã
+    // qua phần nền tảng ở công nghệ khác.
+    for (const topic of SEED_TOPICS) {
+      const ranks = SEED_NOTES.filter((n) => n.topicId === topic.id)
+        .sort((a, b) => a.order - b.order)
+        .map((n) => getLevelRank(n.level))
+      for (let i = 1; i < ranks.length; i += 1) {
+        expect(
+          ranks[i] ?? 0,
+          `${topic.slug}: bài ${i + 1} dễ hơn bài ${i} (${ranks.join(',')})`,
+        ).toBeGreaterThanOrEqual(ranks[i - 1] ?? 0)
+      }
+    }
   })
 })
 

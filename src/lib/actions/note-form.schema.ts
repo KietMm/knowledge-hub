@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { SlugSchema } from '@/lib/db/schema'
+import { NoteLevelSchema, SlugSchema } from '@/lib/db/schema'
 
 /**
  * Schema của form: dùng chung cho client (react-hook-form) và server (kiểm tra lại).
@@ -17,6 +17,7 @@ export const NoteFormSchema = z.object({
   summary: z.string().trim().max(300, 'Tóm tắt nên dưới 300 ký tự').default(''),
   content: z.string().default(''),
   tags: z.array(z.string().trim().min(1)).default([]),
+  level: NoteLevelSchema.default('co-ban'),
 })
 
 export type NoteFormValues = z.infer<typeof NoteFormSchema>

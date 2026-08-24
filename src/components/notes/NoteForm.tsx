@@ -23,8 +23,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { createNoteAction, updateNoteAction } from '@/lib/actions/note.actions'
 import { NoteFormSchema, isNoteFormField, type NoteFormValues } from '@/lib/actions/note-form.schema'
-import type { Note, Topic } from '@/lib/db/schema'
+import type { Note, NoteLevel, Topic } from '@/lib/db/schema'
+import { getLevelLabel, NOTE_LEVELS } from '@/lib/level'
 import { slugify } from '@/lib/slug'
+import { nhanTag } from '@/lib/tag-label'
 
 export function NoteForm({
   topics,
@@ -47,6 +49,7 @@ export function NoteForm({
       summary: note?.summary ?? '',
       content: note?.content ?? '',
       tags: note?.tags ?? [],
+      level: note?.level ?? 'co-ban',
     },
   })
 
@@ -83,7 +86,7 @@ export function NoteForm({
       return
     }
 
-    toast.success(note === undefined ? 'Đã tạo ghi chú' : 'Đã lưu thay đổi')
+    toast.success(note === undefined ? 'Đã tạo bài học' : 'Đã lưu thay đổi')
     router.push(`/n/${result.data.slug}`)
   })
 
@@ -145,6 +148,35 @@ export function NoteForm({
       </div>
 
       <div className="space-y-1.5">
+        <Label htmlFor="level">Cấp độ</Label>
+        <Select
+          value={values.level}
+          onValueChange={(v) => {
+            // base-ui trả về string | null; chỉ nhận giá trị nằm trong enum cấp độ.
+            if (v !== null && isNoteLevel(v)) setValue('level', v, { shouldDirty: true })
+          }}
+        >
+          <SelectTrigger id="level">
+            <SelectValue>
+              {(value: string | null) =>
+                value !== null && isNoteLevel(value) ? getLevelLabel(value) : 'Chọn cấp độ'
+              }
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {NOTE_LEVELS.map((level) => (
+              <SelectItem key={level} value={level}>
+                {getLevelLabel(level)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Dùng để sắp bài vào lộ trình học của công nghệ.
+        </p>
+      </div>
+
+      <div className="space-y-1.5">
         <Label htmlFor="title">Tiêu đề</Label>
         <Input id="title" {...register('title')} />
         <FieldError message={formState.errors.title?.message} />
@@ -154,7 +186,7 @@ export function NoteForm({
         <Label htmlFor="slug">Slug (đường dẫn)</Label>
         <Input id="slug" {...register('slug')} />
         <p className="text-xs text-muted-foreground">
-          Đổi slug sẽ làm hỏng các link cũ tới ghi chú này.
+          Đổi slug sẽ làm hỏng các link cũ tới bài học này.
         </p>
         <FieldError message={formState.errors.slug?.message} />
       </div>
@@ -166,15 +198,18 @@ export function NoteForm({
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="tag-input">Tags</Label>
+        <Label htmlFor="tag-input">Thẻ</Label>
         <div className="flex flex-wrap gap-1">
           {values.tags.map((tag) => (
-            <Badge key={tag} variant="secondary" className="gap-1">
-              {tag}
+            <Badge key={tag} variant="secondary" title={tag} className="gap-0.5 pr-0.5">
+              {nhanTag(tag)}
+              {/* Vùng bấm 28px quanh icon 12px: nút 12×12 gần như không bấm được bằng
+                  ngón tay. `-my-1` giữ chiều cao badge không phình ra. */}
               <button
                 type="button"
-                aria-label={`Bỏ tag ${tag}`}
+                aria-label={`Bỏ thẻ ${nhanTag(tag)}`}
                 onClick={() => setValue('tags', values.tags.filter((t) => t !== tag), { shouldDirty: true })}
+                className="-my-1 inline-flex h-7 w-7 items-center justify-center rounded-full outline-none hover:bg-foreground/10 focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -216,6 +251,11 @@ export function NoteForm({
       </div>
     </form>
   )
+}
+
+/** Thu hẹp string (giá trị base-ui trả về) về NoteLevel mà không phải ép kiểu. */
+function isNoteLevel(value: string): value is NoteLevel {
+  return (NOTE_LEVELS as readonly string[]).includes(value)
 }
 
 function FieldError({ message }: { message?: string }) {

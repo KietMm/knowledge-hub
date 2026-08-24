@@ -6,3 +6,5 @@ settings.local.json
 coverage/
 *.tsbuildinfo
 .superpowers/
+.vercel
+.env*

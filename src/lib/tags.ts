@@ -27,3 +27,21 @@ export function filterByTag<T extends Taggable>(items: T[], tag: string | null):
   if (tag === null) return items
   return items.filter((item) => item.tags.includes(tag))
 }
+
+/**
+ * Giữ lại những tag đáng để lọc.
+ *
+ * Tag chỉ xuất hiện ở đúng một bài không phải bộ lọc: bấm vào nó cho ra một bài mà
+ * người dùng đang nhìn thấy ngay trên màn hình. Với công nghệ có mười mấy tag lẻ, dãy
+ * chip đó đẩy chính danh sách bài học xuống dưới màn hình — trên điện thoại là năm
+ * dòng chip trước khi thấy bài đầu tiên. Tìm theo tag lẻ đã có sẵn ở ⌘K.
+ *
+ * Tag đang được chọn luôn được giữ lại, kể cả khi chỉ có một bài: nếu bỏ nó đi thì
+ * người dùng vào bằng link có sẵn sẽ thấy danh sách đã lọc mà không có chip nào sáng.
+ */
+export function usefulTags(counts: TagCount[], selected: string | null, minCount = 2): TagCount[] {
+  const kept = counts.filter((c) => c.count >= minCount || c.tag === selected)
+  // Chỉ còn đúng một tag mà mọi bài đều mang thì nó không chia được gì — bỏ luôn cả dãy.
+  return kept.length === 1 && kept[0]?.tag !== selected ? [] : kept
+}
+

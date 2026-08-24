@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { NoteSchema, NoteCreateSchema, SlugSchema } from '@/lib/db/schema'
 
+// Cố tình KHÔNG có order/level: đây là hình dạng note ghi trước khi hai trường đó tồn tại.
+// Test dưới khẳng định dữ liệu cũ vẫn parse được nhờ .default(), không cần migration.
 const validNote = {
   id: 'n1',
   topicId: 't1',
@@ -27,8 +29,16 @@ describe('SlugSchema', () => {
 })
 
 describe('NoteSchema', () => {
-  it('nhận note hợp lệ', () => {
-    expect(NoteSchema.parse(validNote)).toEqual(validNote)
+  it('nhận note hợp lệ và tự điền order/level cho dữ liệu cũ', () => {
+    expect(NoteSchema.parse(validNote)).toEqual({ ...validNote, order: 0, level: 'co-ban' })
+  })
+
+  it('từ chối cấp độ lạ', () => {
+    expect(NoteSchema.safeParse({ ...validNote, level: 'sieu-cap' }).success).toBe(false)
+  })
+
+  it('từ chối order âm', () => {
+    expect(NoteSchema.safeParse({ ...validNote, order: -1 }).success).toBe(false)
   })
 
   it('từ chối timestamp không phải ISO', () => {

@@ -13,12 +13,24 @@
  * ~2.9:1 (nền vàng quá sáng so với vàng đậm 600) nên dùng amber-700 (~4.36:1) thay thế.
  * Ở theme tối dùng chữ sắc độ 400 trên chip nền 500/15 (nền tối pha trong suốt) — tổ hợp
  * quen thuộc của Tailwind, tương phản cao vì nền thực chất gần với nền tối của trang.
+ *
+ * Ba màu thêm sau (violet/cyan/fuchsia) theo cùng quy tắc: cyan dùng sắc 700 vì cyan-600
+ * trên cyan-100 chưa đạt 3:1 — cùng lý do như amber.
+ *
+ * `lime` (mảng Nền tảng) chọn theo khoảng trống hue chứ không theo cảm tính: bảy màu trước
+ * để lại một quãng rộng 105° giữa amber (58°) và emerald (163°), và lime (132°) nằm trong
+ * đó — cách màu gần nhất 31° so với 16° nếu chọn indigo. Nó cũng phải dùng sắc 700: lime-600
+ * trên lime-100 chỉ đạt 2,82:1, còn lime-700 đạt 4,58:1 — y hệt trường hợp amber.
  */
 const CATEGORY_COLOR_CLASSES: Record<string, string> = {
   sky: 'bg-sky-100 text-sky-600 dark:bg-sky-500/15 dark:text-sky-400',
   emerald: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400',
   rose: 'bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400',
   amber: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400',
+  violet: 'bg-violet-100 text-violet-600 dark:bg-violet-500/15 dark:text-violet-400',
+  cyan: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-400',
+  fuchsia: 'bg-fuchsia-100 text-fuchsia-600 dark:bg-fuchsia-500/15 dark:text-fuchsia-400',
+  lime: 'bg-lime-100 text-lime-700 dark:bg-lime-500/15 dark:text-lime-400',
 }
 
 /** Màu lạ (chưa có trong bảng trắng) rơi về trung tính, không vỡ giao diện. */

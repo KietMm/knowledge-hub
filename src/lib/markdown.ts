@@ -8,6 +8,7 @@ import remarkParse from 'remark-parse'
 import remarkRehype from 'remark-rehype'
 import { unified } from 'unified'
 import { visit } from 'unist-util-visit'
+import { remarkWikiLink } from '@/lib/wiki-link'
 import type { Root as MdastRoot } from 'mdast'
 
 /**
@@ -29,17 +30,28 @@ const langLabel = {
   },
 }
 
-const processor = unified()
+/**
+ * Processor được dựng theo từng lần render vì bảng tiêu đề (cho `[[slug]]`) là tham số.
+ * unified() rẻ; phần đắt là bộ highlighter của shiki và nó được @shikijs/rehype tự nhớ
+ * lại giữa các lần gọi, nên không dựng lại engine mỗi lần.
+ */
+function buildProcessor(titles: Map<string, string>) {
+  return unified()
   .use(remarkParse)
   .use(remarkGfm)
+  .use(remarkWikiLink, titles)
   .use(remarkRehype)
   .use(rehypeSlug) // gắn id cho heading, dùng cùng thuật toán với GithubSlugger dưới đây
   .use(rehypeShiki, {
-    themes: { light: 'github-light', dark: 'github-dark' },
+    // vitesse thay cho github: bộ github bão hoà cao và mang sẵn nền riêng (#fff / #24292e)
+    // gần khít nền trang. vitesse dịu hơn nên chữ code không tranh chú ý với văn xuôi, và
+    // hoạt động tốt trên nền do app tự đặt (xem --code trong globals.css).
+    themes: { light: 'vitesse-light', dark: 'vitesse-dark' },
     defaultColor: false, // xuất cả hai màu dạng CSS variable, chọn theo theme bằng CSS
     transformers: [langLabel],
   })
   .use(rehypeStringify)
+}
 
 /**
  * TOC được trích từ mdast bằng chính GithubSlugger mà rehype-slug dùng,
@@ -59,8 +71,18 @@ function extractToc(tree: MdastRoot): TocEntry[] {
   return toc
 }
 
-export async function renderMarkdown(markdown: string): Promise<RenderedMarkdown> {
+/**
+ * `titles` là bảng slug → tiêu đề để render `[[slug]]` thành link. Bỏ trống thì
+ * `[[slug]]` giữ nguyên nguyên văn — hàm vẫn thuần và test được không cần dữ liệu thật.
+ */
+export async function renderMarkdown(
+  markdown: string,
+  titles: Map<string, string> = new Map(),
+): Promise<RenderedMarkdown> {
+  const processor = buildProcessor(titles)
   const tree = processor.parse(markdown)
+  // TOC trích TRƯỚC khi chạy plugin: heading không chứa [[...]] nên kết quả không đổi,
+  // và extractToc chỉ cần cây mdast thô.
   const toc = extractToc(tree)
   const file = await processor.run(tree).then((hast) => processor.stringify(hast))
   return { html: String(file), toc }

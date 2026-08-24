@@ -1,6 +1,8 @@
-import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
+import type { Metadata } from 'next'
 import { NoteForm } from '@/components/notes/NoteForm'
 import * as topicsRepo from '@/lib/db/topics.repo'
+
+export const metadata: Metadata = { title: 'Bài học mới — Knowledge Hub' }
 
 export default async function NewNotePage({
   searchParams,
@@ -13,8 +15,7 @@ export default async function NewNotePage({
 
   return (
     <div className="space-y-6">
-      <Breadcrumbs items={[{ label: 'Trang chủ', href: '/' }, { label: 'Ghi chú mới' }]} />
-      <h1 className="text-2xl font-semibold">Ghi chú mới</h1>
+      <h1 className="font-heading text-2xl font-semibold">Bài học mới</h1>
       <NoteForm topics={topics} defaultTopicId={preselected?.id} />
     </div>
   )

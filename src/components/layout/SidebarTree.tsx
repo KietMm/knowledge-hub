@@ -66,14 +66,14 @@ export function SidebarTree({ tree }: { tree: CategoryWithTopics[] }) {
                 aria-expanded={expanded}
                 aria-label={`${expanded ? 'Thu gọn' : 'Mở rộng'} mảng ${category.name}`}
                 onClick={() => toggle(category.slug)}
-                className="rounded p-1 hover:bg-accent"
+                className="rounded p-2 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <ChevronRight className={cn('h-4 w-4 transition-transform', expanded && 'rotate-90')} />
               </button>
               <Link
                 href={`/c/${category.slug}`}
                 className={cn(
-                  'flex flex-1 items-center gap-2 rounded px-2 py-1.5 text-sm font-medium hover:bg-accent',
+                  'flex min-h-9 flex-1 items-center gap-2 rounded px-2 py-2 text-sm font-medium outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring',
                   pathname === `/c/${category.slug}` && 'bg-accent',
                 )}
               >
@@ -98,7 +98,7 @@ export function SidebarTree({ tree }: { tree: CategoryWithTopics[] }) {
                       href={`/t/${topic.slug}`}
                       aria-current={pathname === `/t/${topic.slug}` ? 'page' : undefined}
                       className={cn(
-                        'flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent',
+                        'flex min-h-9 items-center gap-2 rounded px-2 py-2 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring',
                         pathname === `/t/${topic.slug}` && 'bg-accent font-medium',
                       )}
                     >

@@ -1,66 +1,202 @@
 [
   {
-    "id": "topic-typescript",
-    "categoryId": "cat-dev",
-    "name": "JavaScript / TypeScript",
-    "slug": "javascript-typescript",
-    "description": "Nền tảng của cả frontend lẫn Node.js.",
+    "id": "topic-tu-duy-lap-trinh",
+    "name": "Tư duy lập trình",
+    "slug": "tu-duy-lap-trinh",
+    "description": "Trạng thái, hàm, đệ quy và ba lối viết — mô hình trong đầu bạn trước khi gõ dòng nào.",
+    "categoryId": "cat-nen-tang",
     "order": 1
   },
   {
-    "id": "topic-python",
+    "id": "topic-cau-truc-du-lieu",
+    "name": "Cấu trúc dữ liệu và độ phức tạp",
+    "slug": "cau-truc-du-lieu-va-do-phuc-tap",
+    "description": "Chọn đúng chỗ chứa dữ liệu, và đọc được cái giá của một vòng lặp lồng nhau.",
+    "categoryId": "cat-nen-tang",
+    "order": 2
+  },
+  {
+    "id": "topic-nguyen-ly-thiet-ke-code",
+    "name": "Nguyên lý thiết kế code",
+    "slug": "nguyen-ly-thiet-ke-code",
+    "description": "OOP, SOLID và mẫu thiết kế — giải thích bằng code thật, kể cả lúc chúng mâu thuẫn nhau.",
+    "categoryId": "cat-nen-tang",
+    "order": 3
+  },
+  {
+    "id": "topic-typescript",
+    "name": "JavaScript / TypeScript",
+    "slug": "javascript-typescript",
+    "description": "Nền tảng của cả frontend lẫn Node.js: kiểu dữ liệu, bất đồng bộ, module và hệ thống kiểu.",
     "categoryId": "cat-dev",
-    "name": "Python",
-    "slug": "python",
-    "description": "Script, xử lý dữ liệu, và backend.",
+    "order": 1
+  },
+  {
+    "id": "topic-react",
+    "name": "React",
+    "slug": "react",
+    "description": "Tư duy khai báo, state, hook và các bẫy render thường gặp.",
+    "categoryId": "cat-dev",
     "order": 2
   },
   {
     "id": "topic-nextjs",
-    "categoryId": "cat-dev",
     "name": "Next.js",
     "slug": "nextjs",
-    "description": "React framework với App Router và Server Components.",
+    "description": "App Router, Server Components, Server Actions và tầng cache bốn lớp.",
+    "categoryId": "cat-dev",
     "order": 3
   },
   {
+    "id": "topic-python",
+    "name": "Python",
+    "slug": "python",
+    "description": "Cú pháp, môi trường ảo, kiểu tĩnh và cách viết script gọn.",
+    "categoryId": "cat-dev",
+    "order": 4
+  },
+  {
+    "id": "topic-git",
+    "name": "Git",
+    "slug": "git",
+    "description": "Mô hình ba vùng, nhánh, rebase và cách gỡ khi lỡ tay.",
+    "categoryId": "cat-dev",
+    "order": 5
+  },
+  {
+    "id": "topic-http-api",
+    "name": "HTTP & REST API",
+    "slug": "http-va-rest-api",
+    "description": "Mã trạng thái, phương thức, thiết kế endpoint, idempotency và phân trang.",
+    "categoryId": "cat-dev",
+    "order": 6
+  },
+  {
+    "id": "topic-testing",
+    "name": "Kiểm thử",
+    "slug": "kiem-thu",
+    "description": "Test cái gì và đừng test cái gì, test double, và kim tự tháp kiểm thử.",
+    "categoryId": "cat-dev",
+    "order": 7
+  },
+  {
     "id": "topic-sql",
-    "categoryId": "cat-database",
     "name": "SQL cơ bản",
     "slug": "sql-co-ban",
-    "description": "Truy vấn nền tảng dùng được ở mọi hệ quản trị.",
+    "description": "Truy vấn nền tảng dùng được ở mọi hệ quản trị: SELECT, JOIN, GROUP BY, transaction.",
+    "categoryId": "cat-database",
     "order": 1
   },
   {
-    "id": "topic-postgresql",
+    "id": "topic-db-design",
+    "name": "Thiết kế cơ sở dữ liệu",
+    "slug": "thiet-ke-co-so-du-lieu",
+    "description": "Từ yêu cầu nghiệp vụ tới bảng: khoá, quan hệ, chuẩn hoá và ràng buộc.",
     "categoryId": "cat-database",
-    "name": "PostgreSQL",
-    "slug": "postgresql",
-    "description": "Index, kế hoạch thực thi và các tính năng riêng của Postgres.",
     "order": 2
   },
   {
+    "id": "topic-postgresql",
+    "name": "PostgreSQL",
+    "slug": "postgresql",
+    "description": "Index, kế hoạch thực thi, kiểu dữ liệu và các tính năng riêng của Postgres.",
+    "categoryId": "cat-database",
+    "order": 3
+  },
+  {
     "id": "topic-owasp",
-    "categoryId": "cat-security",
     "name": "OWASP Top 10",
     "slug": "owasp-top-10",
-    "description": "Mười nhóm lỗ hổng phổ biến nhất của ứng dụng web.",
+    "description": "Mười nhóm lỗ hổng phổ biến nhất của ứng dụng web, kèm cách sửa.",
+    "categoryId": "cat-security",
+    "order": 1
+  },
+  {
+    "id": "topic-auth",
+    "name": "Xác thực & Phân quyền",
+    "slug": "xac-thuc-phan-quyen",
+    "description": "Mật khẩu, phiên đăng nhập, JWT, OAuth và cách kiểm soát quyền truy cập.",
+    "categoryId": "cat-security",
+    "order": 2
+  },
+  {
+    "id": "topic-linux",
+    "name": "Linux & Shell",
+    "slug": "linux-va-shell",
+    "description": "Hệ thống file, tiến trình, quyền và bộ công cụ dòng lệnh dùng hằng ngày.",
+    "categoryId": "cat-devops",
     "order": 1
   },
   {
     "id": "topic-docker",
-    "categoryId": "cat-devops",
     "name": "Docker",
     "slug": "docker",
-    "description": "Đóng gói ứng dụng thành image chạy được ở mọi nơi.",
-    "order": 1
+    "description": "Image, container, volume, network và cách viết Dockerfile gọn nhẹ.",
+    "categoryId": "cat-devops",
+    "order": 2
   },
   {
     "id": "topic-cicd",
-    "categoryId": "cat-devops",
     "name": "CI/CD (GitHub Actions)",
     "slug": "ci-cd-github-actions",
-    "description": "Tự động kiểm thử và triển khai mỗi lần push.",
+    "description": "Tự động kiểm thử và triển khai mỗi lần push, an toàn với secret.",
+    "categoryId": "cat-devops",
+    "order": 3
+  },
+  {
+    "id": "topic-deploy",
+    "name": "Nginx & Triển khai",
+    "slug": "nginx-va-trien-khai",
+    "description": "Reverse proxy, HTTPS, biến môi trường và theo dõi ứng dụng chạy thật.",
+    "categoryId": "cat-devops",
+    "order": 4
+  },
+  {
+    "id": "topic-system-design",
+    "name": "Thiết kế hệ thống",
+    "slug": "thiet-ke-he-thong",
+    "description": "Ước lượng tải, tìm điểm nghẽn, mở rộng, cache và hàng đợi.",
+    "categoryId": "cat-architecture",
+    "order": 1
+  },
+  {
+    "id": "topic-distributed",
+    "name": "Hệ thống phân tán",
+    "slug": "he-thong-phan-tan",
+    "description": "Chịu lỗi, dữ liệu ở quy mô, và ranh giới service.",
+    "categoryId": "cat-architecture",
+    "order": 2
+  },
+  {
+    "id": "topic-observability",
+    "name": "Quan sát và độ tin cậy",
+    "slug": "quan-sat-va-do-tin-cay",
+    "description": "Log, metric, trace, SLO, error budget, và xử lý sự cố.",
+    "categoryId": "cat-operations",
+    "order": 1
+  },
+  {
+    "id": "topic-delivery",
+    "name": "Triển khai và hiệu năng",
+    "slug": "trien-khai-va-hieu-nang",
+    "description": "Canary, feature flag, profiling, kiểm thử tải và chi phí hạ tầng.",
+    "categoryId": "cat-operations",
+    "order": 2
+  },
+  {
+    "id": "topic-decisions",
+    "name": "Quyết định và chất lượng",
+    "slug": "quyet-dinh-va-chat-luong",
+    "description": "ADR, review code như hành động dạy, và nợ kỹ thuật.",
+    "categoryId": "cat-leadership",
+    "order": 1
+  },
+  {
+    "id": "topic-people",
+    "name": "Làm việc với người",
+    "slug": "lam-viec-voi-nguoi",
+    "description": "Ước lượng, cắt phạm vi, giao tiếp, uỷ quyền và onboarding.",
+    "categoryId": "cat-leadership",
     "order": 2
   }
 ]

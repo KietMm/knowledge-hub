@@ -36,6 +36,13 @@ export const TopicSchema = z.object({
   order: z.number().int().nonnegative('Thứ tự phải là số không âm'),
 })
 
+/**
+ * Cấp độ của bài học. Là enum (không phải chuỗi tự do) vì giao diện tô màu và lọc
+ * theo giá trị này — một giá trị lạ sẽ rơi ra ngoài mọi nhánh render.
+ */
+export const NoteLevelSchema = z.enum(['co-ban', 'trung-cap', 'nang-cao'])
+export type NoteLevel = z.infer<typeof NoteLevelSchema>
+
 export const NoteSchema = z.object({
   id: z.string().min(1),
   topicId: z.string().min(1),
@@ -44,6 +51,12 @@ export const NoteSchema = z.object({
   summary: z.string().trim().default(''),
   content: z.string().default(''),
   tags: z.array(z.string().trim().min(1, 'Thẻ không được để trống')).default([]),
+  /**
+   * Vị trí trong lộ trình học của công nghệ. Có .default() nên dữ liệu cũ (ghi trước
+   * khi có trường này) vẫn parse được — không cần migration thủ công.
+   */
+  order: z.number().int().nonnegative('Thứ tự phải là số không âm').default(0),
+  level: NoteLevelSchema.default('co-ban'),
   starred: z.boolean().default(false),
   createdAt: IsoDateSchema,
   updatedAt: IsoDateSchema,
@@ -62,8 +75,11 @@ export const NoteCreateSchema = NoteSchema.omit({
   createdAt: true,
   updatedAt: true,
   slug: true,
+  order: true,
 }).extend({
   slug: SlugSchema.optional(),
+  /** Bỏ trống thì repo tự xếp vào cuối lộ trình của công nghệ đang chọn. */
+  order: z.number().int().nonnegative().optional(),
 })
 
 /** Input khi sửa: mọi trường đều tuỳ chọn; không cho sửa id/timestamp từ ngoài. */

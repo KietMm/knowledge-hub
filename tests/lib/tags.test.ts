@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { collectTagCounts, filterByTag } from '@/lib/tags'
+import { collectTagCounts, filterByTag, usefulTags } from '@/lib/tags'
 
 type Item = { id: string; tags: string[] }
 
@@ -50,5 +50,37 @@ describe('filterByTag', () => {
 
   it('tag không tồn tại trong bất kỳ item nào trả mảng rỗng', () => {
     expect(filterByTag(items, 'khong-ton-tai')).toEqual([])
+  })
+})
+
+describe('usefulTags', () => {
+  const counts = [
+    { tag: 'docker', count: 6 },
+    { tag: 'volume', count: 2 },
+    { tag: 'mang', count: 1 },
+    { tag: 'compose', count: 1 },
+  ]
+
+  it('bỏ tag chỉ có một bài — bấm vào không lọc được gì', () => {
+    expect(usefulTags(counts, null)).toEqual([
+      { tag: 'docker', count: 6 },
+      { tag: 'volume', count: 2 },
+    ])
+  })
+
+  it('giữ tag đang chọn dù chỉ có một bài', () => {
+    expect(usefulTags(counts, 'mang').map((c) => c.tag)).toEqual(['docker', 'volume', 'mang'])
+  })
+
+  it('chỉ còn đúng một tag chung cho mọi bài thì bỏ luôn cả dãy', () => {
+    expect(usefulTags([{ tag: 'docker', count: 6 }], null)).toEqual([])
+  })
+
+  it('vẫn hiện dãy nếu tag duy nhất đó đang được chọn', () => {
+    expect(usefulTags([{ tag: 'docker', count: 6 }], 'docker')).toHaveLength(1)
+  })
+
+  it('danh sách rỗng vẫn an toàn', () => {
+    expect(usefulTags([], null)).toEqual([])
   })
 })

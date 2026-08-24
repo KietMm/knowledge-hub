@@ -1,4 +1,5 @@
 import { importBundle } from '@/lib/db/backup'
+import { laReadOnly } from '@/lib/db/mode'
 import { revalidatePath } from 'next/cache'
 
 export async function POST(request: Request): Promise<Response> {
@@ -9,6 +10,14 @@ export async function POST(request: Request): Promise<Response> {
   //  - Origin khác host chặn được request từ site khác; công cụ dòng lệnh (curl) thường
   //    KHÔNG gửi Origin nên phải cho qua trường hợp thiếu Origin, chỉ chặn khi Origin
   //    có mặt và khác host hiện tại.
+  // Chặn sớm nhất có thể: không parse body của một request chắc chắn bị từ chối.
+  if (laReadOnly()) {
+    return Response.json(
+      { ok: false, error: 'Bản triển khai này chỉ đọc — không nhập được dữ liệu.' },
+      { status: 405 },
+    )
+  }
+
   const contentType = request.headers.get('content-type') ?? ''
   if (!contentType.toLowerCase().includes('application/json')) {
     return Response.json(

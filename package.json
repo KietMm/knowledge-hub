@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed": "tsx scripts/seed.ts"
+    "seed": "tsx scripts/seed.ts",
+    "content:build": "tsx scripts/build-content.ts",
+    "content:sync": "tsx scripts/build-content.ts --sync"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

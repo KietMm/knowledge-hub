@@ -15,9 +15,10 @@ export function StarButton({ noteId, starred }: { noteId: string; starred: boole
     <Button
       variant="outline"
       size="sm"
+      className="h-9"
       disabled={pending}
       aria-pressed={starred}
-      aria-label={starred ? 'Bỏ ghim ghi chú' : 'Ghim ghi chú'}
+      aria-label={starred ? 'Bỏ ghim bài học' : 'Ghim bài học'}
       onClick={() =>
         startTransition(async () => {
           const result = await toggleStarAction(noteId)

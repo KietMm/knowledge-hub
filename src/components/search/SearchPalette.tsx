@@ -58,21 +58,26 @@ export function SearchPalette({ items }: { items: SearchItem[] }) {
 
   return (
     <>
+      {/* Chip gọn, không phải ô nhập rộng: bấm vào cũng mở đúng dialog mà ⌘K mở, nên một
+          ô trông-như-input chỉ hứa hẹn sai rằng gõ được ngay tại chỗ. Trên mobile rút về
+          đúng icon để nhường chỗ cho breadcrumb. */}
       <Button
         variant="outline"
-        className="w-full max-w-sm justify-start text-muted-foreground"
+        size="sm"
+        aria-label="Tìm bài học"
+        className="h-9 shrink-0 gap-2 text-muted-foreground"
         onClick={() => setOpen(true)}
       >
-        <Search className="mr-2 h-4 w-4" />
-        Tìm ghi chú...
-        <kbd className="ml-auto rounded border px-1.5 text-xs">⌘K</kbd>
+        <Search className="h-4 w-4" />
+        <span className="hidden sm:inline">Tìm bài học</span>
+        <kbd className="hidden rounded border px-1.5 font-mono text-[0.7rem] sm:inline">⌘K</kbd>
       </Button>
 
       <CommandDialog
         open={open}
         onOpenChange={setOpen}
         title="Tìm kiếm"
-        description="Tìm ghi chú theo tiêu đề, tag, tóm tắt, nội dung, hoặc chạy nhanh một hành động."
+        description="Tìm bài học theo tiêu đề, tag, tóm tắt, nội dung, hoặc chạy nhanh một hành động."
       >
         {/*
           command.tsx của repo này KHÔNG tự bọc <Command> bên trong <CommandDialog>
@@ -97,7 +102,7 @@ export function SearchPalette({ items }: { items: SearchItem[] }) {
             */}
             {grouped.length === 0 && (
               <div className="py-6 text-center text-sm text-muted-foreground">
-                {query === '' ? 'Gõ để bắt đầu tìm.' : 'Không tìm thấy ghi chú nào.'}
+                {query === '' ? 'Gõ để bắt đầu tìm.' : 'Không tìm thấy bài học nào.'}
               </div>
             )}
 
@@ -117,7 +122,7 @@ export function SearchPalette({ items }: { items: SearchItem[] }) {
             <CommandGroup heading="Hành động">
               <CommandItem value="tao-ghi-chu" onSelect={() => go('/n/new')}>
                 <FilePlus2 className="mr-2 h-4 w-4" />
-                Tạo ghi chú mới
+                Tạo bài học mới
               </CommandItem>
               <CommandItem
                 value="doi-theme"

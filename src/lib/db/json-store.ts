@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { z } from 'zod'
+import { ReadOnlyError, laReadOnly } from './mode'
+import { SEED_CATEGORIES, SEED_NOTES, SEED_TOPICS } from './seed-data'
 
 /**
  * Lớp lưu trữ thấp nhất: đọc/ghi một file JSON chứa một mảng bản ghi.
@@ -10,6 +12,10 @@ import type { z } from 'zod'
  *  1. Ghi nửa chừng    -> ghi ra file .tmp rồi rename (rename là atomic trên cùng FS).
  *  2. Ghi chồng nhau   -> mọi mutate đi qua một promise queue trong process.
  *  3. File hỏng        -> throw DataFileError, tuyệt đối không ghi đè.
+ *
+ * Ở chế độ chỉ đọc (xem `mode.ts`), tầng này đọc từ giáo trình đã đóng gói trong bundle
+ * và từ chối mọi lệnh ghi. Nhờ đặt nhánh đó **ở đây**, toàn bộ `*.repo.ts` phía trên
+ * không phải biết gì về sự phân biệt này.
  */
 
 export class DataFileError extends Error {
@@ -20,6 +26,16 @@ export class DataFileError extends Error {
     super(`Lỗi dữ liệu ở file "${file}": ${reason}`)
     this.name = 'DataFileError'
   }
+}
+
+/**
+ * Giáo trình đóng gói sẵn, dùng khi chỉ đọc. Khoá là đúng tên file mà repo yêu cầu,
+ * nên không repo nào phải đổi cách gọi.
+ */
+const TRONG_BUNDLE: Record<string, readonly unknown[]> = {
+  'categories.json': SEED_CATEGORIES,
+  'topics.json': SEED_TOPICS,
+  'notes.json': SEED_NOTES,
 }
 
 /** Đọc mỗi lần gọi (không cache) để test có thể trỏ sang thư mục tạm. */
@@ -91,6 +107,12 @@ export async function readCollection<T>(
   file: string,
   schema: z.ZodType<T, z.ZodTypeDef, unknown>,
 ): Promise<T[]> {
+  if (laReadOnly()) {
+    // Vẫn validate lại: dữ liệu trong bundle do script sinh, nhưng nhánh này phải cho
+    // ra đúng cùng một kiểu với nhánh đọc file, không được tin suông.
+    return validate(file, schema, [...(TRONG_BUNDLE[file] ?? [])])
+  }
+
   let raw: string
   try {
     raw = await fs.readFile(fullPath(file), 'utf8')
@@ -120,6 +142,7 @@ export async function writeCollection<T>(
   schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   items: T[],
 ): Promise<void> {
+  if (laReadOnly()) throw new ReadOnlyError()
   // Validate TRƯỚC khi đụng vào file: sai schema thì file cũ còn nguyên.
   const validated = validate(file, schema, items)
   await writeAtomic(fullPath(file), serialize(validated))
@@ -135,6 +158,7 @@ export function mutate<T, R>(
   schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   fn: (items: T[]) => { items: T[]; result: R },
 ): Promise<R> {
+  if (laReadOnly()) return Promise.reject(new ReadOnlyError())
   return enqueue(async () => {
     const current = await readCollection(file, schema)
     const { items, result } = fn(current)

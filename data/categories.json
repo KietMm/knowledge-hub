@@ -1,38 +1,74 @@
 [
   {
-    "id": "cat-dev",
-    "name": "Dev",
-    "slug": "dev",
-    "description": "Ngôn ngữ và framework để viết ứng dụng.",
-    "icon": "Code2",
-    "color": "sky",
+    "id": "cat-nen-tang",
+    "name": "Nền tảng",
+    "slug": "nen-tang",
+    "description": "Logic nằm dưới mọi ngôn ngữ: đổi từ Python sang Go thì cú pháp mất, phần này ở lại.",
+    "icon": "Blocks",
+    "color": "lime",
     "order": 1
   },
   {
-    "id": "cat-database",
-    "name": "Database",
-    "slug": "database",
-    "description": "Lưu trữ, truy vấn và tối ưu dữ liệu.",
-    "icon": "Database",
-    "color": "emerald",
+    "id": "cat-dev",
+    "name": "Lập trình",
+    "slug": "dev",
+    "description": "Ngôn ngữ, framework và công cụ để viết ứng dụng.",
+    "icon": "Code2",
+    "color": "sky",
     "order": 2
   },
   {
+    "id": "cat-database",
+    "name": "Cơ sở dữ liệu",
+    "slug": "database",
+    "description": "Thiết kế, truy vấn và tối ưu dữ liệu.",
+    "icon": "Database",
+    "color": "emerald",
+    "order": 3
+  },
+  {
     "id": "cat-security",
-    "name": "Security",
+    "name": "Bảo mật",
     "slug": "security",
-    "description": "Các lỗ hổng thường gặp và cách phòng tránh.",
+    "description": "Lỗ hổng thường gặp và cách phòng tránh khi viết ứng dụng web.",
     "icon": "ShieldCheck",
     "color": "rose",
-    "order": 3
+    "order": 4
   },
   {
     "id": "cat-devops",
     "name": "DevOps",
     "slug": "devops",
-    "description": "Đóng gói, triển khai và tự động hoá.",
+    "description": "Đóng gói, triển khai, tự động hoá và vận hành.",
     "icon": "Server",
     "color": "amber",
-    "order": 4
+    "order": 5
+  },
+  {
+    "id": "cat-architecture",
+    "name": "Kiến trúc",
+    "slug": "kien-truc",
+    "description": "Thiết kế hệ thống chịu tải, chịu lỗi, và còn sửa được sau ba năm.",
+    "icon": "Network",
+    "color": "violet",
+    "order": 6
+  },
+  {
+    "id": "cat-operations",
+    "name": "Vận hành",
+    "slug": "van-hanh",
+    "description": "Biết hệ thống đang sống thế nào, và xử lý khi nó không sống.",
+    "icon": "Activity",
+    "color": "cyan",
+    "order": 7
+  },
+  {
+    "id": "cat-leadership",
+    "name": "Dẫn dắt kỹ thuật",
+    "slug": "dan-dat-ky-thuat",
+    "description": "Phần việc của tech lead mà trình biên dịch không kiểm được.",
+    "icon": "Users",
+    "color": "fuchsia",
+    "order": 8
   }
 ]

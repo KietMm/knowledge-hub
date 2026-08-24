@@ -1,5 +1,6 @@
 import { CategorySchema, NoteSchema, TopicSchema } from './schema'
 import { readCollection, writeCollection } from './json-store'
+import { laReadOnly } from './mode'
 import { SEED_CATEGORIES, SEED_NOTES, SEED_TOPICS } from './seed-data'
 
 /**
@@ -7,6 +8,9 @@ import { SEED_CATEGORIES, SEED_NOTES, SEED_TOPICS } from './seed-data'
  * người dùng đã có — đây là ràng buộc an toàn quan trọng nhất của file này.
  */
 export async function seedIfEmpty(): Promise<{ seeded: boolean }> {
+  // Chỉ đọc: dữ liệu đã nằm trong bundle, không có gì để nạp và cũng không ghi được.
+  if (laReadOnly()) return { seeded: false }
+
   const [categories, topics, notes] = await Promise.all([
     readCollection('categories.json', CategorySchema),
     readCollection('topics.json', TopicSchema),

@@ -23,10 +23,14 @@ function byUpdatedDesc(a: Note, b: Note): number {
   return Date.parse(b.updatedAt) - Date.parse(a.updatedAt)
 }
 
-/** Ghim lên trước, trong cùng nhóm thì mới cập nhật lên trước. */
-function byStarredThenUpdated(a: Note, b: Note): number {
-  if (a.starred !== b.starred) return a.starred ? -1 : 1
-  return byUpdatedDesc(a, b)
+/**
+ * Thứ tự bài học trong một công nghệ: theo `order` do người biên soạn đặt, không theo
+ * ngày sửa. Đây là điểm khác biệt quan trọng — danh sách bài trong một công nghệ là
+ * một LỘ TRÌNH (bài 1 dẫn vào bài 2), nên nó phải ổn định; sửa chính tả ở bài cuối
+ * không được nhảy nó lên đầu. Trùng `order` thì xếp theo tiêu đề cho ổn định.
+ */
+function byLessonOrder(a: Note, b: Note): number {
+  return a.order - b.order || a.title.localeCompare(b.title, 'vi')
 }
 
 export async function listAll(): Promise<Note[]> {
@@ -35,7 +39,28 @@ export async function listAll(): Promise<Note[]> {
 
 export async function listByTopic(topicId: string): Promise<Note[]> {
   const notes = await readCollection(FILE, NoteSchema)
-  return notes.filter((n) => n.topicId === topicId).sort(byStarredThenUpdated)
+  return notes.filter((n) => n.topicId === topicId).sort(byLessonOrder)
+}
+
+export type NoteNeighbors = { prev: Note | null; next: Note | null; index: number; total: number }
+
+/**
+ * Bài liền trước/liền sau trong cùng công nghệ, để trang chi tiết có nút "Bài tiếp theo".
+ * Trả về cả vị trí và tổng số bài — trang cần cả hai để hiện "Bài 3/8" mà không phải
+ * đọc lại danh sách lần nữa.
+ */
+export async function findNeighbors(noteId: string): Promise<NoteNeighbors> {
+  const note = await findById(noteId)
+  if (note === null) return { prev: null, next: null, index: -1, total: 0 }
+
+  const siblings = await listByTopic(note.topicId)
+  const index = siblings.findIndex((n) => n.id === noteId)
+  return {
+    prev: index > 0 ? (siblings[index - 1] ?? null) : null,
+    next: index === -1 ? null : (siblings[index + 1] ?? null),
+    index,
+    total: siblings.length,
+  }
 }
 
 export async function listRecent(limit: number): Promise<Note[]> {
@@ -57,12 +82,25 @@ export async function findById(id: string): Promise<Note | null> {
 }
 
 export async function countByTopic(): Promise<Map<string, number>> {
+  const groups = await groupByTopic()
+  return new Map(Array.from(groups, ([topicId, notes]) => [topicId, notes.length]))
+}
+
+/**
+ * Gom bài theo công nghệ, mỗi nhóm đã sắp sẵn theo lộ trình.
+ * Trang danh mục cần cả số bài lẫn phân bố cấp độ của từng công nghệ — nếu gọi
+ * listByTopic() cho từng công nghệ thì thành N+1 lượt đọc file.
+ */
+export async function groupByTopic(): Promise<Map<string, Note[]>> {
   const notes = await readCollection(FILE, NoteSchema)
-  const counts = new Map<string, number>()
+  const groups = new Map<string, Note[]>()
   for (const note of notes) {
-    counts.set(note.topicId, (counts.get(note.topicId) ?? 0) + 1)
+    const group = groups.get(note.topicId)
+    if (group === undefined) groups.set(note.topicId, [note])
+    else group.push(note)
   }
-  return counts
+  for (const group of groups.values()) group.sort(byLessonOrder)
+  return groups
 }
 
 export async function create(input: NoteCreateInput): Promise<Note> {
@@ -70,6 +108,11 @@ export async function create(input: NoteCreateInput): Promise<Note> {
   return mutate(FILE, NoteSchema, (notes) => {
     const taken = notes.map((n) => n.slug)
     const now = new Date().toISOString()
+    // Không truyền order thì bài mới xếp cuối lộ trình của công nghệ đó, không phải
+    // đầu — người viết thêm bài là đang nối tiếp vào chuỗi đã có.
+    const lastOrder = notes
+      .filter((n) => n.topicId === data.topicId)
+      .reduce((max, n) => Math.max(max, n.order), 0)
     const note: Note = {
       id: nanoid(),
       topicId: data.topicId,
@@ -78,6 +121,8 @@ export async function create(input: NoteCreateInput): Promise<Note> {
       summary: data.summary,
       content: data.content,
       tags: data.tags,
+      order: data.order ?? lastOrder + 1,
+      level: data.level,
       starred: data.starred,
       createdAt: now,
       updatedAt: now,
@@ -115,6 +160,8 @@ export async function update(id: string, patch: NoteUpdateInput): Promise<Note> 
       summary: data.summary ?? current.summary,
       content: data.content ?? current.content,
       tags: data.tags ?? current.tags,
+      order: data.order ?? current.order,
+      level: data.level ?? current.level,
       starred: data.starred ?? current.starred,
       createdAt: current.createdAt,
       updatedAt: new Date().toISOString(),
