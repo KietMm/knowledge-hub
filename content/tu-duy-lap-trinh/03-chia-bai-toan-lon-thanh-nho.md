@@ -1,157 +1,126 @@
 ---
 title: Chia bài toán lớn thành bài toán nhỏ
 slug: chia-bai-toan-lon-thanh-nho
-summary: Kỹ năng quyết định nhất và ít được dạy nhất: nhìn một yêu cầu mơ hồ và cắt nó thành những mảnh bạn biết cách làm.
+summary: "Kỹ năng quyết định nhất và ít được dạy nhất: nhìn một yêu cầu mơ hồ và cắt nó thành những mảnh bạn biết cách làm."
 level: co-ban
 tags: [nen-tang, tu-duy, phan-ra, giai-quyet-van-de]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** có một quy trình lặp lại được để đi từ "tôi không biết bắt đầu từ đâu" tới dòng code đầu tiên, mà không phụ thuộc ngôn ngữ hay framework.
+> **Sau bài này bạn sẽ:** có một quy trình để bám vào khi nhìn một yêu cầu mà không biết bắt đầu từ đâu, thay vì ngồi chờ ý tưởng loé lên.
 
-## Bí không phải vì thiếu cú pháp
+## Ý tưởng chính
 
-Khi một lập trình viên ngồi im trước màn hình, gần như không bao giờ là vì quên viết vòng `for` thế nào. Là vì **bài toán trong đầu còn quá to để cầm nắm**.
+Người mới bí không phải vì thiếu cú pháp. Họ biết `for`, biết `if`, biết hàm — nhưng nhìn yêu cầu *"làm trang quản lý đơn hàng"* thì không biết gõ dòng đầu tiên vào đâu.
 
-Chia nhỏ không phải mẹo vặt. Nó là kỹ năng cốt lõi, và nó **chuyển được nguyên vẹn** giữa mọi ngôn ngữ, mọi framework, cả sang những thứ chưa ra đời.
+Vì bài toán ở dạng đó **không có dòng đầu tiên**. Việc của bạn không phải "nghĩ ra lời giải", mà là **cắt nó thành những mảnh mà bạn đã biết cách làm** — rồi làm từng mảnh.
 
-## Quy trình bốn bước
+## Mental model
 
-Lấy một yêu cầu thật: *"Cho người dùng tải lên file CSV danh sách nhân viên, kiểm tra hợp lệ, rồi nhập vào hệ thống."*
+Hãy nghĩ tới một **cuộn dây rối**.
 
-### Bước 1 — Viết ra bằng tiếng Việt, dạng động từ
+> Không ai gỡ cả cuộn cùng lúc. Bạn tìm **một đầu dây** — chỉ một — rồi kéo nó ra khỏi đám rối. Xong đầu đó, đám rối nhỏ đi một chút, và đầu dây tiếp theo lộ ra.
 
-Đừng mở editor. Liệt kê **việc**, mỗi việc một dòng, mỗi dòng bắt đầu bằng động từ:
+Bài toán lớn cũng vậy: bạn không cần thấy toàn bộ lời giải trước khi bắt đầu. Bạn chỉ cần thấy **một mảnh đủ nhỏ để làm ngay**. Làm xong mảnh đó, bài toán còn lại nhỏ hơn — và thường lộ ra mảnh tiếp theo.
 
+Ngồi nhìn cả cuộn dây và chờ nó tự gỡ chính là cảm giác "bí".
+
+## Ví dụ nhỏ
+
+Yêu cầu: *"Cho danh sách đơn hàng, in ra tên khách chi nhiều nhất trong tháng này."*
+
+Nghe như một việc. Thật ra là bốn:
+
+```text
+1. Lọc ra đơn trong tháng này
+2. Cộng tiền theo từng khách
+3. Tìm khách có tổng lớn nhất
+4. In tên khách đó
 ```
-- Nhận file từ người dùng
-- Đọc nội dung file thành các dòng
-- Tách mỗi dòng thành các cột
-- Kiểm tra từng dòng có hợp lệ không
-- Gom các dòng lỗi lại để báo cáo
-- Ghi các dòng hợp lệ vào database
-- Trả kết quả: bao nhiêu thành công, bao nhiêu lỗi
-```
 
-Bảy việc. Chưa có việc nào đáng sợ. Cái đáng sợ ban đầu là *cả bảy việc dính vào nhau thành một cục*.
+Bốn dòng trên, dòng nào bạn cũng biết làm. Đó là dấu hiệu đã cắt đủ nhỏ.
 
-### Bước 2 — Tìm việc nào **không phụ thuộc** việc nào
+## Code chạy thế nào
 
-Đây là bước quan trọng nhất, và hay bị bỏ qua. Trong bảy việc trên:
-
-| Việc | Cần gì | Loại |
-|---|---|---|
-| Nhận file | HTTP, hệ thống file | I/O |
-| Đọc thành dòng | chuỗi | **thuần** |
-| Tách dòng thành cột | chuỗi | **thuần** |
-| Kiểm tra một dòng | dữ liệu của chính dòng đó | **thuần** |
-| Gom lỗi | danh sách kết quả | **thuần** |
-| Ghi database | database | I/O |
-| Trả kết quả | — | **thuần** |
-
-Năm trên bảy là **hàm thuần** — làm được ngay, test được ngay, không cần dựng gì. Nhận ra điều này biến một bài toán "phải có server và database mới bắt đầu được" thành một bài toán bắt đầu được trong 30 giây. Vì sao điều này quan trọng, xem [[ham-dau-vao-dau-ra-va-tac-dung-phu]].
-
-### Bước 3 — Làm việc dễ nhất trước, không phải việc đầu tiên
-
-Bản năng bảo bạn bắt đầu từ "nhận file" vì nó đứng đầu danh sách. Đó thường là việc **khó nhất** (cần dựng server, cần form, cần cấu hình).
-
-Bắt đầu từ **kiểm tra một dòng** — việc nhỏ nhất có kết quả nhìn thấy được:
+Viết bốn dòng ấy thành khung code **trước khi** viết code thật:
 
 ```ts
-type Dong = { ten: string; email: string; luong: string }
-type LoiDong = { cot: string; loi: string }
-
-function kiemTraDong(d: Dong): LoiDong[] {
-  const loi: LoiDong[] = []
-  if (!d.ten.trim()) loi.push({ cot: 'ten', loi: 'không được trống' })
-  if (!d.email.includes('@')) loi.push({ cot: 'email', loi: 'sai định dạng' })
-  if (Number.isNaN(Number(d.luong))) loi.push({ cot: 'luong', loi: 'phải là số' })
-  return loi
+function khachChiNhieuNhat(donHang, thang) {
+  const trongThang = locTheoThang(donHang, thang)   // 1
+  const tongTheoKhach = congTheoKhach(trongThang)   // 2
+  const khach = timLonNhat(tongTheoKhach)           // 3
+  return khach.ten                                  // 4
 }
 ```
 
-```python
-def kiem_tra_dong(d: Dong) -> list[LoiDong]:
-    loi = []
-    if not d.ten.strip():      loi.append(LoiDong('ten', 'không được trống'))
-    if '@' not in d.email:     loi.append(LoiDong('email', 'sai định dạng'))
-    if not d.luong.isnumeric(): loi.append(LoiDong('luong', 'phải là số'))
-    return loi
+Chưa hàm nào tồn tại, và đoạn code này **đã có ích**: nó biến một bài toán mơ hồ thành ba bài toán con rõ ràng, mỗi cái có tên, có đầu vào, có đầu ra. Giờ bạn làm từng cái, và mỗi cái đều test được riêng.
+
+Đây cũng là lý do cách này chống được cảm giác chán: sau 5 phút bạn đã có `locTheoThang` chạy đúng, thay vì sau 2 tiếng vẫn chưa có gì chạy.
+
+## Tại sao cần nó
+
+Không cắt, bạn viết một hàm 80 dòng làm cả bốn việc. Nó có thể chạy đúng — nhưng:
+
+- **Sai một chỗ thì phải đọc cả 80 dòng** để tìm, vì không biết lỗi nằm ở khâu nào.
+- **Không test được từng phần**, chỉ test được "cả cục ra đúng chưa".
+- **Không tái dùng được** `congTheoKhach` cho báo cáo khác, vì nó không tồn tại như một thứ riêng.
+- **Không giao được cho ai** — không có mảnh nào để đưa.
+
+Và quan trọng nhất: nó khiến bạn phải **giữ cả bài toán trong đầu cùng lúc**. Đầu người không làm được việc đó lâu, và mọi lỗi khó chịu đều sinh ra ở lúc bạn quá tải.
+
+## Bốn bước khi thật sự bí
+
+**1. Diễn đạt lại bằng lời thường.** Không thuật ngữ, không cú pháp. *"Nhận vào một danh sách, trả về một cái tên."* Nếu bạn không nói được câu đó, bạn chưa hiểu đề — và không ai giải được bài mình chưa hiểu.
+
+**2. Làm tay một ví dụ nhỏ.** Lấy 3 đơn hàng, tự tính trên giấy. **Cách bạn làm tay chính là thuật toán.** Bạn vừa lọc rồi cộng dồn? Đó là bước 1 và 2 ở trên.
+
+**3. Đặt tên cho từng bước.** Mỗi bước bạn làm tay là một hàm. Đặt tên trước, viết ruột sau.
+
+**4. Làm mảnh dễ nhất trước.** Không phải mảnh quan trọng nhất — mảnh **dễ nhất**. Một hàm chạy được cho bạn đà và cho bạn một mốc đúng để đối chiếu.
+
+## Dễ nhầm
+
+**1. Tưởng phải thiết kế xong hết mới được viết code.** Không — bạn chỉ cần cắt đủ để có **mảnh đầu tiên**. Làm xong mảnh đó, hiểu biết của bạn về bài toán tăng lên, và những mảnh sau sẽ cắt chính xác hơn cách bạn cắt lúc chưa biết gì.
+
+**2. Cắt theo *cách máy làm* thay vì theo *việc cần làm*.** Hai cách cắt cho ra hai kết quả rất khác:
+
+```text
+Cắt theo việc (tốt):    lọc → cộng → tìm lớn nhất → in
+Cắt theo kỹ thuật (tệ): đọc file → parse → vòng lặp → format chuỗi
 ```
 
-Mười dòng, chạy được, test được. Bạn vừa đi từ *"không biết bắt đầu đâu"* sang *"đã xong 1/7"*. Và quan trọng hơn: đà tâm lý đã đổi chiều.
+Cách thứ hai nghe kỹ thuật hơn nhưng khó đặt tên, khó test, và khi đề đổi thì phải cắt lại từ đầu.
 
-### Bước 4 — Ghép dần, mỗi lần một mảnh
+**3. Cắt quá tay.** Một hàm ba dòng gọi một hàm hai dòng gọi một hàm một dòng cũng khó đọc như hàm 80 dòng — chỉ khó theo kiểu khác: bạn phải nhảy qua sáu file để hiểu một việc. Dấu hiệu dừng: **mỗi hàm nói được nó làm gì bằng một câu, không có chữ "và"**. Chi tiết ở [[truu-tuong-hoa-khi-nao-tach]].
 
-```ts
-function nhapCsv(noiDung: string): { hopLe: Dong[]; loi: { dong: number; loi: LoiDong[] }[] } {
-  const dongs = tachDong(noiDung)      // ← mảnh 2
-  const hopLe: Dong[] = []
-  const loi: { dong: number; loi: LoiDong[] }[] = []
+**4. Cắt xong nhưng các mảnh vẫn dính nhau.** Nếu `congTheoKhach` cần biết `locTheoThang` đã chạy chưa, thì bạn chưa cắt — bạn chỉ vừa xuống dòng. Mảnh tốt là mảnh **nhận đầu vào, trả đầu ra**, không cần biết ai gọi nó và gọi lúc nào — xem [[ham-dau-vao-dau-ra-va-tac-dung-phu]].
 
-  dongs.forEach((d, i) => {
-    const l = kiemTraDong(d)            // ← mảnh 1, đã xong và đã test
-    if (l.length === 0) hopLe.push(d)
-    else loi.push({ dong: i + 2, loi: l })   // +2: bỏ dòng tiêu đề, người dùng đếm từ 1
-  })
+## Mẹo nhớ
 
-  return { hopLe, loi }
-}
-```
+> **Không gỡ cả cuộn dây — tìm một đầu.**
+>
+> **Cách bạn làm tay chính là thuật toán.**
 
-Vẫn chưa có database, chưa có HTTP. Toàn bộ nghiệp vụ đã xong và đã test. Phần I/O còn lại là lớp vỏ mỏng nhất.
+## Tự nhớ
 
-## Hai hướng cắt, và khi nào dùng cái nào
+Không nhìn lên, trả lời bằng lời của bạn:
 
-**Cắt theo bước xử lý** (như trên) — hợp khi dữ liệu chảy qua một chuỗi biến đổi: nhận → làm sạch → kiểm tra → lưu.
+1. Vì sao "bí" thường không phải vấn đề thiếu cú pháp?
+2. Bước "làm tay một ví dụ nhỏ" cho bạn thứ gì mà đọc đề không cho?
+3. Cắt theo *việc cần làm* khác cắt theo *kỹ thuật* ở chỗ nào?
+4. Dấu hiệu nào cho biết bạn đã cắt quá nhỏ?
+5. Vì sao nên làm mảnh **dễ nhất** trước chứ không phải mảnh quan trọng nhất?
 
-**Cắt theo trường hợp** — hợp khi bài toán là "nhiều tình huống khác nhau":
+## Tự viết lại
 
-```
-Đăng nhập:
-  - Trường hợp: đúng mật khẩu       → phát phiên
-  - Trường hợp: sai mật khẩu        → đếm số lần sai
-  - Trường hợp: sai quá 5 lần       → khoá tạm
-  - Trường hợp: tài khoản chưa kích hoạt → nhắc xác minh email
-```
+Không nhìn lại phần trên, cắt yêu cầu sau thành các bước, mỗi bước một dòng tiếng Việt, rồi viết khung hàm rỗng cho chúng:
 
-Làm từng trường hợp một, mỗi cái xong là một test. Cách này còn cho bạn thứ khó có được về sau: **danh sách trường hợp biên đầy đủ, viết ra trước khi code**.
+> *"Cho một file văn bản, in ra 5 từ xuất hiện nhiều nhất, bỏ qua các từ nối như 'và', 'của', 'là'."*
 
-## Dấu hiệu bạn cắt chưa đủ nhỏ
+Tự kiểm: mỗi bước của bạn có nói được bằng một câu **không chứa chữ "và"** không?
 
-- Mảnh không mô tả được trong một câu không có chữ "và"
-- Không nghĩ ra cách test nó nếu chưa có mảnh khác
-- Ước lượng của bạn cho nó là "khoảng một hai ngày" — mảnh đủ nhỏ thường đo bằng chục phút
-- Bạn vẫn thấy sợ khi nhìn vào nó
+## Thử sức
 
-Điều ngược lại cũng có thật: cắt **quá** nhỏ thì bạn được mười hàm một dòng gọi lẫn nhau, và phải nhảy qua mười file mới hiểu một luồng. Chỗ dừng đúng là chủ đề của [[truu-tuong-hoa-khi-nao-tach]].
+Bạn nhận yêu cầu: *"Làm chức năng cho người dùng đổi mật khẩu."*
 
-## Vì sao kỹ năng này chuyển được đi khắp nơi
-
-Bảy việc ở đầu bài không có chữ nào là TypeScript hay Python. Chúng là **bài toán**, không phải **lời giải**. Khi bạn đổi sang Go, Rust, hay một framework chưa tồn tại, danh sách bảy dòng đó không đổi một chữ — chỉ cú pháp của bước 3 đổi.
-
-Đó cũng là lý do người có kinh nghiệm bắt nhịp ngôn ngữ mới nhanh: họ không học lại cách nghĩ, chỉ tra cú pháp.
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Mở editor trước khi liệt kê việc | Viết được 200 dòng rồi phát hiện hiểu sai yêu cầu | Viết bảy dòng tiếng Việt trước |
-| Bắt đầu từ việc đứng đầu danh sách | Việc đó thường khó nhất, dễ nản ngay | Bắt đầu từ việc nhỏ nhất có kết quả thấy được |
-| Dựng cả hạ tầng rồi mới viết nghiệp vụ | Chưa chạy được gì đã hết ngày | Làm phần thuần trước, I/O sau |
-| Cắt mảnh còn quá to | Vẫn bí, chỉ là bí ở mức nông hơn | Cắt tiếp cho tới khi mỗi mảnh đo bằng chục phút |
-| Cắt quá vụn | Mười file cho một luồng, đọc mệt hơn | Xem [[truu-tuong-hoa-khi-nao-tach]] |
-| Không viết ra trường hợp biên trước | Phát hiện chúng lúc đã lên production | Liệt kê trường hợp ở bước 1 |
-
-## Ghi nhớ
-
-- Bí là vì bài toán còn to, không phải vì thiếu cú pháp.
-- Bốn bước: liệt kê việc → tìm việc độc lập → làm việc **dễ nhất** trước → ghép dần.
-- Phần thuần thường chiếm đa số và làm được ngay, không cần hạ tầng.
-- Mảnh đủ nhỏ = tả được trong một câu không có chữ "và", đo bằng chục phút.
-- Danh sách việc không chứa tên ngôn ngữ nào — nên nó theo bạn sang mọi ngôn ngữ.
-
-## Tự kiểm tra
-
-1. Vì sao nên bắt đầu từ việc dễ nhất thay vì việc đầu tiên trong danh sách?
-2. Trong bảy việc của bài toán CSV, việc nào là hàm thuần và điều đó giúp gì?
-3. Ba dấu hiệu cho biết một mảnh vẫn còn quá to?
+Nghe như một việc. Thử liệt kê **tất cả** những mảnh nhỏ ẩn trong đó — gợi ý: có ít nhất bảy mảnh, và ít nhất hai trong số đó không liên quan gì tới việc ghi mật khẩu mới vào cơ sở dữ liệu.

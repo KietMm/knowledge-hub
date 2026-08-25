@@ -4,158 +4,149 @@ slug: truu-tuong-hoa-khi-nao-tach
 summary: Trừu tượng sai đắt hơn code lặp. Quy tắc ba lần, chi phí của một lớp gián tiếp, và cách nhận ra trừu tượng đang rò rỉ.
 level: nang-cao
 tags: [nen-tang, tu-duy, truu-tuong, thiet-ke]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** biết vì sao gộp sớm hai đoạn code giống nhau thường là sai, nhận ra trừu tượng hỏng qua dấu hiệu cụ thể, và có tiêu chí để quyết định tách hay không.
+> **Sau bài này bạn sẽ:** biết dừng tay khi chưa đủ dữ kiện để tách, và nhận ra một trừu tượng đang hỏng trước khi nó kéo cả module theo.
 
-## Trừu tượng là gì, nói cho chính xác
+## Ý tưởng chính
 
-Trừu tượng hoá là **bỏ bớt chi tiết để lộ ra ý định**. Một hàm tên `guiEmail(nguoiNhan, noiDung)` giấu đi SMTP, thử lại, mã hoá — bạn dùng nó mà không cần biết những thứ đó.
+Trừu tượng hoá là **giấu chi tiết đi và chỉ để lộ ra thứ người dùng cần biết**. Một hàm là trừu tượng. Một class là trừu tượng. Một API là trừu tượng.
 
-Thước đo một trừu tượng tốt chỉ có một: **bạn có phải đọc ruột nó không?** Nếu để dùng đúng `guiEmail` mà bạn phải mở file ra xem nó xử lý lỗi thế nào, thì nó chưa che được gì — nó chỉ thêm một chỗ để nhảy tới.
+Điều ít ai nói: **mỗi trừu tượng đều có giá**, và trừu tượng sai đắt hơn code lặp rất nhiều. Câu hỏi thật sự không phải "tách hay không tách", mà là **"tôi đã biết đủ để tách chưa?"**
 
-## Mỗi trừu tượng đều có giá
+## Mental model
 
-Người mới học được dạy "đừng lặp code" nên tưởng gộp là luôn tốt. Gộp có giá, và giá đó thật:
+Hãy nghĩ tới cái **điều khiển TV**.
 
-| Bạn được | Bạn trả |
-|---|---|
-| Sửa một chỗ, có tác dụng mọi nơi | Sửa một chỗ, **vỡ mọi nơi** |
-| Ít dòng code hơn | Thêm một tầng phải nhảy qua khi đọc |
-| Ý định rõ hơn | Một cái tên nữa phải nghĩ và phải đúng |
-| Test một lần cho nhiều nơi | Mọi chỗ gọi giờ **ràng buộc** vào nhau |
+> Nút "tăng âm" giấu đi hàng nghìn thứ: tín hiệu hồng ngoại, mạch khuếch đại, loa. Bạn không cần biết gì trong số đó — và đó chính là giá trị của nó.
+>
+> Nhưng khi TV không lên tiếng, bạn buộc phải biết: pin điều khiển, hướng chỉ, cáp loa. **Lúc đó cái trừu tượng bị "rò rỉ"** — nó không giấu được nữa, và bạn phải hiểu cả hai tầng cùng lúc.
 
-Dòng cuối là dòng đắt nhất và ít ai nhìn thấy lúc gộp. Hai đoạn code giống nhau nhưng **thuộc hai lý do thay đổi khác nhau** — gộp lại là buộc chúng cùng số phận. Rồi một bên cần đổi, và bạn thêm một tham số `if`. Rồi bên kia cần đổi, thêm cờ nữa.
+Trừu tượng tốt là cái điều khiển bạn dùng cả năm mà không cần mở ra. Trừu tượng tồi là cái điều khiển mà lần nào dùng cũng phải nhớ "bấm hơi mạnh và chỉ đúng góc" — nó bắt bạn gánh cả chi tiết *lẫn* lớp vỏ.
+
+## Ví dụ nhỏ
 
 ```ts
-// Sau ba lần "chỉ thêm một cờ thôi"
-function xuatBaoCao(
-  data: Row[], laPdf: boolean, gopTheoThang: boolean,
-  anCotGia: boolean, dinhDangVn: boolean, guiEmail: boolean,
-) { /* 200 dòng if lồng nhau */ }
+// Ba chỗ trong dự án làm gần giống nhau
+gui('a@x.com', 'Chào mừng', dungMauChaoMung(ten))
+gui('b@x.com', 'Đặt lại mật khẩu', dungMauDatLai(token))
+gui('c@x.com', 'Hoá đơn tháng 5', dungMauHoaDon(don))
 ```
 
-Hàm này khó dùng hơn ba hàm riêng, khó test hơn (2⁵ tổ hợp cờ), và không ai dám xoá nhánh nào. Nó là **trừu tượng sai** đã hoá đá.
+Bạn nhìn thấy ba dòng giống nhau và tay ngứa muốn gộp thành `guiMail(loai, nguoiNhan, duLieu)`. Câu hỏi trước khi gộp: **ba dòng này giống nhau vì cùng bản chất, hay chỉ tình cờ trông giống?**
 
-> Code lặp rẻ hơn trừu tượng sai. Lặp thì bạn xoá được; trừu tượng sai thì phải gỡ.
+## Tại sao cần nó
 
-## Quy tắc ba lần
-
-Kinh nghiệm dùng được:
-
-1. **Lần một** — viết thẳng.
-2. **Lần hai** — chép, sửa. Thấy hơi ngứa nhưng **chưa gộp**.
-3. **Lần ba** — giờ mới đủ ba mẫu để thấy cái gì thật sự chung, cái gì chỉ tình cờ giống.
-
-Vì sao phải chờ tới lần ba: với hai mẫu, bạn không phân biệt được **giống bản chất** với **giống ngẫu nhiên**. Mẫu thứ ba là chỗ khác biệt thật lộ ra.
+Vì cái giá của trừu tượng sai không hiện ra ngay. Nó hiện ra ba tháng sau, dưới dạng thế này:
 
 ```ts
-// Lần 1 và 2 trông y hệt nhau
-function kiemTraEmailKhach(e: string) { return /.+@.+/.test(e) }
-function kiemTraEmailNhanVien(e: string) { return /.+@.+/.test(e) }
-
-// Lần 3 làm lộ ra: chúng KHÔNG cùng một quy tắc
-function kiemTraEmailNhaCungCap(e: string) {
-  return /.+@.+/.test(e) && !e.endsWith('@gmail.com')  // nhà cung cấp phải dùng email công ty
+// Trừu tượng gộp vội, rồi bị vá dần theo từng ngoại lệ
+function guiMail(loai, nguoiNhan, duLieu, opts = {}) {
+  if (loai === 'hoa-don' && opts.kemPdf) { ... }
+  if (loai === 'dat-lai' && !opts.boQuaHanChe) { ... }
+  if (loai === 'chao-mung' && duLieu.laKhachVip) { ... }
 }
 ```
 
-Nếu gộp ở lần hai, tới lần ba bạn sẽ thêm cờ `chanGmail: boolean` — và bắt đầu con đường dẫn tới hàm sáu cờ ở trên.
+Hàm này giờ **khó hơn** ba dòng gốc: muốn sửa mail hoá đơn, bạn phải đọc cả logic của hai loại mail không liên quan, và mỗi lần sửa đều có nguy cơ làm hỏng loại khác. Đây là dấu hiệu kinh điển: **trừu tượng gộp những thứ chỉ tình cờ giống nhau**.
 
-## Giống ngẫu nhiên và giống bản chất
+Cái giá cụ thể của mỗi lớp trừu tượng, để cân nhắc cho tỉnh táo:
 
-Câu hỏi phân biệt, hỏi được ở mọi ngôn ngữ:
+- **Một chỗ nữa phải nhảy tới** khi đọc code.
+- **Một cái tên nữa phải đặt đúng** — đặt sai thì nó nói dối người đọc.
+- **Một biên giới nữa phải giữ đúng** khi yêu cầu thay đổi.
 
-> **Nếu yêu cầu nghiệp vụ đổi, hai chỗ này có phải đổi cùng nhau không?**
+Đổi lại bạn được: sửa một chỗ thay vì ba, và một cái tên diễn đạt được ý định. Đáng giá — **khi bạn đã biết cái gì thật sự chung**.
 
-- **Có** → giống bản chất, gộp đi.
-- **Không / không chắc** → giống ngẫu nhiên, để yên.
+## So sánh
 
-```ts
-// Cùng công thức, KHÁC lý do đổi
-const thueVat   = (tien: number) => tien * 0.1   // luật thuế đổi thì đổi
-const hoaHong   = (tien: number) => tien * 0.1   // chính sách bán hàng đổi thì đổi
-```
+Hai kiểu "giống nhau", và phân biệt được chúng là toàn bộ kỹ năng ở bài này:
 
-Gộp thành `nhan10PhanTram()` là sai, dù code y hệt. Ngày thuế lên 12% mà hoa hồng giữ nguyên, cái trừu tượng đó chống lại bạn.
-
-Đây chính là ý *"tách theo lý do thay đổi"* — nền của chữ S trong [[solid-giai-thich-bang-code-that]].
-
-## Trừu tượng rò rỉ
-
-Trừu tượng **rò rỉ** khi chi tiết nó hứa giấu lại lộ ra và bắt bạn quan tâm.
-
-```ts
-// Giao diện hứa: "một kho dữ liệu đơn giản"
-interface KhoNguoiDung {
-  layTheoId(id: string): Promise<User>
-}
-
-// Nhưng dùng thật thì phải biết nó là SQL và có N+1
-for (const id of ids) {
-  await kho.layTheoId(id)     // 1000 id = 1000 truy vấn
-}
-```
-
-Trừu tượng này che được **cú pháp** SQL nhưng không che được **mô hình chi phí**. Nó rò rỉ. Cách xử lý không phải là che kỹ hơn — mà là **để chi phí lộ ra trong giao diện**:
-
-```ts
-interface KhoNguoiDung {
-  layTheoId(id: string): Promise<User>
-  layNhieu(ids: string[]): Promise<User[]>   // nói thẳng: gọi hàng loạt rẻ hơn
-}
-```
-
-Nguyên tắc: **trừu tượng được phép giấu cách làm, không được phép giấu cái giá.** Một trừu tượng che mất chuyện "cái này gọi qua mạng" hay "cái này quét toàn bảng" sẽ gây sự cố hiệu năng mà không ai lần ra — liên quan trực tiếp tới [[index-va-hieu-nang-truy-van]].
-
-## Dấu hiệu trừu tượng đang hỏng
-
-Nhận ra sớm thì gỡ còn rẻ:
-
-- Thêm tính năng nào cũng phải **thêm một tham số** cho hàm chung
-- Có tham số mà một nửa chỗ gọi truyền `null` / `undefined` / `false`
-- Tên chứa từ vô nghĩa: `Manager`, `Helper`, `Util`, `Data`, `Info`, `Base`
-- Phải đọc ruột nó mới dùng đúng
-- Sửa nó thì phải chạy test của bốn tính năng không liên quan
-- Nó có đúng **một** chỗ gọi, và đã như vậy sáu tháng
-
-Gặp mấy dấu hiệu này thì **gỡ ra** là việc chính đáng, không phải thất bại — đó là nội dung của [[no-ky-thuat-va-refactor]]. Gỡ một trừu tượng sai thường là chép nội dung của nó ngược trở lại các chỗ gọi, rồi mới gộp lại theo đường cắt đúng.
-
-## Tách tới đâu thì dừng
-
-Trừu tượng quá vụn cũng là một lỗi, chỉ ít ai gọi tên nó:
-
-```
-xuLyDon() → chuanBiDon() → kiemTraDon() → kiemTraCoBan() → kiemTraTonTai()
-```
-
-Năm file để hiểu một luồng, mỗi hàm một dòng. Không mảnh nào tái dùng ở đâu khác. Đây là chi phí đọc thật, chỉ là nó không nằm trong bất kỳ chỉ số nào.
-
-Tiêu chí dừng dùng được: **mỗi tầng trừu tượng phải nói một câu chuyện ở một mức độ**. Nếu một hàm trộn "gọi API thanh toán" với "kiểm tra chuỗi có rỗng không" trong cùng mấy dòng, đó là lỗi lệch tầng — và đó mới là lúc tách. Còn tách chỉ vì hàm dài 30 dòng thì không phải lý do.
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
+| | Giống bản chất | Giống ngẫu nhiên |
 |---|---|---|
-| Gộp ngay lần thứ hai thấy giống | Buộc hai thứ không liên quan cùng số phận | Chờ tới lần ba |
-| Thêm cờ boolean để hàm chung dùng được chỗ mới | Hàm sáu cờ, 2⁶ tổ hợp không test nổi | Tách lại thành các hàm riêng |
-| Gộp vì code giống, không hỏi lý do đổi | Luật thuế đổi kéo theo hoa hồng đổi | Hỏi: "chúng có phải đổi cùng nhau không?" |
-| Đặt tên `Manager`, `Helper`, `Util` | Tên không nói gì → cái gì cũng nhét vừa | Tên theo việc cụ thể |
-| Trừu tượng giấu mất chi phí (mạng, truy vấn) | N+1 query, chậm mà không ai lần ra | Để chi phí lộ trong giao diện (`layNhieu`) |
-| Giữ trừu tượng sai vì "đã lỡ viết rồi" | Nó tiếp tục lan | Gỡ ra, chép ngược lại, cắt lại cho đúng |
-| Tách tới mức mỗi hàm một dòng | Năm file cho một luồng | Tách theo lệch tầng, không theo số dòng |
+| Bản chất | Cùng một quy tắc nghiệp vụ | Tình cờ code trông giống |
+| Khi yêu cầu đổi | **Cùng nhau** đổi | Đổi **rời nhau** |
+| Ví dụ | Ba chỗ cùng tính thuế VAT | Ba form đều có "họ tên, email" |
+| Nên | Tách thành một chỗ | **Để yên**, dù lặp |
 
-## Ghi nhớ
+Phép thử duy nhất đáng tin: **"nếu yêu cầu nghiệp vụ đổi, ba chỗ này có phải đổi cùng nhau không?"**
 
-- Thước đo trừu tượng tốt: **không phải đọc ruột nó vẫn dùng đúng**.
-- Code lặp rẻ hơn trừu tượng sai — lặp thì xoá được, trừu tượng sai thì phải gỡ.
-- Quy tắc ba lần: mẫu thứ ba mới cho thấy cái gì chung thật.
-- Câu hỏi quyết định: *"yêu cầu đổi thì hai chỗ này có đổi cùng nhau không?"*
-- Trừu tượng được giấu **cách làm**, không được giấu **cái giá**.
-- Tách khi lệch tầng, không tách vì đếm số dòng.
+Cùng đổi ⇒ chúng thật sự là một thứ ⇒ tách. Đổi rời nhau ⇒ chúng là ba thứ khác nhau tình cờ trông giống ⇒ gộp lại là tự trói mình.
 
-## Tự kiểm tra
+Form "họ tên, email" là ví dụ rõ nhất: chúng trông giống hệt nhau hôm nay, nhưng form đăng ký rồi sẽ cần xác minh email, còn form liên hệ thì không. Gộp sớm là chuẩn bị sẵn một mớ `if`.
 
-1. Vì sao "code lặp rẻ hơn trừu tượng sai"?
-2. Hai hàm cùng công thức `tien * 0.1` — khi nào nên gộp, khi nào không?
-3. Trừu tượng "rò rỉ" nghĩa là gì, và vì sao giấu chi phí lại nguy hiểm?
+## Dễ nhầm
+
+**1. Áp DRY một cách máy móc.** "Đừng lặp lại chính mình" nói về **tri thức**, không phải về **ký tự**. Hai đoạn code giống hệt nhau nhưng thể hiện hai quy tắc nghiệp vụ khác nhau thì **không** vi phạm DRY.
+
+**2. Tách ngay lần thứ hai.** Dùng **quy tắc ba lần**:
+
+```text
+Lần 1: viết thẳng
+Lần 2: chép, và CHỊU ĐỰNG sự lặp
+Lần 3: giờ mới tách
+```
+
+Lý do không nằm ở con số ba, mà ở dữ kiện: sau lần thứ ba bạn đã thấy **ba biến thể thật**, nên biết cái gì thật sự chung và cái gì chỉ là chi tiết. Tách ở lần hai là tách dựa trên một mẫu duy nhất — đoán mò.
+
+**3. Tưởng trừu tượng rò rỉ là hiếm.** Nó ở khắp nơi, và bạn chỉ có thể *chọn* rò rỉ ít hay nhiều:
+
+```ts
+const ds = await db.nguoiDung.findMany({ include: { donHang: true } })
+```
+
+ORM hứa rằng bạn không cần biết SQL. Rồi trang chậm, và bạn phải biết truy vấn này sinh ra N+1 câu lệnh — tức phải hiểu cả tầng bên dưới. Đó là rò rỉ, và nó không tránh được: hiệu năng luôn rò qua mọi lớp vỏ. Xem [[index-va-hieu-nang-truy-van]].
+
+Kết luận đúng không phải "đừng dùng ORM", mà là: **chọn trừu tượng có chỗ thoát hiểm** — cho phép viết SQL thô khi cần. Trừu tượng tệ nhất là loại không cho bạn xuống tầng dưới lúc bí.
+
+**4. Bỏ qua các dấu hiệu trừu tượng đang hỏng.** Bốn dấu hiệu, gặp là phải xem lại:
+
+- Hàm nhận **cờ boolean điều khiển luồng**: `xuLy(don, true)` — chữ `true` không nói gì, và nó thường có nghĩa hàm đang làm hai việc.
+- Danh sách tham số **dài ra theo từng ngoại lệ**.
+- Tên chung chung tới mức vô nghĩa: `Manager`, `Helper`, `Utils`, `xuLyDuLieu`.
+- Sửa một chỗ dùng, **các chỗ dùng khác vỡ**.
+
+Dấu hiệu cuối là nghiêm trọng nhất: nó nói rằng những chỗ dùng đó **không thật sự chung nhau** — chúng chỉ đang chia sẻ code.
+
+**5. Tưởng gỡ bỏ trừu tượng là thất bại.** Khi phát hiện tách sai, cách sửa rẻ nhất thường là **nội tuyến lại** — chép code về từng chỗ dùng, rồi mới tách lại cho đúng. Nghe như lùi một bước, nhưng nó rẻ hơn nhiều so với vá tiếp. Chủ đề này ở [[no-ky-thuat-va-refactor]].
+
+## Mẹo nhớ
+
+> **Tách khi chúng phải đổi CÙNG NHAU, không phải khi chúng TRÔNG giống nhau.**
+>
+> **Code lặp rẻ hơn trừu tượng sai.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Ba cái giá phải trả cho mỗi lớp trừu tượng là gì?
+2. Phép thử để phân biệt "giống bản chất" và "giống ngẫu nhiên"?
+3. Vì sao quy tắc ba lần dùng số ba, chứ không phải hai?
+4. "Trừu tượng rò rỉ" nghĩa là gì? Cho một ví dụ bạn từng gặp.
+5. Vì sao "sửa một chỗ dùng làm chỗ khác vỡ" là dấu hiệu nghiêm trọng?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, xét ba đoạn code sau và quyết định **tách hay để yên**, kèm lý do:
+
+```text
+a) Ba màn hình đều có đoạn kiểm tra "người dùng đã đăng nhập chưa"
+b) Ba báo cáo đều bắt đầu bằng "lấy dữ liệu 30 ngày gần nhất"
+c) Ba form đều có ô "họ tên" và "số điện thoại" với cùng kiểu kiểm tra
+```
+
+Với mỗi đoạn, đặt đúng một câu hỏi trước khi trả lời — câu hỏi nào?
+
+## Thử sức
+
+Bạn thấy đoạn này trong dự án:
+
+```ts
+function xuLy(duLieu, laXuatFile = false, boQuaLoi = false, dinhDang = 'json') {
+  ...
+}
+```
+
+Có bao nhiêu dấu hiệu hỏng trong đúng một dòng chữ ký này? Và nếu phải sửa, bạn tách nó thành mấy hàm — dựa trên tiêu chí nào chứ không phải cảm giác?

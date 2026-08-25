@@ -1,38 +1,114 @@
 ---
 title: Biến, trạng thái và luồng điều khiển
 slug: bien-trang-thai-va-luong-dieu-khien
-summary: Mô hình máy tính trong đầu bạn: ô nhớ có tên, thứ tự thực thi, và vì sao "gán" không phải là "bằng".
+summary: "Mô hình máy tính trong đầu bạn: ô nhớ có tên, thứ tự thực thi, và vì sao gán không phải là bằng."
 level: co-ban
 tags: [nen-tang, tu-duy, bien, trang-thai]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** dựng được mô hình trong đầu về chuyện gì xảy ra khi máy chạy từng dòng code, và đọc được một đoạn code lạ bằng cách lần theo trạng thái thay vì đoán.
+> **Sau bài này bạn sẽ:** đọc được một đoạn code lạ bằng cách lần theo trạng thái thay vì đoán, và không còn thấy `x = x + 1` là vô lý.
 
-## Lập trình là điều khiển sự thay đổi của trạng thái
+## Ý tưởng chính
 
-Bỏ hết cú pháp sang một bên, mọi chương trình chỉ làm ba việc: **giữ dữ liệu ở đâu đó**, **đọc/sửa nó**, và **quyết định làm gì tiếp theo**. Ngôn ngữ nào cũng vậy — khác nhau ở chỗ chúng cho bạn bao nhiêu tự do khi làm ba việc đó.
+Bỏ hết cú pháp sang một bên, mọi chương trình chỉ làm ba việc: **giữ dữ liệu ở đâu đó**, **đọc và sửa nó**, và **quyết định làm gì tiếp theo**.
 
-**Trạng thái** là toàn bộ dữ liệu chương trình đang giữ tại một thời điểm. Khi bạn gỡ lỗi, câu hỏi bạn thật sự đang hỏi luôn là: *"tới dòng này thì trạng thái đang là gì, và nó lệch khỏi cái tôi tưởng ở đâu?"*
+Toàn bộ dữ liệu chương trình đang giữ tại một thời điểm gọi là **trạng thái**. Lập trình, nói cho gọn, là điều khiển trạng thái đó thay đổi theo đúng thứ tự bạn muốn.
 
-## `=` không phải dấu bằng của toán học
+## Mental model
 
-Đây là hiểu nhầm số một của người mới, và nó âm thầm gây lỗi rất lâu về sau.
+Hãy tưởng tượng một **người thư ký cực nhanh nhưng cực máy móc**, ngồi trước tấm bảng trắng có các ô được đặt tên.
+
+> Anh ta đọc **từng dòng lệnh theo đúng thứ tự**, không đọc trước, không tự đoán ý bạn.
+>
+> Mỗi dòng chỉ thuộc một trong hai loại: *"ghi giá trị này vào ô kia"*, hoặc *"tuỳ ô kia đang ghi gì, nhảy tới dòng nào tiếp theo"*.
+
+Tấm bảng là **trạng thái**. Ngón tay anh ta đang chỉ dòng nào là **luồng điều khiển**. Gỡ lỗi, về bản chất, là hỏi: *"tới dòng này thì trên bảng đang ghi gì, và nó lệch khỏi cái tôi tưởng ở chỗ nào?"*
+
+## Ví dụ nhỏ
 
 ```ts
-// TypeScript
 let x = 5
-x = x + 1   // đọc là: "lấy giá trị hiện tại của x, cộng 1, cất ngược lại vào x"
+x = x + 1
 ```
 
-```python
-# Python
-x = 5
-x = x + 1   # cùng một chuyện
+Trong toán học, `x = x + 1` là một mệnh đề **sai**. Trong lập trình nó không phải mệnh đề — nó là **mệnh lệnh**.
+
+## Code chạy thế nào
+
+Người thư ký làm đúng thế này:
+
+```text
+Dòng 1: let x = 5
+        → tạo ô tên x, ghi số 5
+        bảng:  x = 5
+
+Dòng 2: x = x + 1
+        bước a — đọc ô x, thấy 5
+        bước b — tính 5 + 1 = 6
+        bước c — ghi 6 đè lên ô x
+        bảng:  x = 6
 ```
 
-Trong toán, `x = x + 1` là mệnh đề sai. Trong lập trình, nó là **mệnh lệnh**: đọc ô nhớ tên `x`, tính, ghi đè. Chữ "biến" có nghĩa đen — giá trị của nó *biến đổi* theo thời gian.
+Để ý **thứ tự a → b → c**: vế phải tính xong hết rồi mới ghi vào vế trái. Nắm đúng thứ tự đó thì `x = x + 1` hết kỳ lạ, và bạn tự suy được `x = x * 2` hay `i = i - 1` làm gì mà không cần ai dạy.
 
-Hệ quả: **thứ tự dòng code quyết định kết quả.**
+## Cú pháp
+
+```ts
+const TEN = 'Kiệt'   // ô không cho gán lại
+let tuoi = 30        // ô gán lại được
+
+if (tuoi >= 18) { }                  // rẽ nhánh: đọc bảng rồi chọn đường
+for (let i = 0; i < 3; i += 1) { }   // lặp: mỗi vòng đổi bảng một chút
+while (conHang) { }                  // lặp tới khi bảng đổi đủ để điều kiện sai
+```
+
+Đừng học thuộc ba dạng vòng lặp. Nhớ theo pattern:
+
+```text
+if     →  đi đường nào
+for    →  làm N lần, biết trước N
+while  →  làm tới khi trạng thái đổi đủ
+```
+
+## Tại sao cần nó
+
+Không có mô hình "bảng trắng + ngón tay chỉ dòng", bạn buộc phải **nhớ** code làm gì thay vì **đọc ra** được nó làm gì — và lúc gặp lỗi thì không có chỗ nào để bắt đầu.
+
+```ts
+let tong = 0
+for (let i = 1; i <= 3; i += 1) {
+  tong = tong + i
+}
+```
+
+Người có mô hình lần ra ngay:
+
+```text
+trước vòng:  tong=0
+i=1:         tong = 0+1 = 1
+i=2:         tong = 1+2 = 3
+i=3:         tong = 3+3 = 6
+i=4:         4 <= 3 sai → dừng
+```
+
+Người không có mô hình sẽ nhìn đoạn code, nghĩ "chắc là tính tổng", rồi đoán. Đoán đúng 90% số lần — và 10% còn lại là những buổi tối ngồi mò không ra lỗi.
+
+## Dễ nhầm
+
+**1. Lẫn `=` với `==`.** Hai việc hoàn toàn khác nhau, chỉ trông giống nhau:
+
+```text
+=    →  MỆNH LỆNH: ghi vào ô
+==   →  CÂU HỎI: hai bên có bằng nhau không
+```
+
+```ts
+if (x = 5) { }    // ❌ GHI 5 vào x, rồi coi 5 là "đúng" → luôn chạy
+if (x === 5) { }  // ✅ HỎI x có bằng 5 không
+```
+
+**2. Tưởng `b = a` làm hai cái tên dính vào nhau.**
 
 ```ts
 let a = 1
@@ -41,153 +117,65 @@ a = 99
 console.log(b) // 1 — b không "theo dõi" a
 ```
 
-Nếu bạn tưởng `b` sẽ thành 99, mô hình trong đầu bạn đang là "b là một cái tên khác của a". Nó không phải. `b` là một ô nhớ riêng, đã được chép giá trị vào lúc đó.
+Nếu bạn tưởng `b` thành 99 thì mô hình trong đầu bạn đang là *"b là tên gọi khác của a"*. Không phải: đó là hai ô riêng, và `let b = a` chỉ chép nội dung một lần tại thời điểm đó. Với mảng và object thì câu chuyện khác hẳn — xem [[kieu-du-lieu-va-bien]].
 
-## Ba loại tên: hằng, biến, và tên chỉ tới vật thể
-
-```ts
-const TEN = 'Kiệt'      // không cho gán lại
-let tuoi = 30           // cho gán lại
-const ds = [1, 2, 3]    // không cho gán lại CÁI TÊN, nhưng ruột thì sửa được
-ds.push(4)              // ✅ hợp lệ — ds vẫn trỏ tới đúng cái mảng đó
-ds = [9]                // ❌ lỗi — đây mới là gán lại
-```
-
-```python
-TEN = 'Kiệt'            # Python không có const; quy ước VIẾT HOA = đừng đụng
-ds = [1, 2, 3]
-ds.append(4)            # ✅ sửa ruột
-ds = [9]                # Python cho phép, không ai chặn bạn
-```
-
-Điểm chung của cả hai ngôn ngữ, và của gần như mọi ngôn ngữ khác: với dữ liệu **phức hợp** (mảng, object, dict), cái tên giữ **đường tới** vật thể chứ không giữ bản thân vật thể. Nên hai tên có thể cùng chỉ tới **một** vật:
+**3. Tưởng biến sống ở mọi nơi.** Mỗi cặp `{}` mở một vùng riêng:
 
 ```ts
-const a = { n: 1 }
-const b = a       // b và a chỉ cùng MỘT object
-b.n = 99
-console.log(a.n)  // 99 — sửa qua b thì a "cũng đổi", vì vốn chỉ có một object
-```
-
-```python
-a = {'n': 1}
-b = a
-b['n'] = 99
-print(a['n'])     # 99 — y hệt
-```
-
-Đây là nguồn gốc của cả một họ lỗi: *"tôi sửa bản sao mà bản gốc cũng đổi"*. Không có bản sao nào cả. Muốn có bản sao thật thì phải chép rõ ràng — xem [[mang-object-va-bat-bien]] cho phía JS/TS.
-
-## Luồng điều khiển: máy quyết định đi đâu tiếp
-
-Mặc định máy chạy từ trên xuống. Ba thứ bẻ được dòng chảy đó, và **chỉ ba thứ**:
-
-| Cấu trúc | Câu hỏi nó trả lời | Từ khoá |
-|---|---|---|
-| Rẽ nhánh | "Có làm không?" | `if` / `else` / `match` |
-| Lặp | "Làm bao nhiêu lần?" | `for` / `while` |
-| Nhảy | "Đi chỗ khác ngay" | `return` / `break` / `continue` / `throw` |
-
-```ts
-function xepLoai(diem: number): string {
-  if (diem < 0 || diem > 10) throw new Error('Điểm phải trong 0–10')
-  if (diem >= 8) return 'giỏi'
-  if (diem >= 6.5) return 'khá'
-  return 'trung bình'
-}
-```
-
-```python
-def xep_loai(diem: float) -> str:
-    if diem < 0 or diem > 10:
-        raise ValueError('Điểm phải trong 0–10')
-    if diem >= 8:
-        return 'giỏi'
-    if diem >= 6.5:
-        return 'khá'
-    return 'trung bình'
-```
-
-Chú ý lối viết ở đây: **chặn trường hợp xấu trước, thoát sớm**. Nó phẳng hơn nhiều so với `if` lồng `if` lồng `if`:
-
-```ts
-// ❌ Kim tự tháp — mỗi tầng lồng thêm một mức thụt lề phải theo dõi
-function xepLoai(diem: number): string {
-  if (diem >= 0 && diem <= 10) {
-    if (diem >= 8) { return 'giỏi' }
-    else { if (diem >= 6.5) { return 'khá' } else { return 'trung bình' } }
-  } else { throw new Error('...') }
-}
-```
-
-Quy tắc dùng được ở mọi ngôn ngữ: **thoát sớm** (early return) giữ mức thụt lề thấp, và mức thụt lề thấp thì số trạng thái bạn phải giữ trong đầu cũng thấp.
-
-## Phạm vi: cái tên này sống ở đâu
-
-```ts
-function f() {
+if (true) {
   let trong = 1
-  if (true) {
-    let sauHon = 2
-    console.log(trong)    // ✅ nhìn ra ngoài được
-  }
-  console.log(sauHon)     // ❌ lỗi — sauHon chết khi khối { } đóng lại
 }
+console.log(trong)   // ❌ ReferenceError — ô này bị xoá khi ra khỏi ngoặc
 ```
 
-```python
-def f():
-    trong = 1
-    if True:
-        sau_hon = 2
-    print(sau_hon)        # ✅ CHẠY ĐƯỢC — Python không có phạm vi theo khối!
-```
+Người thư ký xoá bảng phụ khi rời khối. Đây là điều tốt: nó giữ tấm bảng chính khỏi phình vô hạn, và cho phép bạn đọc một hàm mà không phải nhớ cả chương trình.
 
-Đây là chỗ hai ngôn ngữ **thật sự khác nhau**, và biết sự khác biệt còn quan trọng hơn thuộc lòng một bên: JS/TS có phạm vi theo **khối** `{ }`, Python có phạm vi theo **hàm**. Khi đổi ngôn ngữ, câu hỏi cần hỏi luôn là *"cái tên tôi vừa đặt sống tới đâu?"* — chứ không phải "cú pháp thế nào".
+**4. Quên rằng biến đếm cũng là trạng thái.** `i` trong `for` là một ô, và mỗi vòng nó đổi. Lỗi lệch một — chạy thừa hoặc thiếu một vòng — gần như luôn do đọc sai `i` ở vòng cuối. Cách chữa: **lần tay ba vòng đầu và vòng cuối**, đừng đọc lướt.
 
-Nguyên tắc chung dùng được ở mọi nơi: **khai báo tên ở phạm vi hẹp nhất còn dùng được**. Tên sống càng ngắn, số chỗ có thể sửa nó càng ít, số lỗi càng ít.
+## Mẹo nhớ
 
-## Đọc code lạ bằng cách lần trạng thái
+> **Gán là mệnh lệnh, không phải lời khẳng định.**
+>
+> **Đọc code là lần theo bảng, không phải đoán ý.**
 
-Kỹ năng thực chiến: gặp một đoạn code không hiểu, đừng đọc xuôi — **kẻ bảng trạng thái**.
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. "Trạng thái" của một chương trình nghĩa là gì?
+2. Ba bước máy làm khi gặp `x = x + 1` diễn ra theo thứ tự nào?
+3. `=` và `==` khác nhau ở chỗ nào — không phải về cú pháp, mà về **việc chúng làm**?
+4. Sau `let b = a; a = 99` thì `b` bằng bao nhiêu, và vì sao?
+5. Khi nào một cái tên biến biến mất khỏi bảng?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, lần tay đoạn này và ghi ra bảng trạng thái sau mỗi vòng:
 
 ```ts
-let tong = 0
-for (const n of [3, 1, 4]) {
-  if (n % 2 === 0) continue
-  tong += n
+let a = 1
+let b = 1
+for (let i = 0; i < 3; i += 1) {
+  const tam = a + b
+  a = b
+  b = tam
 }
 ```
 
-| Vòng | `n` | `n % 2 === 0`? | `tong` sau vòng |
-|---|---|---|---|
-| 1 | 3 | không | 3 |
-| 2 | 1 | không | 4 |
-| 3 | 4 | **có** → `continue` | 4 |
+`a` và `b` bằng bao nhiêu ở cuối? Ghi xong rồi tự hỏi: **vì sao phải có biến `tam`?** Bỏ nó đi thì hỏng ở đâu?
 
-Kết quả `4`. Cách này chậm nhưng **không bao giờ sai**, và nó chính là thứ trình gỡ lỗi (debugger) làm hộ bạn. Khi một bug khó tới mức bạn hết giả thuyết, quay về kẻ bảng.
+## Thử sức
 
-## Lỗi hay gặp
+Đoạn này in ra gì?
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Tưởng `b = a` tạo bản sao của object | Sửa `b` thì `a` đổi theo, lỗi rất khó lần | Nhớ: tên giữ đường tới vật, muốn bản sao phải chép rõ |
-| Dùng `==` thay `===` trong JS | `'1' == 1` là `true`, so sánh ra kết quả bất ngờ | Luôn `===`, xem [[kieu-du-lieu-va-bien]] |
-| Khai báo biến ở phạm vi rộng hơn mức cần | Nhiều chỗ sửa được nó, khó lần nguồn gốc giá trị sai | Khai báo sát chỗ dùng nhất |
-| `if` lồng nhau 4–5 tầng | Phải giữ 5 điều kiện trong đầu cùng lúc | Thoát sớm, chặn trường hợp xấu trước |
-| Sửa biến bên trong vòng lặp rồi quên | Kết quả phụ thuộc thứ tự, chạy lại ra khác | Kẻ bảng trạng thái để thấy rõ |
-| Tưởng Python có phạm vi khối như JS | Biến "rò" ra ngoài `if`, ghi đè tên khác | Biết luật phạm vi của **ngôn ngữ đang dùng** |
+```ts
+let x = 1
+function f() {
+  let x = 2
+  x = x + 10
+}
+f()
+console.log(x)
+```
 
-## Ghi nhớ
-
-- Chương trình = giữ trạng thái + sửa trạng thái + quyết định đi đâu tiếp. Ba việc, mọi ngôn ngữ.
-- `=` là **mệnh lệnh gán**, không phải mệnh đề bằng nhau. Thứ tự dòng quyết định kết quả.
-- Với dữ liệu phức hợp, cái tên giữ **đường tới** vật thể — hai tên có thể cùng chỉ một vật.
-- Chỉ có ba cách bẻ luồng: rẽ nhánh, lặp, nhảy. Thoát sớm giữ code phẳng.
-- Bí thì kẻ bảng trạng thái. Chậm nhưng không sai bao giờ.
-
-## Tự kiểm tra
-
-1. Vì sao `const ds = [1,2]` vẫn cho phép `ds.push(3)` nhưng không cho `ds = [3]`?
-2. Sau `const b = a` với `a` là object, sửa `b.n` thì `a.n` có đổi không? Vì sao?
-3. Phạm vi của biến trong JS/TS và trong Python khác nhau ở điểm nào?
+Gợi ý để tự lần ra: có **mấy ô** tên `x`, và dòng `x = x + 10` đang ghi vào ô nào?

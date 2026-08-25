@@ -4,161 +4,183 @@ slug: de-quy-va-cach-nghi-ve-no
 summary: Đừng lần theo từng lời gọi trong đầu. Tin vào giả định quy nạp, chốt điều kiện dừng, và biết lúc nào vòng lặp tốt hơn.
 level: trung-cap
 tags: [nen-tang, tu-duy, de-quy, thuat-toan]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** viết được hàm đệ quy mà không cần mô phỏng từng tầng gọi trong đầu, nhận ra khi nào đệ quy là lời giải tự nhiên, và biết vì sao nó có thể làm tràn ngăn xếp.
+> **Sau bài này bạn sẽ:** viết được hàm đệ quy mà không cần lần theo cây gọi trong đầu, và biết khi nào nên dùng vòng lặp thay vì đệ quy.
 
-## Vì sao đệ quy khó — và vì sao cái khó đó là ảo
+## Ý tưởng chính
 
-Người mới thường cố **lần theo** đệ quy: "gọi lần một thì n=5, nó gọi lần hai n=4, lần hai gọi lần ba n=3..." Đến tầng thứ tư thì mất dấu. Kết luận: "đệ quy khó hiểu."
+Đệ quy khó không phải vì nó phức tạp, mà vì **người ta cố lần theo nó bằng đầu**: gọi cái này, cái này gọi cái kia, cái kia lại gọi... tới tầng thứ ba là lạc.
 
-Cái khó không nằm ở đệ quy. Nó nằm ở **cách tiếp cận**. Không ai lần được năm tầng gọi trong đầu, kể cả người viết ra nó.
+Cái khó đó là **ảo**, và bài này chỉ có một việc: thay cách nghĩ ấy bằng cách nghĩ đúng.
 
-Cách nghĩ đúng chỉ gồm ba câu hỏi, và bạn **không bao giờ đi xuống quá một tầng**:
+## Mental model
 
-1. **Trường hợp cơ sở** — nhỏ tới mức nào thì trả lời được ngay, không cần gọi tiếp?
-2. **Bước thu nhỏ** — làm sao biến bài toán thành một bài **cùng loại nhưng nhỏ hơn**?
-3. **Giả định quy nạp** — *cứ cho là* lời gọi con trả về đúng, thì tôi ghép kết quả lại thế nào?
+Hãy tưởng tượng bạn là **một nhân viên trong một dãy phòng giống hệt nhau**, và bạn chỉ biết làm **đúng một bước**.
 
-Câu 3 là mấu chốt tâm lý: bạn được phép **tin** rằng hàm mình đang viết đã chạy đúng cho đầu vào nhỏ hơn. Không phải ảo tưởng — đó là quy nạp toán học, và nếu câu 1 với câu 2 đúng thì câu 3 tự đúng theo.
+> Sếp đưa bạn chồng 100 hồ sơ và bảo: "đếm đi".
+>
+> Bạn **không đếm cả chồng**. Bạn lấy ra một tờ, đưa 99 tờ còn lại sang phòng bên — nơi có một người **y hệt bạn** — rồi nói: *"đếm hộ, xong báo số."*
+>
+> Người bên kia làm y như vậy với phòng kế tiếp. Tới phòng cuối cùng, ai đó nhận **chồng rỗng** và trả lời ngay: "**không**".
+>
+> Con số chạy ngược về: 0 → 1 → 2 → … → 100.
 
-## Ba câu hỏi, một ví dụ
+Ba điều rút ra, và chúng chính là ba phần của mọi hàm đệ quy:
 
-Tính tổng một danh sách:
+1. Bạn chỉ làm **một bước** (lấy ra một tờ).
+2. Bạn **tin** người phòng bên làm đúng phần còn lại — không đi kiểm tra.
+3. Phải có **một phòng không gọi tiếp** (chồng rỗng), nếu không dãy phòng kéo dài vô tận.
+
+Điểm 2 là điểm khó chấp nhận nhất, và cũng là điểm quan trọng nhất. **Đừng lần theo cây gọi.** Chỉ hỏi: *"nếu người phòng bên trả về đúng, tôi ghép thế nào để phần của tôi cũng đúng?"*
+
+## Ví dụ nhỏ
 
 ```ts
-function tong(ds: number[]): number {
-  if (ds.length === 0) return 0                 // ① cơ sở: rỗng thì tổng là 0
-  return ds[0] + tong(ds.slice(1))              // ② thu nhỏ + ③ ghép
+function giaiThua(n) {
+  if (n <= 1) return 1        // phòng cuối: không gọi tiếp
+  return n * giaiThua(n - 1)  // một bước, phần còn lại giao phòng bên
 }
 ```
 
-```python
-def tong(ds: list[int]) -> int:
-    if not ds: return 0                          # ①
-    return ds[0] + tong(ds[1:])                  # ② + ③
+Đọc dòng cuối theo mental model: *"lấy ra số n, giao `n-1` cho người bên cạnh, rồi nhân kết quả của họ với n."*
+
+## Code chạy thế nào
+
+Với `giaiThua(4)` — chú ý hai chiều: **đi xuống** (giao việc) rồi **quay lên** (ghép kết quả):
+
+```text
+đi xuống                          quay lên
+giaiThua(4) = 4 * giaiThua(3)     ← 4 * 6  = 24
+  giaiThua(3) = 3 * giaiThua(2)   ← 3 * 2  = 6
+    giaiThua(2) = 2 * giaiThua(1) ← 2 * 1  = 2
+      giaiThua(1) = 1  ✋ dừng    → 1
 ```
 
-Đọc dòng ② thế này, **không** đọc thành "rồi nó gọi lại chính nó rồi lại gọi...":
+Việc thật sự chỉ xảy ra ở **chiều quay lên**. Đây là lý do đệ quy tốn bộ nhớ: bốn lời gọi phải **cùng nằm chờ** trong ngăn xếp, mỗi cái giữ lại con số của mình để nhân khi kết quả về.
 
-> *"Tổng của cả danh sách = phần tử đầu + tổng của phần còn lại. Tôi tin `tong` tính đúng phần còn lại."*
+Nhưng bạn không cần vẽ sơ đồ này để viết được hàm. Bạn chỉ cần trả lời ba câu ở phần dưới.
 
-Hết. Một tầng. Không lần xuống đáy.
+## Cú pháp
 
-## Chỗ đệ quy thật sự thắng: dữ liệu phân nhánh
-
-Với danh sách phẳng, vòng lặp thường gọn hơn. Đệ quy chỉ **thật sự** thắng khi dữ liệu tự nó có hình cây — lúc đó vòng lặp phải tự dựng ngăn xếp bằng tay, và code xấu hơn hẳn.
+Không có cú pháp riêng cho đệ quy — chỉ là một hàm gọi chính nó. Cái cần nhớ là **khung ba phần**:
 
 ```ts
-type ThuMuc = { ten: string; kichThuoc?: number; con?: ThuMuc[] }
-
-function tongDungLuong(tm: ThuMuc): number {
-  if (tm.con === undefined) return tm.kichThuoc ?? 0        // ① lá
-  return tm.con.reduce((s, c) => s + tongDungLuong(c), 0)   // ②③ mỗi nhánh
+function giai(baiToan) {
+  if (đủNhỏ(baiToan)) return đápÁnHiểnNhiên   // 1. điều kiện dừng
+  const nhoHon = thuNho(baiToan)               // 2. thu nhỏ MỘT bước
+  return ghep(giai(nhoHon))                    // 3. ghép kết quả
 }
 ```
 
-```python
-def tong_dung_luong(tm: ThuMuc) -> int:
-    if tm.con is None: return tm.kich_thuoc or 0
-    return sum(tong_dung_luong(c) for c in tm.con)
+Ba câu hỏi để viết bất kỳ hàm đệ quy nào:
+
+```text
+1. Trường hợp nhỏ nhất là gì, và đáp án của nó?
+2. Làm sao thu nhỏ bài toán MỘT bước?
+3. Có kết quả của bài nhỏ rồi thì ghép thế nào?
 ```
 
-Thử viết cái này bằng `while` mà xem — bạn sẽ phải tự tạo một mảng `stack`, tự `push`/`pop`. Nghĩa là **tự viết lại đúng cái ngăn xếp mà đệ quy cho không**.
+## Tại sao cần nó
 
-Nhận diện chỗ nên dùng đệ quy: cấu trúc cây thư mục, cây DOM, JSON lồng nhau, cây danh mục nhiều cấp, biểu thức toán, sơ đồ tổ chức. Trong giáo trình này, `CTE` đệ quy của SQL giải đúng họ bài toán đó — xem [[subquery-va-cte]].
-
-## Điều kiện dừng sai = tràn ngăn xếp
-
-Mỗi lời gọi chiếm một khung trên **ngăn xếp lời gọi**, và ngăn xếp có giới hạn.
+Với giai thừa, đệ quy chỉ là một cách viết khác — vòng lặp làm được, còn nhanh hơn. Đệ quy thật sự thắng ở **dữ liệu phân nhánh**, nơi vòng lặp trở nên xấu xí:
 
 ```ts
-function dem(n: number): number {
+// Đếm tất cả file trong một thư mục, kể cả thư mục con
+function demFile(thuMuc) {
+  let tong = 0
+  for (const muc of thuMuc.noiDung) {
+    tong += muc.laThuMuc ? demFile(muc) : 1   // ← thư mục con: giao cho "người bên cạnh"
+  }
+  return tong
+}
+```
+
+Viết đoạn này bằng vòng lặp thuần thì bạn phải **tự quản một ngăn xếp** những thư mục chưa duyệt — tức là tự tay làm lại đúng việc mà đệ quy làm miễn phí.
+
+Cùng lý do đó, đệ quy là cách tự nhiên để duyệt cây thư mục, cây DOM, cây danh mục nhiều cấp, và mọi thứ có hình dạng "thứ này chứa những thứ cùng loại với nó". SQL cũng có công cụ riêng cho hình dạng đó — xem [[subquery-va-cte]].
+
+## Dễ nhầm
+
+**1. Thiếu điều kiện dừng, hoặc dừng sai.**
+
+```ts
+function dem(n) {
+  return n + dem(n - 1)   // ❌ không bao giờ dừng → RangeError: Maximum call stack size exceeded
+}
+```
+
+Lỗi này luôn hiện dưới dạng **tràn ngăn xếp**. Thấy nó thì hỏi đúng hai câu: *có điều kiện dừng không*, và *mỗi lời gọi có thật sự tiến về phía nó không*.
+
+```ts
+function dem(n) {
+  if (n <= 0) return 0      // ✅ có dừng
+  return n + dem(n - 1)     //    và n giảm dần → chắc chắn tới 0
+}
+```
+
+**2. Thu nhỏ nhưng không tiến về điều kiện dừng.**
+
+```ts
+function xau(n) {
   if (n === 0) return 0
-  return 1 + dem(n - 1)
+  return xau(n - 2)   // ❌ n lẻ sẽ nhảy qua 0: 5 → 3 → 1 → -1 → -3 → ...
 }
-dem(100_000)   // ❌ RangeError: Maximum call stack size exceeded
-dem(-1)        // ❌ chạy mãi: -1, -2, -3... không bao giờ chạm 0
 ```
 
-```python
-def dem(n): return 0 if n == 0 else 1 + dem(n - 1)
-dem(100_000)   # ❌ RecursionError (Python mặc định chặn ở ~1000 tầng)
-```
+Điều kiện dừng phải **chặn được mọi đường đi tới**, không chỉ đường đẹp nhất. Đổi thành `n <= 0` là xong.
 
-Hai lỗi khác nhau ở đây, và cần phân biệt:
+**3. Cố lần theo cây gọi trong đầu.** Đây là "lỗi" phổ biến nhất và nó không nằm trong code — nó nằm trong cách bạn nghĩ. Với bài phân nhánh, cây gọi có hàng trăm nhánh; không ai giữ nổi trong đầu. **Tin vào lời gọi con** và chỉ kiểm ba câu hỏi ở trên.
 
-- `dem(-1)` — **điều kiện dừng không bao giờ tới**. Đây là lỗi logic. Sửa: dùng `n <= 0` thay `n === 0`.
-- `dem(100_000)` — điều kiện dừng đúng, nhưng **quá sâu**. Đây là lỗi chọn công cụ, không phải lỗi logic.
-
-Quy tắc kiểm nhanh khi viết xong: *"tham số có chắc chắn tiến về trường hợp cơ sở sau mỗi lời gọi không?"* Nếu có nhánh nào không thu nhỏ, bạn có vòng lặp vô hạn.
-
-## Khi nào **đừng** dùng đệ quy
-
-| Tình huống | Dùng gì | Vì sao |
-|---|---|---|
-| Duyệt danh sách phẳng | Vòng lặp | Rõ hơn, không tốn ngăn xếp |
-| Độ sâu phụ thuộc dữ liệu người dùng | Vòng lặp + ngăn xếp tự quản | Người dùng có thể nạp JSON lồng 50.000 tầng |
-| Python, độ sâu > ~1000 | Vòng lặp | Python không tối ưu đuôi, giới hạn thấp |
-| Cần hiệu năng tối đa vòng trong | Vòng lặp | Mỗi lời gọi có chi phí khung ngăn xếp |
-| Cây, JSON lồng, biểu thức | **Đệ quy** | Code khớp hình dạng dữ liệu |
-
-Điểm cần nhớ về JS/TS và Python: **cả hai đều không đảm bảo tối ưu đệ quy đuôi**. Mẹo "viết thành đệ quy đuôi cho khỏi tràn" đúng ở Scheme, Haskell, và không đúng ở đây.
-
-## Đệ quy tính lại nhiều lần
+**4. Đệ quy tính lại cùng một thứ rất nhiều lần.**
 
 ```ts
-function fib(n: number): number {
+function fib(n) {
   if (n <= 1) return n
-  return fib(n - 1) + fib(n - 2)     // fib(30) gọi hơn 1,3 triệu lần
+  return fib(n - 1) + fib(n - 2)   // ❌ fib(30) gọi fib(10) hàng nghìn lần
 }
 ```
 
-Cây gọi phình theo hàm mũ vì cùng một `fib(k)` được tính lại rất nhiều lần. Cách sửa dùng được ở mọi ngôn ngữ — **nhớ kết quả đã tính**:
+Đây không phải lỗi của đệ quy mà là lỗi thiếu ghi nhớ. Cách chữa — lưu lại kết quả đã tính — chính là quy hoạch động, xem [[quy-hoach-dong]]. Cách đo mức độ tệ nằm ở [[big-o-doc-va-uoc-luong]].
+
+**5. Dùng đệ quy cho việc tuyến tính, đơn giản.** Duyệt một mảng phẳng thì `for` rõ hơn, nhanh hơn, và không tràn ngăn xếp. JavaScript tràn ở khoảng 10.000 tầng — với dữ liệu tuyến tính lớn, đệ quy là lựa chọn sai.
+
+## Mẹo nhớ
+
+> **Làm một bước, giao phần còn lại cho người phòng bên, và nhớ chừa một phòng không gọi tiếp.**
+>
+> **Đừng lần theo cây gọi — hãy tin nó.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Ba phần bắt buộc của một hàm đệ quy là gì?
+2. Vì sao "tin vào lời gọi con" lại là cách nghĩ đúng, thay vì lần theo từng tầng?
+3. `RangeError: Maximum call stack size exceeded` nói lên điều gì? Bạn kiểm hai chỗ nào?
+4. Vì sao `if (n === 0)` là điều kiện dừng nguy hiểm khi mỗi bước trừ 2?
+5. Khi nào bạn nên chọn vòng lặp thay vì đệ quy?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết hàm `tongDayLongNhau(ds)` cộng tất cả số trong một mảng có thể lồng nhau:
 
 ```ts
-function fib(n: number, nho = new Map<number, number>()): number {
-  if (n <= 1) return n
-  const co = nho.get(n)
-  if (co !== undefined) return co
-  const kq = fib(n - 1, nho) + fib(n - 2, nho)
-  nho.set(n, kq)
-  return kq
+tongDayLongNhau([1, [2, [3, 4]], 5])   // → 15
+```
+
+Trước khi chạy, tự trả lời ba câu: trường hợp nhỏ nhất là gì, bạn thu nhỏ thế nào, và ghép ra sao?
+
+## Thử sức
+
+Hàm dưới đây có dừng không? Nếu có, nó trả về gì với `n = 10`?
+
+```ts
+function bian(n) {
+  if (n === 1) return 0
+  return 1 + bian(n % 2 === 0 ? n / 2 : n * 3 + 1)
 }
 ```
 
-```python
-from functools import cache
-
-@cache                       # Python có sẵn, một dòng
-def fib(n: int) -> int:
-    return n if n <= 1 else fib(n - 1) + fib(n - 2)
-```
-
-Từ hàm mũ xuống tuyến tính. Cùng một ý tưởng với [[cache-nhieu-tang]], chỉ khác quy mô: đừng tính lại thứ đã tính. Cái giá và cách đọc con số "hàm mũ" là nội dung của [[big-o-doc-va-uoc-luong]].
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Cố lần từng tầng gọi trong đầu | Mất dấu ở tầng 4, kết luận "đệ quy khó" | Tin giả định quy nạp, chỉ nghĩ một tầng |
-| Quên trường hợp cơ sở | Tràn ngăn xếp ngay lần chạy đầu | Viết nhánh dừng **trước** nhánh đệ quy |
-| Cơ sở dùng `=== 0` với đầu vào có thể âm | Chạy mãi, không bao giờ chạm cơ sở | Dùng `<= 0` |
-| Có nhánh không thu nhỏ tham số | Vòng lặp vô hạn ở đúng nhánh đó | Kiểm mọi nhánh đều tiến về cơ sở |
-| Đệ quy trên dữ liệu người dùng nạp vào | Tràn ngăn xếp = một dạng tấn công từ chối dịch vụ | Giới hạn độ sâu, hoặc dùng vòng lặp |
-| Tin JS/Python tối ưu đệ quy đuôi | Vẫn tràn dù viết đúng dạng đuôi | Cả hai đều không đảm bảo điều đó |
-| Fibonacci đệ quy thẳng | `fib(40)` treo máy | Nhớ kết quả (`Map` / `@cache`) |
-
-## Ghi nhớ
-
-- Ba câu hỏi: cơ sở là gì, thu nhỏ ra sao, ghép kết quả thế nào. Không bao giờ nghĩ quá một tầng.
-- Bạn **được phép tin** lời gọi con trả đúng — đó là quy nạp, không phải ảo tưởng.
-- Đệ quy thắng ở dữ liệu hình cây; danh sách phẳng thì vòng lặp rõ hơn.
-- Cơ sở sai → chạy mãi. Cơ sở đúng nhưng quá sâu → tràn ngăn xếp. Hai lỗi khác nhau.
-- JS/TS và Python **không** đảm bảo tối ưu đệ quy đuôi.
-
-## Tự kiểm tra
-
-1. Ba câu hỏi cần trả lời trước khi viết một hàm đệ quy là gì?
-2. `dem(-1)` và `dem(100_000)` cùng gây lỗi — hai lỗi đó khác nhau ở đâu?
-3. Vì sao `fib` đệ quy thẳng lại chậm tới mức đó, và cách sửa là gì?
+Gợi ý: thử `n = 10` bằng tay, ghi lại dãy số. Câu hỏi thật sự là — bạn có **chứng minh được** nó luôn dừng với mọi `n` không? (Đây là một bài toán chưa ai giải được, và nó cho thấy "điều kiện dừng" không phải lúc nào cũng hiển nhiên.)

@@ -4,170 +4,159 @@ slug: ba-loi-viet-menh-lenh-oop-ham
 summary: Cùng một bài toán viết theo ba lối. Không lối nào thắng tuyệt đối; biết chúng trả lời câu hỏi nào mới là cái dùng được.
 level: trung-cap
 tags: [nen-tang, tu-duy, paradigm, oop, functional]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** nhận ra lối viết đang dùng trong một codebase lạ, biết mỗi lối tổ chức code quanh cái gì, và chọn được lối hợp với bài toán thay vì hợp với thói quen.
+> **Sau bài này bạn sẽ:** nhìn một đoạn code lạ là biết nó đang viết theo lối nào, và chọn được lối phù hợp thay vì dùng mãi một lối cho mọi việc.
 
-## Ba lối, một câu hỏi khác nhau
+## Ý tưởng chính
 
-Mọi cách tổ chức code đều đang trả lời cùng một câu: **"chỗ nào giữ dữ liệu, chỗ nào chứa hành vi, và hai thứ đó gắn với nhau ra sao?"** Ba lối trả lời khác nhau:
+Ba lối viết không phải ba mức độ từ dở tới hay. Chúng là **ba câu hỏi khác nhau** đặt ra trước cùng một bài toán:
 
-| Lối | Tổ chức quanh | Câu hỏi trung tâm |
-|---|---|---|
-| Mệnh lệnh / thủ tục | **Các bước** | "Làm gì, theo thứ tự nào?" |
-| Hướng đối tượng | **Vật thể** giữ cả dữ liệu lẫn hành vi | "Có những thứ gì, mỗi thứ tự làm được gì?" |
-| Hàm | **Phép biến đổi** dữ liệu | "Dữ liệu chảy qua những biến đổi nào?" |
+```text
+Mệnh lệnh        →  "Máy phải làm những bước nào?"
+Hướng đối tượng  →  "Ai chịu trách nhiệm việc gì?"
+Hàm              →  "Dữ liệu biến đổi từ dạng nào sang dạng nào?"
+```
 
-Chúng **không loại trừ nhau**. Gần như mọi codebase thật đều trộn cả ba, và trộn có ý thức thì tốt hơn trộn vì không biết mình đang trộn.
+Ba câu hỏi đều hợp lệ. Bài toán khác nhau thì câu hỏi đúng cũng khác nhau.
 
-## Cùng một bài toán, ba lối
+## Mental model
 
-Bài toán: có danh sách đơn hàng, tính tổng tiền các đơn đã thanh toán, có giảm giá cho khách VIP.
+Hãy tưởng tượng bạn cần một bữa tối, và có ba cách xoay xở:
 
-### Mệnh lệnh — mô tả các bước
+> **Mệnh lệnh — bạn tự nấu theo công thức.** Bật bếp, đổ dầu, cho hành vào, đảo 30 giây… Bạn kiểm soát từng bước, và bạn cũng chịu trách nhiệm cho từng bước.
+>
+> **Hướng đối tượng — bạn thuê một đầu bếp.** Bạn không nói "đảo 30 giây"; bạn nói *"cho tôi món gà nướng"*. Đầu bếp giữ bí quyết của mình, bạn không cần biết, cũng không được vào bếp sửa nồi.
+>
+> **Hàm — bạn xếp một dây chuyền.** Nguyên liệu đi qua máy rửa → máy thái → máy nướng. Mỗi máy nhận vào một thứ, trả ra một thứ, không máy nào giữ lại gì cho riêng mình.
+
+Ba mô hình đó giải thích mọi khác biệt còn lại: ai giữ trạng thái, ai chịu trách nhiệm, và cái gì được phép thay đổi.
+
+## Ví dụ nhỏ
+
+Cùng một việc — tính tổng tiền các đơn đã giao — viết theo ba lối:
 
 ```ts
-function tongDaThanhToan(dons: Don[]): number {
-  let tong = 0
-  for (let i = 0; i < dons.length; i++) {
-    const d = dons[i]
-    if (d.trangThai !== 'da-thanh-toan') continue
-    let tien = d.tong
-    if (d.khachVip) tien = tien * 0.9
-    tong += tien
-  }
-  return tong
+// 1. Mệnh lệnh: mô tả từng bước
+let tong = 0
+for (const d of donHang) {
+  if (d.trangThai === 'da_giao') tong += d.tien
 }
 ```
 
-```python
-def tong_da_thanh_toan(dons: list[Don]) -> float:
-    tong = 0.0
-    for d in dons:
-        if d.trang_thai != 'da-thanh-toan': continue
-        tien = d.tong * 0.9 if d.khach_vip else d.tong
-        tong += tien
-    return tong
-```
-
-**Được:** ai cũng đọc được, không cần biết khái niệm gì. Chạy nhanh, sát cách máy thật sự làm việc.
-**Mất:** logic "thế nào là đã thanh toán" và "giảm bao nhiêu" bị chôn trong vòng lặp, không tái dùng được chỗ khác.
-
-### Hướng đối tượng — vật thể tự biết việc của nó
-
 ```ts
-class Don {
-  constructor(
-    private tong: number,
-    private trangThai: string,
-    private khachVip: boolean,
-  ) {}
-
-  daThanhToan(): boolean {
-    return this.trangThai === 'da-thanh-toan'
-  }
-
-  tienPhaiTra(): number {
-    return this.khachVip ? this.tong * 0.9 : this.tong
-  }
-}
-
-class SoDon {
-  constructor(private dons: Don[]) {}
-  tongDaThanhToan(): number {
-    return this.dons.filter((d) => d.daThanhToan())
-                    .reduce((s, d) => s + d.tienPhaiTra(), 0)
+// 2. Hướng đối tượng: giao việc cho vật thể tự lo
+class SoDonHang {
+  constructor(private ds) {}
+  tongDaGiao() {
+    return this.ds.filter((d) => d.daGiao()).reduce((s, d) => s + d.tien, 0)
   }
 }
 ```
 
-```python
-@dataclass
-class Don:
-    tong: float
-    trang_thai: str
-    khach_vip: bool
-
-    def da_thanh_toan(self) -> bool:
-        return self.trang_thai == 'da-thanh-toan'
-
-    def tien_phai_tra(self) -> float:
-        return self.tong * 0.9 if self.khach_vip else self.tong
+```ts
+// 3. Hàm: dây chuyền biến đổi
+const tong = donHang
+  .filter((d) => d.trangThai === 'da_giao')
+  .reduce((s, d) => s + d.tien, 0)
 ```
 
-**Được:** "giảm 10%" nằm ở đúng một chỗ. Muốn thêm loại khách mới thì sửa một nơi. Dữ liệu và quy tắc về nó đi cùng nhau.
-**Mất:** nhiều khuôn khổ hơn cho một bài toán nhỏ. Và nếu class phình ra ôm quá nhiều việc thì lợi ích bốc hơi — chi tiết ở [[oop-that-su-la-gi]].
+## Code chạy thế nào
 
-### Hàm — chuỗi phép biến đổi
+Lối 1 và lối 3 làm cùng một việc trên `[{50, đã giao}, {30, chưa}, {20, đã giao}]`, nhưng "trạng thái" nằm ở hai chỗ khác nhau:
+
+```text
+Mệnh lệnh — có một ô nhớ đổi liên tục
+  tong=0  →  gặp 50 (đã giao) → tong=50
+          →  gặp 30 (chưa)    → tong=50
+          →  gặp 20 (đã giao) → tong=70
+
+Hàm — không ô nào bị đổi, chỉ có dữ liệu mới sinh ra
+  [50, 30, 20]  ──filter──►  [50, 20]  ──reduce──►  70
+```
+
+Khác biệt cốt lõi nằm đúng ở đây: lối mệnh lệnh **sửa một chỗ nhớ nhiều lần**; lối hàm **tạo giá trị mới ở mỗi khâu**. Đó là lý do lối hàm dễ suy luận hơn — không có gì để hỏi "tới dòng này thì `tong` đang bằng mấy" — nhưng cũng tốn bộ nhớ hơn vì mỗi khâu sinh một mảng.
+
+## Tại sao cần nó
+
+Vì mỗi lối làm tốt một loại bài toán, và dùng sai lối thì code phình ra không lý do:
+
+| Bài toán | Lối hợp | Vì sao |
+|---|---|---|
+| Thuật toán, vòng lặp nóng, code nhúng | Mệnh lệnh | Kiểm soát từng bước, không tốn bộ nhớ trung gian |
+| Nhiều thực thể có trạng thái và quy tắc riêng | OOP | Trạng thái đi cùng hành vi giữ nó hợp lệ |
+| Xử lý dữ liệu, biến đổi nhiều khâu | Hàm | Mỗi khâu test riêng được, dễ đọc như một câu |
+
+Và biết cả ba còn cho bạn thứ này: **đọc được code của người khác**. Một dự án Java thường nghĩ theo lối OOP, một dự án React nghĩ theo lối hàm, một đoạn xử lý ảnh nghĩ theo lối mệnh lệnh. Không biết lối đang dùng thì bạn đọc từng dòng đúng mà vẫn không hiểu ý đồ.
+
+## So sánh
+
+| | Mệnh lệnh | Hướng đối tượng | Hàm |
+|---|---|---|---|
+| Câu hỏi trung tâm | Làm những bước nào? | Ai chịu trách nhiệm? | Biến đổi thế nào? |
+| Trạng thái | Biến bị sửa liên tục | Nằm trong đối tượng, có người canh | Không sửa, chỉ sinh giá trị mới |
+| Đơn vị chính | Câu lệnh | Lớp / đối tượng | Hàm |
+| Mạnh nhất khi | Thuật toán, hiệu năng | Mô hình hoá nghiệp vụ nhiều thực thể | Xử lý và biến đổi dữ liệu |
+| Yếu nhất khi | Code lớn dần, khó theo dõi trạng thái | Bài đơn giản bị bọc quá nhiều lớp | Cần tối ưu bộ nhớ từng chút |
+
+Ba trụ của OOP đọc được ở mọi ngôn ngữ, và cũng chỉ là ba câu: **đóng gói** (giấu ruột, chỉ lộ hành vi), **kế thừa** (dùng lại bằng cách mở rộng — thường bị lạm dụng), **đa hình** (nhiều loại đáp ứng cùng một lời gọi). Xem [[oop-that-su-la-gi]].
+
+## Dễ nhầm
+
+**1. Tưởng có lối "đúng" và lối "sai".** Không có. Một hàm `filter().map()` gọn gàng đặt trong vòng lặp xử lý 10 triệu điểm ảnh là lựa chọn tệ; một vòng `for` 40 dòng để mô hình hoá quy tắc nghiệp vụ cũng vậy.
+
+**2. Tưởng "dùng class" nghĩa là đang viết OOP.** Class chỉ là cú pháp. Nếu class của bạn chỉ chứa dữ liệu công khai và mọi logic nằm ở nơi khác, bạn đang viết mệnh lệnh với cú pháp OOP — và mất luôn cái lợi duy nhất của OOP là giữ trạng thái luôn hợp lệ.
+
+**3. Tưởng "dùng `map`/`filter`" nghĩa là đang viết lối hàm.** Cốt lõi của lối hàm không phải tên hàm, mà là **không sửa dữ liệu đầu vào**:
 
 ```ts
-const daThanhToan = (d: Don) => d.trangThai === 'da-thanh-toan'
-const tienPhaiTra = (d: Don) => (d.khachVip ? d.tong * 0.9 : d.tong)
+// ❌ Hình thức là hàm, ruột là mệnh lệnh — vẫn sửa biến ngoài
+let tong = 0
+ds.forEach((x) => { tong += x })
 
-const tongDaThanhToan = (dons: Don[]) =>
-  dons.filter(daThanhToan).map(tienPhaiTra).reduce((a, b) => a + b, 0)
+// ✅ Không sửa gì cả
+const tong = ds.reduce((s, x) => s + x, 0)
 ```
 
-```python
-da_thanh_toan = lambda d: d.trang_thai == 'da-thanh-toan'
-tien_phai_tra = lambda d: d.tong * 0.9 if d.khach_vip else d.tong
+Chi tiết ở [[ham-dau-vao-dau-ra-va-tac-dung-phu]].
 
-def tong_da_thanh_toan(dons):
-    return sum(map(tien_phai_tra, filter(da_thanh_toan, dons)))
+**4. Tưởng phải chọn một lối cho cả dự án.** Thực tế bạn sẽ trộn, và trộn có chủ đích là dấu hiệu của người viết code tốt: dùng OOP để mô hình hoá thực thể nghiệp vụ, dùng lối hàm cho các phép biến đổi dữ liệu bên trong, dùng mệnh lệnh cho đoạn cần tốc độ. Việc cần tránh không phải trộn — mà là **trộn ba lối trong cùng một hàm 30 dòng**.
+
+## Mẹo nhớ
+
+> **Tự nấu (mệnh lệnh) · Thuê đầu bếp (OOP) · Xếp dây chuyền (hàm).**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Ba lối viết trả lời ba câu hỏi nào?
+2. Trạng thái nằm ở đâu trong mỗi lối?
+3. Vì sao dùng `class` chưa chắc đã là viết OOP?
+4. Vì sao `forEach` cộng dồn vào biến ngoài **không** phải lối hàm?
+5. Khi nào lối mệnh lệnh là lựa chọn tốt hơn hai lối kia?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết hàm lấy **tên của 3 khách chi nhiều nhất** theo **hai lối**: một lần bằng vòng `for` thuần, một lần bằng dây chuyền `filter/map/sort/slice`.
+
+```ts
+const khach = [{ ten: 'An', chi: 500 }, { ten: 'Bình', chi: 1200 }, ...]
 ```
 
-**Được:** mỗi mảnh là một hàm thuần, test riêng được, ghép lại được theo tổ hợp khác. Đọc `filter → map → reduce` là đọc thẳng ý định.
-**Mất:** chuỗi dài quá thì khó gỡ lỗi (đặt breakpoint vào giữa chuỗi không dễ), và có thể tạo nhiều mảng trung gian.
+Viết xong, tự trả lời: bản nào bạn đọc lại nhanh hơn sau một tháng, và bản nào bạn tự tin sửa hơn khi yêu cầu đổi thành "5 khách"?
 
-## Ba trụ đọc được ở mọi ngôn ngữ
+## Thử sức
 
-Dù dùng lối nào, ba ý này vẫn đúng và vẫn dùng được:
+Đoạn code này viết theo lối nào?
 
-- **Đóng gói** — giấu chi tiết bên trong, chỉ lộ ra cái cần. OOP làm bằng `private`; lối hàm làm bằng module chỉ export vài hàm; [[ranh-gioi-service]] làm bằng ranh giới mạng. Cùng một ý ở ba quy mô.
-- **Bất biến** — không sửa dữ liệu tại chỗ, tạo bản mới. Trung tâm của lối hàm, nhưng dùng trong OOP cũng tốt.
-- **Kết hợp** (composition) — ghép mảnh nhỏ thành mảnh lớn, thay vì kế thừa để dùng lại.
+```ts
+class GioHang {
+  items = []
+  them(sp) { this.items.push(sp) }
+  tong() { return this.items.reduce((s, i) => s + i.gia, 0) }
+}
+```
 
-## Chọn lối nào
-
-Đừng chọn theo trường phái. Chọn theo **cái gì hay thay đổi** trong bài toán của bạn:
-
-| Nếu... | Nghiêng về | Vì |
-|---|---|---|
-| Sẽ thêm nhiều **loại** mới (loại khách, loại thanh toán) | OOP | Thêm loại = thêm một class, không sửa chỗ cũ |
-| Sẽ thêm nhiều **phép xử lý** mới trên cùng dữ liệu | Hàm | Thêm phép = thêm một hàm, không đụng kiểu dữ liệu |
-| Là một script, chạy một lần rồi thôi | Mệnh lệnh | Khuôn khổ thêm không đáng |
-| Là vòng lặp nóng, cần từng mili-giây | Mệnh lệnh | Ít lớp trung gian nhất |
-| Là quy tắc nghiệp vụ cần test kỹ | Hàm (thuần) | Test không cần dựng gì, xem [[ham-dau-vao-dau-ra-va-tac-dung-phu]] |
-
-Dòng đầu và dòng hai là một đánh đổi có thật và có tên trong lý thuyết ngôn ngữ. Cùng một bài toán, hai chiều mở rộng, mỗi lối dễ ở một chiều và khó ở chiều kia. Không có lối nào dễ cả hai.
-
-## Thực tế: bạn sẽ trộn
-
-Chính giáo trình này là một ví dụ trộn có chủ ý: quy tắc nghiệp vụ nằm ở các hàm **thuần** trong `src/lib/`, còn tầng dữ liệu là các **module** đóng gói (giấu chuyện đọc file phía sau một giao diện), và React thì buộc bạn nghĩ **khai báo** — xem [[tu-duy-khai-bao-va-jsx]].
-
-Trộn không phải thiếu kỷ luật. Thiếu kỷ luật là **trộn trong cùng một hàm**: một hàm 200 dòng vừa sửa trạng thái của `this`, vừa nối chuỗi `map/filter`, vừa có ba vòng `for` lồng nhau.
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Coi một lối là "đúng", còn lại là sai | Ép bài toán vào khuôn không hợp | Chọn theo chiều mở rộng của bài toán |
-| Dựng class cho một script 20 dòng | Khuôn khổ nhiều hơn nội dung | Mệnh lệnh là đủ |
-| Chuỗi `map/filter/reduce` dài 8 mắt xích | Không gỡ lỗi nổi khi kết quả sai | Cắt ra biến trung gian có tên |
-| Class ôm cả dữ liệu, HTTP, và định dạng hiển thị | "OOP" trên danh nghĩa, thực chất là một cục | Xem [[ket-dinh-cao-lien-ket-long]] |
-| Dùng kế thừa để dùng lại code | Cây kế thừa sâu, sửa lớp cha vỡ lớp con | Ưu tiên kết hợp, xem [[oop-that-su-la-gi]] |
-| Trộn ba lối trong **một hàm** | Không ai đọc nổi | Trộn giữa các tầng thì được, trong một hàm thì không |
-
-## Ghi nhớ
-
-- Ba lối trả lời cùng một câu hỏi: dữ liệu ở đâu, hành vi ở đâu, gắn nhau ra sao.
-- Mệnh lệnh tổ chức quanh **bước**, OOP quanh **vật thể**, hàm quanh **phép biến đổi**.
-- Thêm nhiều **loại** → OOP dễ hơn. Thêm nhiều **phép xử lý** → lối hàm dễ hơn.
-- Đóng gói, bất biến, kết hợp — ba ý dùng được ở cả ba lối, ở mọi ngôn ngữ.
-- Trộn giữa các tầng là bình thường; trộn trong một hàm là bừa.
-
-## Tự kiểm tra
-
-1. Ba lối viết tổ chức code quanh cái gì?
-2. Bài toán sắp thêm rất nhiều **loại thanh toán mới** thì nên nghiêng về lối nào, vì sao?
-3. "Đóng gói" thể hiện ra thế nào ở OOP, ở module, và ở ranh giới service?
+Nó có `class`, có `reduce`, và có `push` sửa tại chỗ. Hãy chỉ ra **từng phần** thuộc lối nào — và trả lời: việc trộn ở đây là hợp lý hay là dấu hiệu thiết kế chưa rõ?
