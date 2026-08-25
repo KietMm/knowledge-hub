@@ -4,175 +4,226 @@ slug: xu-ly-loi-va-doc-ghi-file
 summary: try/except đúng cách, tự định nghĩa exception, và context manager để không bao giờ quên đóng tài nguyên.
 level: trung-cap
 tags: [python, exception, file, context-manager]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** ngừng viết `except:` trần, và dùng `with` cho mọi thứ cần dọn dẹp.
+> **Sau bài này bạn sẽ:** bắt lỗi ở đúng mức cần thiết thay vì bắt hết, và hiểu vì sao `with` là thứ nên dùng cho mọi tài nguyên.
 
-## try/except/else/finally
+## Ý tưởng chính
 
-```python
-try:
-    du_lieu = doc_cau_hinh(duong_dan)
-except FileNotFoundError:
-    du_lieu = MAC_DINH
-except json.JSONDecodeError as e:
-    raise ValueError(f"Cấu hình hỏng ở {duong_dan}") from e
-else:
-    ghi_log("Đọc cấu hình thành công")     # chạy khi KHÔNG có lỗi
-finally:
-    don_dep()                              # luôn chạy
-```
+Python xử lý lỗi theo triết lý **"xin lỗi dễ hơn xin phép"**: cứ làm, hỏng thì bắt — thay vì kiểm tra mọi điều kiện trước.
 
-Nguyên tắc: bắt **đúng loại lỗi mình biết cách xử lý**. `except Exception:` nuốt luôn cả những lỗi lập trình (`TypeError`, `AttributeError`) — thứ bạn muốn thấy ngay chứ không muốn giấu đi.
+Nhưng điều đó chỉ đúng khi bạn bắt **đúng loại lỗi** ở **đúng chỗ**. Bắt hết mọi lỗi ở một chỗ là cách nhanh nhất để biến một bug nhỏ thành một hệ thống im lặng nuốt mọi vấn đề.
 
-```python
-except:          # tệ nhất — bắt cả SystemExit, KeyboardInterrupt
-except Exception:  # vẫn quá rộng cho phần lớn trường hợp
-except (ValueError, KeyError):  # tốt — rõ ràng
-```
+## Mental model
 
-## `raise ... from` giữ nguyên chuỗi nguyên nhân
+Hãy nghĩ tới **cầu dao điện trong nhà**.
+
+> Nhà có nhiều cầu dao nhỏ cho từng khu — bếp, phòng ngủ, điều hoà. Chập ở bếp thì **chỉ bếp mất điện**, và bạn biết ngay hỏng ở đâu.
+>
+> `except Exception:` bao trùm cả chương trình là **một cầu dao tổng duy nhất**: chập ở đâu cũng cắt cả nhà, và bạn không biết nguyên nhân nằm chỗ nào.
+
+Nguyên tắc rút ra: **bắt lỗi cụ thể, ở gần chỗ có thể xử lý được nó**. Không xử lý được thì đừng bắt — để nó bay lên trên.
+
+## Ví dụ nhỏ
 
 ```python
 try:
-    gia_tri = int(chuoi)
-except ValueError as e:
-    raise ValueError(f"Không đọc được số từ {chuoi!r}") from e
+    n = int(input("Nhập số: "))
+except ValueError:                     # ✅ chỉ bắt đúng loại lỗi mình lường trước
+    print("Không phải số")
 ```
 
-`from e` giữ traceback gốc trong phần "The above exception was the direct cause of..." — thiếu nó là mất manh mối debug quan trọng nhất.
-
-## Exception tự định nghĩa
-
 ```python
-class LoiUngDung(Exception):
-    """Lớp gốc cho mọi lỗi của ứng dụng này."""
-
-class KhongTimThay(LoiUngDung):
-    def __init__(self, loai: str, id: str):
-        super().__init__(f"Không tìm thấy {loai} có id {id}")
-        self.loai, self.id = loai, id
-
-class ViPhamRangBuoc(LoiUngDung):
+try:
+    xu_ly()
+except Exception:                      # ❌ nuốt cả lỗi lập trình của chính bạn
     pass
 ```
 
-Có một lớp gốc riêng cho ứng dụng nghĩa là tầng ngoài cùng bắt được `except LoiUngDung` mà không nuốt nhầm lỗi của thư viện khác.
+## Code chạy thế nào
 
-## Context manager
+Bốn khối và thứ tự chạy của chúng:
+
+```text
+try:      … việc có thể hỏng
+except:   … chạy KHI có lỗi khớp
+else:     … chạy KHI KHÔNG có lỗi
+finally:  … LUÔN chạy, có lỗi hay không
+
+Không lỗi:  try → else → finally
+Có lỗi:     try → except → finally
+```
+
+`else` ít người dùng nhưng đáng dùng: nó tách rõ *"phần có thể hỏng"* khỏi *"phần chạy khi mọi thứ ổn"*, nên `try` không bao trùm nhiều hơn mức cần.
 
 ```python
-with open("du_lieu.txt", encoding="utf-8") as f:
+try:
+    f = open("a.txt")
+except FileNotFoundError:
+    print("Không thấy file")
+else:
+    noi_dung = f.read()      # ✅ chỉ chạy khi mở được — không nằm trong try
+finally:
+    ...
+```
+
+Giữ nguyên chuỗi nguyên nhân khi ném lại:
+
+```python
+try:
+    cau_hinh = json.loads(raw)
+except json.JSONDecodeError as e:
+    raise CauHinhLoi("File cấu hình hỏng") from e   # ← "from e" giữ lỗi gốc trong traceback
+```
+
+Thiếu `from e`, người đọc log chỉ thấy "File cấu hình hỏng" mà không biết hỏng ở dòng nào của JSON.
+
+## Cú pháp
+
+**Context manager** — thứ nên dùng cho mọi tài nguyên cần đóng:
+
+```python
+with open("a.txt") as f:
     noi_dung = f.read()
-# file được đóng tự động, kể cả khi có exception ở giữa
+# file đóng ở đây, KỂ CẢ khi có exception ném ra giữa chừng
 ```
 
-`encoding="utf-8"` gần như luôn cần: mặc định phụ thuộc hệ điều hành, nên cùng một script chạy đúng trên máy bạn và hỏng trên Windows.
-
-Nhiều tài nguyên cùng lúc:
-
-```python
-with open("vao.txt") as vao, open("ra.txt", "w") as ra:
-    ra.write(vao.read().upper())
-```
-
-### Tự viết context manager
+Tự viết một cái:
 
 ```python
 from contextlib import contextmanager
-import time
 
 @contextmanager
-def do_thoi_gian(nhan: str):
+def do_thoi_gian(ten):
     bat_dau = time.perf_counter()
     try:
-        yield
+        yield                                  # ← code trong khối with chạy ở đây
     finally:
-        print(f"{nhan}: {time.perf_counter() - bat_dau:.3f}s")
+        print(f"{ten}: {time.perf_counter() - bat_dau:.2f}s")   # LUÔN chạy
 
 with do_thoi_gian("truy vấn"):
     chay_truy_van()
 ```
 
-`finally` bên trong đảm bảo phần dọn dẹp chạy cả khi khối `with` ném lỗi.
-
-## `pathlib` thay cho `os.path`
+`pathlib` thay cho `os.path`:
 
 ```python
 from pathlib import Path
 
-goc = Path(__file__).parent
-cau_hinh = goc / "config" / "app.json"       # nối bằng /, đúng trên mọi HĐH
-
-cau_hinh.exists()
-cau_hinh.read_text(encoding="utf-8")
-cau_hinh.write_text(noi_dung, encoding="utf-8")
-
-for f in goc.glob("**/*.py"):
-    print(f.name, f.stem, f.suffix)
+p = Path("du-lieu") / "2026" / "a.json"     # ← nối đường dẫn bằng /
+p.exists(); p.is_file(); p.suffix; p.stem
+p.read_text(encoding="utf-8")
+p.write_text(noi_dung, encoding="utf-8")
+p.parent.mkdir(parents=True, exist_ok=True)
+for f in Path("log").glob("**/*.log"): ...
 ```
 
-`pathlib` là API hiện đại, gọn hơn hẳn chuỗi `os.path.join(os.path.dirname(...))`.
+## Tại sao cần nó
 
-## Đọc file lớn
+Vì **đọc file lớn sai cách là hết RAM**:
 
 ```python
-# Tệ: nạp cả file vào RAM
-noi_dung = f.read()
+noi_dung = open("log.txt").read()        # ❌ nạp cả file 5GB vào bộ nhớ
 
-# Tốt: đọc từng dòng, bộ nhớ không đổi dù file 10GB
-with open("log.txt", encoding="utf-8") as f:
-    for dong in f:
-        xu_ly(dong.rstrip("\n"))
+with open("log.txt") as f:
+    for dong in f:                        # ✅ đọc từng dòng, bộ nhớ O(1)
+        xu_ly(dong)
 ```
 
-## JSON và CSV
+Và exception tự định nghĩa làm code gọi **xử lý được từng loại lỗi**:
 
 ```python
-import json, csv
+class LoiUngDung(Exception): ...
+class KhongTimThay(LoiUngDung): ...
+class KhongCoQuyen(LoiUngDung): ...
 
-with open("du_lieu.json", encoding="utf-8") as f:
-    du_lieu = json.load(f)
-
-with open("ra.json", "w", encoding="utf-8") as f:
-    json.dump(du_lieu, f, ensure_ascii=False, indent=2)
-
-with open("bang.csv", newline="", encoding="utf-8") as f:
-    for hang in csv.DictReader(f):
-        print(hang["ten"])
+try:
+    xu_ly()
+except KhongTimThay:
+    return 404
+except KhongCoQuyen:
+    return 403
+except LoiUngDung:                       # bắt mọi lỗi ứng dụng còn lại
+    return 500
 ```
 
-Hai tham số hay bị quên: `ensure_ascii=False` (không có nó, tiếng Việt bị mã hoá thành `\uXXXX`) và `newline=""` cho CSV (không có nó, Windows sinh dòng trống xen kẽ).
+Cây kế thừa ở đây có mục đích rõ ràng: người gọi chọn **mức chi tiết họ cần** — bắt riêng từng loại, hoặc bắt cả nhóm bằng lớp cha.
 
-## Ghi file an toàn
+`encoding="utf-8"` là chi tiết quan trọng với tiếng Việt: mặc định của Python phụ thuộc hệ điều hành, nên cùng một file chạy đúng trên máy bạn và hỏng trên máy chủ Linux.
 
-Ghi đè trực tiếp mà chương trình chết giữa chừng ⇒ mất cả dữ liệu cũ lẫn mới. Ghi vào file tạm rồi đổi tên (thao tác nguyên tử trên cùng ổ đĩa):
+## So sánh
+
+| Tình huống | Cách làm |
+|---|---|
+| Lỗi lường trước, xử lý được | `except LoaiCuThe` |
+| Lỗi không xử lý được ở đây | Đừng bắt — để nó bay lên |
+| Cần dọn dẹp dù có lỗi hay không | `finally` hoặc `with` |
+| Ném lại lỗi với ngữ cảnh rõ hơn | `raise X("…") from e` |
+| Bắt mọi thứ ở tầng ngoài cùng | `except Exception` **+ ghi log** |
+
+Dòng cuối là ngoại lệ hợp lệ duy nhất của "đừng bắt hết": ở ranh giới ngoài cùng (handler HTTP, vòng lặp worker), bạn bắt hết để chương trình không chết — nhưng **phải ghi log đầy đủ**, không được `pass`.
+
+## Dễ nhầm
+
+**1. `except:` trần hoặc `except Exception: pass`.** Nuốt cả `KeyboardInterrupt`, nuốt cả lỗi chính tả trong code bạn. Bug biến mất khỏi log và xuất hiện lại dưới dạng "dữ liệu sai".
+
+**2. Quên `from e`.** Mất chuỗi nguyên nhân, và log chỉ còn tầng ngoài cùng.
+
+**3. `try` bao quá nhiều dòng.** Bạn bắt được lỗi nhưng không biết dòng nào gây ra. Bọc **đúng dòng** có thể hỏng, phần còn lại đưa vào `else`.
+
+**4. Mở file không dùng `with`.** Quên `close()` thì file handle rò rỉ, và trên Windows file bị khoá không xoá được.
+
+**5. Quên `encoding="utf-8"`.** Code chạy trên máy bạn, hỏng trên máy chủ.
+
+**6. Dùng exception cho luồng bình thường.**
 
 ```python
-tam = duong_dan.with_suffix(".tmp")
-tam.write_text(noi_dung, encoding="utf-8")
-tam.replace(duong_dan)
+try:
+    return d[k]
+except KeyError:
+    return 0          # ❌ chậm, và che mất ý định
+return d.get(k, 0)     # ✅
 ```
 
-## Lỗi hay gặp
+Exception dành cho tình huống **bất thường**, không phải để thay `if`.
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| `except:` trần | Nuốt cả lỗi lập trình | Bắt loại cụ thể |
-| `raise X` không có `from e` | Mất traceback gốc | `raise X from e` |
-| `open()` không có `encoding` | Lỗi tuỳ hệ điều hành | Luôn `encoding="utf-8"` |
-| `f.read()` cho file lớn | Hết RAM | Duyệt từng dòng |
-| Ghi đè trực tiếp file dữ liệu | Chết giữa chừng là mất sạch | Ghi tạm rồi `replace` |
+## Mẹo nhớ
 
-## Ghi nhớ
+> **Nhiều cầu dao nhỏ, không phải một cầu dao tổng.**
+>
+> **Không xử lý được thì đừng bắt.**
+>
+> **`with` cho mọi thứ cần đóng; `from e` cho mọi lần ném lại.**
 
-- Bắt đúng loại lỗi; `except Exception` là biện pháp cuối cùng ở tầng ngoài.
-- `raise ... from e` để giữ nguyên nhân gốc.
-- `with` cho mọi tài nguyên cần đóng.
-- `pathlib` + `encoding="utf-8"` là mặc định nên có.
+## Tự nhớ
 
-## Tự kiểm tra
+Không nhìn lên, trả lời bằng lời của bạn:
 
-1. Vì sao `except:` trần nguy hiểm hơn `except Exception:`?
-2. Viết context manager mở kết nối DB và luôn đóng, kể cả khi có lỗi.
-3. Ghi file JSON sao cho chương trình chết giữa chừng không làm hỏng dữ liệu cũ?
+1. Thứ tự chạy của `try/except/else/finally` trong hai trường hợp có lỗi và không lỗi?
+2. Vì sao `except Exception: pass` nguy hiểm?
+3. `from e` giữ lại thông tin gì?
+4. `with` bảo đảm điều gì mà `try/finally` viết tay dễ quên?
+5. Khi nào bắt `Exception` là hợp lệ?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, sửa hàm này (có **bốn** vấn đề):
+
+```python
+def doc_cau_hinh(duong_dan):
+    try:
+        f = open(duong_dan)
+        data = json.loads(f.read())
+        return data["api_key"]
+    except:
+        return None
+```
+
+Tự kiểm: người gọi hàm của bạn phân biệt được **file không tồn tại** với **file có nhưng thiếu khoá** không?
+
+## Thử sức
+
+Worker của bạn xử lý 10.000 việc trong một vòng lặp. Một việc hỏng thì **cả worker chết** và 9.000 việc còn lại không chạy.
+
+Thiết kế cách xử lý lỗi cho vòng lặp này. Ba câu để tự trả lời: bạn bắt ở **mức nào**, việc hỏng thì bạn làm gì với nó, và làm sao để **không** che mất một lỗi hệ thống nghiêm trọng (hết bộ nhớ, mất kết nối) đằng sau 10.000 dòng log?

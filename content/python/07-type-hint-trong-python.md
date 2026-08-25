@@ -4,168 +4,189 @@ slug: type-hint-trong-python
 summary: Kiểu là chú thích, không phải ràng buộc lúc chạy — và mypy biến chúng thành lớp kiểm tra thật.
 level: nang-cao
 tags: [python, type-hint, mypy]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** viết chú thích kiểu cho code hiện có mà không phải sửa lại logic, và hiểu vì sao chúng không tự bảo vệ chương trình.
+> **Sau bài này bạn sẽ:** biết type hint làm được gì và **không** làm được gì, và chọn đúng giữa mypy và pydantic cho từng chỗ.
 
-## Kiểu không được kiểm tra lúc chạy
+## Ý tưởng chính
+
+Type hint trong Python là **chú thích**, không phải ràng buộc. Python **không kiểm tra chúng lúc chạy** — bạn khai `int` rồi truyền chuỗi vào thì chương trình vẫn chạy tiếp cho tới khi nổ ở đâu đó.
+
+Chúng chỉ có giá trị khi có **công cụ đọc chúng**: mypy lúc bạn viết code, IDE lúc gợi ý, pydantic lúc chạy.
+
+## Mental model
+
+Hãy nghĩ tới **nhãn dán trên hộp đồ trong kho**.
+
+> Bạn dán nhãn "sách" lên một hộp. **Không có gì ngăn** ai đó nhét quần áo vào — cái nhãn không phải cái khoá.
+>
+> Nhưng khi có **người kiểm kho** đi rà (mypy), họ mở ra đối chiếu và báo ngay chỗ sai. Và ai đi lấy hàng cũng đọc nhãn để biết nên tìm ở đâu.
+
+Nhãn vô dụng nếu không ai kiểm. Đó là lý do khai type hint mà không chạy mypy chỉ được một nửa lợi ích — nửa còn lại là IDE gợi ý.
+
+## Ví dụ nhỏ
 
 ```python
 def cong(a: int, b: int) -> int:
     return a + b
 
-cong("x", "y")     # trả về "xy" — Python không phản đối gì cả
+cong("x", "y")     # ✅ CHẠY BÌNH THƯỜNG, trả về "xy"
+                   # ❌ mypy báo lỗi — nhưng chỉ khi bạn chạy mypy
 ```
 
-Type hint là **siêu dữ liệu**. Chỉ có công cụ (mypy, pyright) hoặc thư viện đọc chúng (pydantic, FastAPI) mới biến chúng thành kiểm tra thật.
+## Code chạy thế nào
 
-Lợi ích thật sự: trình soạn thảo gợi ý chính xác, đổi tên an toàn, và mypy bắt được lỗi trước khi chạy.
+```text
+python chuong_trinh.py
+  → Python đọc `a: int` như một CHÚ THÍCH, lưu vào __annotations__
+  → KHÔNG kiểm tra gì
+  → chạy tiếp
 
-## Cú pháp cơ bản
+mypy chuong_trinh.py
+  → đọc chú thích, lần theo luồng dữ liệu
+  → báo: Argument 1 has incompatible type "str"; expected "int"
+  → không chạy chương trình
+```
+
+Hai công cụ, hai thời điểm. Và có một công cụ thứ ba **thật sự kiểm lúc chạy** — pydantic:
+
+```text
+NguoiDung(**du_lieu)
+  → pydantic đọc chú thích rồi KIỂM TRA THẬT
+  → sai kiểu → ValidationError NGAY
+```
+
+Ba lớp đó bù nhau, không thay nhau.
+
+## Cú pháp
 
 ```python
-ten: str = "An"
-tuoi: int = 30
-diem: float = 8.5
-kich_hoat: bool = True
-
-ds: list[str] = []
+ds: list[int] = []
 d: dict[str, int] = {}
 cap: tuple[int, str] = (1, "a")
-tap: set[int] = set()
-```
 
-Từ Python 3.9, dùng `list[str]` thay cho `List[str]` — không cần import `typing` nữa.
-
-## Optional và union
-
-```python
-def tim(id: str) -> User | None:      # 3.10+, thay cho Optional[User]
+def f(x: int | None = None) -> str | None:      # Python 3.10+
     ...
 
-def xu_ly(v: int | str) -> str:       # thay cho Union[int, str]
-    ...
+from collections.abc import Callable, Iterable
+xu_ly: Callable[[int, str], bool]                # nhận (int, str), trả bool
+def tong(ds: Iterable[int]) -> int: ...          # ← nhận list, tuple, generator…
 ```
 
-Trả về `X | None` là chú thích quan trọng nhất trong thực tế — nó buộc nơi gọi phải xử lý trường hợp không tìm thấy:
+Nhận `Iterable` thay vì `list` là thói quen tốt: hàm của bạn dùng được với nhiều thứ hơn mà không mất gì.
 
 ```python
-u = tim("1")
-print(u.ten)          # mypy: error — u có thể là None
-if u is not None:
-    print(u.ten)      # OK
+from typing import TypedDict, Protocol, Literal
+
+class NguoiDungDict(TypedDict):                  # dict có hình dạng cố định
+    id: str
+    tuoi: int
+
+Trang = Literal["nhap", "cho", "xong"]           # chỉ nhận đúng ba chuỗi này
+
+class CoDienTich(Protocol):                       # vịt gõ có kiểm tra
+    def dien_tich(self) -> float: ...
 ```
 
-## Kiểu cho callable, generic, alias
+`Literal` đặc biệt đáng dùng: nó biến chuỗi tự do thành tập giá trị đóng, và mypy sẽ bắt được lỗi gõ sai `"xogn"`.
 
-```python
-from collections.abc import Callable, Iterable, Sequence
+## Tại sao cần nó
 
-def ap_dung(fn: Callable[[int], str], ds: Iterable[int]) -> list[str]:
-    return [fn(x) for x in ds]
+Vì hai công cụ dưới đây giải quyết **hai bài toán khác nhau**, và nhầm chúng là lỗi thiết kế phổ biến:
 
-# Alias làm chữ ký dễ đọc
-UserId = str
-BangGia = dict[str, float]
-
-def lay_gia(bang: BangGia, ma: UserId) -> float | None: ...
-```
-
-Dùng `Iterable`/`Sequence` cho **tham số** (nhận được nhiều loại hơn) và `list` cho **giá trị trả về** (nơi gọi biết chắc mình có gì).
-
-### Generic
-
-```python
-def dau_tien[T](ds: Sequence[T]) -> T | None:     # cú pháp Python 3.12+
-    return ds[0] if ds else None
-
-# Trước 3.12:
-from typing import TypeVar
-T = TypeVar("T")
-def dau_tien_cu(ds: Sequence[T]) -> T | None: ...
-```
-
-## `TypedDict`, `Protocol`, `Literal`
-
-```python
-from typing import TypedDict, Protocol, Literal, Final
-
-class CauHinh(TypedDict):
-    host: str
-    port: int
-    debug: bool
-
-TrangThai = Literal["cho", "chay", "xong"]
-
-class CoTheGhi(Protocol):
-    def write(self, s: str) -> int: ...
-
-def xuat(dich: CoTheGhi) -> None:     # bất kỳ thứ gì có .write đều hợp lệ
-    dich.write("xin chào")
-
-SO_LAN_THU: Final = 3
-```
-
-`Protocol` là duck typing có kiểm tra kiểu: không cần kế thừa, chỉ cần có đúng phương thức.
-
-## mypy
-
-```bash
-pip install mypy
-mypy .
-```
+**mypy — kiểm lúc viết, cho code nội bộ:**
 
 ```toml
 # pyproject.toml
 [tool.mypy]
 python_version = "3.12"
-strict = true
-warn_unused_ignores = true
+strict = true                    # bật hết
 ```
 
-Với dự án đã có sẵn code, đừng bật `strict` ngay — sẽ có hàng nghìn lỗi và bạn bỏ cuộc. Cách làm được: bật cho từng module, siết dần.
+Với dự án đang có sẵn, đừng bật `strict` ngay — bạn sẽ có 3000 lỗi và bỏ cuộc. Bật dần theo module:
 
 ```toml
 [[tool.mypy.overrides]]
-module = "du_an.dich_vu.*"
-strict = true
+module = "duan.module_moi.*"
+disallow_untyped_defs = true
 ```
 
-## pydantic: kiểu thành kiểm tra thật
+**pydantic — kiểm lúc chạy, ở ranh giới:**
 
 ```python
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
-class NguoiDungVao(BaseModel):
-    email: EmailStr
+class NguoiDung(BaseModel):
+    id: str
     tuoi: int = Field(ge=0, le=150)
-    ten: str = Field(min_length=1)
+    email: str
 
-u = NguoiDungVao(email="a@b.com", tuoi=30, ten="An")     # kiểm tra lúc chạy
-NguoiDungVao(email="sai", tuoi=-1, ten="")               # ValidationError
+u = NguoiDung(**du_lieu_tu_api)      # sai kiểu → ValidationError NGAY tại đây
 ```
 
-Đây là cách đưa type hint vào ranh giới hệ thống — giống vai trò của zod trong TypeScript. Dùng cho: body của API, biến môi trường, file cấu hình.
+Ranh giới là nơi dữ liệu từ ngoài đi vào: phản hồi API, thân request, file cấu hình, biến môi trường. Kiểm ở đó thì lỗi nổ **đúng chỗ** thay vì ba tầng sau — cùng nguyên tắc với [[thu-hep-kieu-va-unknown]] ở TypeScript.
 
-## Lỗi hay gặp
+## So sánh
 
-| Lỗi | Hậu quả | Sửa thế nào |
+| | mypy | pydantic |
 |---|---|---|
-| Tưởng type hint kiểm tra lúc chạy | Dữ liệu rác vẫn lọt | Dùng pydantic ở ranh giới |
-| `Any` cho tiện | Tắt kiểm tra, lan sang chỗ khác | Kiểu cụ thể hoặc `object` |
-| Bật `strict` cho dự án cũ | Hàng nghìn lỗi, bỏ cuộc | Bật dần theo module |
-| `def f(x: list = [])` | Vẫn là bẫy mặc định khả biến | `x: list \| None = None` |
-| Quên `\| None` cho hàm có thể không tìm thấy | `AttributeError` lúc chạy | Khai báo đúng |
+| Kiểm khi | Bạn viết code / CI | Chương trình đang chạy |
+| Chi phí lúc chạy | 0 | Có (nhưng nhỏ) |
+| Bắt được dữ liệu API sai | ❌ | ✅ |
+| Bắt được lỗi logic kiểu | ✅ | ❌ |
+| Dùng ở | Toàn bộ code nội bộ | **Ranh giới** |
 
-## Ghi nhớ
+Kết hợp đúng: **mypy khắp nơi, pydantic ở ranh giới.**
 
-- Type hint không kiểm tra gì lúc chạy — mypy và pydantic mới làm việc đó.
-- `X | None` là chú thích có giá trị nhất trong thực tế.
-- `Iterable` cho tham số, `list` cho giá trị trả về.
-- Áp dụng mypy dần theo module, đừng bật strict cả dự án cùng lúc.
+## Dễ nhầm
 
-## Tự kiểm tra
+**1. Tưởng type hint kiểm tra lúc chạy.** Không. Đây là hiểu nhầm số một, và nó dẫn tới việc bỏ qua kiểm tra dữ liệu đầu vào.
 
-1. `def cong(a: int, b: int) -> int` gọi với chuỗi thì sao? Vì sao?
-2. Khi nào `Protocol` tốt hơn lớp cơ sở trừu tượng?
-3. Thêm type hint cho một script cũ 300 dòng — bắt đầu từ đâu?
+**2. Khai type hint nhưng không bao giờ chạy mypy.** Bạn được IDE gợi ý — tốt — nhưng không ai bắt lỗi cho bạn. Cho mypy vào CI.
+
+**3. Dùng `Any` để cho qua.** `Any` tắt kiểm tra và **lây lan** sang mọi thứ chạm vào nó. Thà dùng `object` (buộc phải thu hẹp) hoặc khai kiểu thật.
+
+**4. Khai kiểu quá chặt ở tham số.** Nhận `Sequence[int]` hoặc `Iterable[int]` thay vì `list[int]` — hàm dùng được rộng hơn mà không mất gì.
+
+**5. Bật `strict` trên dự án cũ ngay lập tức.** 3000 lỗi và cả đội quay lại không dùng mypy nữa. Bật dần theo module.
+
+**6. Dùng pydantic cho mọi class nội bộ.** Nó có chi phí lúc chạy. Trong lõi hệ thống, `@dataclass` + mypy là đủ và nhanh hơn — xem [[class-dataclass-va-oop]].
+
+## Mẹo nhớ
+
+> **Type hint là NHÃN DÁN, không phải cái khoá.**
+>
+> **mypy kiểm lúc viết; pydantic kiểm lúc chạy, ở ranh giới.**
+>
+> **Nhận rộng (`Iterable`), trả hẹp (`list`).**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Điều gì xảy ra lúc chạy khi bạn truyền `str` vào tham số khai `int`?
+2. mypy và pydantic kiểm ở hai thời điểm nào, và mỗi cái bắt được loại lỗi gì?
+3. Vì sao `Any` nguy hiểm hơn `object`?
+4. Vì sao nên nhận `Iterable[int]` thay vì `list[int]`?
+5. Với dự án cũ, chiến lược bật mypy nên thế nào?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, thêm type hint cho hàm này và nói **mypy sẽ bắt lỗi gì**:
+
+```python
+def gom_theo(ds, khoa):
+    kq = {}
+    for x in ds:
+        kq.setdefault(getattr(x, khoa), []).append(x)
+    return kq
+```
+
+Tự kiểm: `khoa` nên khai kiểu gì để mypy bắt được lỗi gõ sai tên trường — và Python có làm được điều đó không?
+
+## Thử sức
+
+Đội bạn có 200 file Python, không file nào có type hint. Sếp muốn "dùng type hint".
+
+Lập kế hoạch **ba giai đoạn**: bắt đầu từ đâu, tiêu chí nào để chọn module làm trước, và làm sao để tiến độ không bị lùi lại (module đã gõ kiểu không bị thêm code không kiểu). Câu cuối là câu quan trọng nhất — trả lời bằng công cụ, không bằng kỷ luật.

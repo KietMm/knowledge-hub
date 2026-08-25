@@ -4,128 +4,185 @@ slug: moi-truong-ao-va-quan-ly-goi
 summary: Vì sao mỗi dự án cần môi trường riêng, và cách ghim phiên bản để máy khác chạy y hệt.
 level: trung-cap
 tags: [python, moi-truong, pip, venv]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** không bao giờ gặp cảnh "trên máy tôi chạy được", và biết vì sao `pip install` toàn cục là thói quen xấu.
+> **Sau bài này bạn sẽ:** hiểu vì sao "chạy trên máy tôi mà không chạy trên máy anh" xảy ra, và ghim được phiên bản để nó không xảy ra nữa.
 
-## Vấn đề
+## Ý tưởng chính
 
-Dự án A cần `django==3.2`, dự án B cần `django==5.0`. Cài toàn cục thì chỉ một trong hai chạy được. Tệ hơn, `sudo pip install` có thể ghi đè gói mà chính hệ điều hành đang dùng và làm hỏng công cụ hệ thống.
+Python cài thư viện **vào một chỗ dùng chung cho cả máy**. Nên hai dự án cần hai phiên bản khác nhau của cùng một thư viện thì **không thể cùng tồn tại**.
 
-Môi trường ảo là một thư mục chứa bản Python và bộ gói riêng cho từng dự án.
+Môi trường ảo giải quyết đúng điều đó: mỗi dự án một thư mục thư viện riêng, độc lập hoàn toàn.
 
-## venv — có sẵn, đủ dùng
+## Mental model
+
+Hãy nghĩ tới **tủ đồ nghề**.
+
+> Không có môi trường ảo: cả nhà dùng **một tủ đồ chung**. Bạn cần cờ lê 10, anh hàng xóm đổi nó thành cờ lê 12 — và việc của bạn hỏng, dù bạn không đụng vào gì cả.
+>
+> Có môi trường ảo: **mỗi dự án một tủ riêng**. Bạn mở tủ của dự án nào thì dùng đúng bộ đồ của dự án đó.
+
+Và **file ghim phiên bản** là **bản kê khai tủ đồ**: nó cho phép người khác dựng lại đúng cái tủ của bạn, đến từng cái cờ lê.
+
+## Ví dụ nhỏ
 
 ```bash
-python -m venv .venv              # tạo
+python -m venv .venv                 # tạo tủ riêng cho dự án này
 
-source .venv/bin/activate         # kích hoạt (macOS/Linux)
-.venv\Scripts\activate            # Windows
+source .venv/bin/activate            # macOS/Linux — "mở tủ này ra dùng"
+.venv\Scripts\activate               # Windows
 
 pip install requests
-pip list
-deactivate                        # thoát
+deactivate                           # đóng tủ
 ```
 
-Dấu hiệu đã kích hoạt: dấu nhắc lệnh có tiền tố `(.venv)`. Luôn thêm `.venv/` vào `.gitignore` — nó là thứ dựng lại được, không phải mã nguồn.
+Dấu hiệu đã kích hoạt: dấu nhắc lệnh có tiền tố `(.venv)`.
 
-## Ghim phiên bản
+## Code chạy thế nào
+
+Vì sao "chạy trên máy tôi" hỏng trên máy khác:
+
+```text
+Máy bạn (tháng 1):
+  pip install requests          → cài requests 2.31.0
+  code chạy ngon
+
+Máy đồng nghiệp (tháng 6):
+  pip install requests          → cài requests 2.35.0  ← phiên bản MỚI NHẤT lúc đó
+  thư viện đã đổi một hành vi nhỏ
+  ⇒ code hỏng, và không ai hiểu vì sao
+```
+
+`requirements.txt` chặn đúng chỗ đó:
+
+```text
+requests==2.31.0        ← ghim CHÍNH XÁC
+```
+
+Nhưng nó chưa đủ, vì `requests` còn kéo theo `urllib3`, `certifi`, `idna`… và **những cái đó chưa được ghim**:
 
 ```bash
-pip freeze > requirements.txt     # ghi lại chính xác những gì đang cài
-pip install -r requirements.txt   # dựng lại ở máy khác
+pip freeze > requirements.txt        # ✅ ghim CẢ phụ thuộc của phụ thuộc
 ```
 
-Vấn đề của `pip freeze`: nó trộn lẫn thư viện bạn **chọn** với các phụ thuộc **kéo theo**. Sáu tháng sau không ai biết dòng nào là cần thiết.
-
-Cách tốt hơn — hai file:
-
-```
-requirements.in       # thứ bạn thật sự cần:  requests, fastapi
-requirements.txt      # sinh tự động, ghim đầy đủ cả cây phụ thuộc
-```
+## Cú pháp
 
 ```bash
-pip install pip-tools
-pip-compile requirements.in     # sinh requirements.txt có ghim và ghi rõ vì sao
-pip-sync requirements.txt       # cài đúng, gỡ thừa
+pip install requests                 # cài
+pip install -r requirements.txt      # cài theo danh sách
+pip freeze > requirements.txt        # xuất TOÀN BỘ, kèm phụ thuộc gián tiếp
+pip list --outdated                  # xem gói nào có bản mới
 ```
 
-## `pyproject.toml` — cách hiện đại
+Cách hiện đại — `pyproject.toml`, một file cho cả cấu hình lẫn phụ thuộc:
 
 ```toml
 [project]
-name = "du-an"
-version = "0.1.0"
+name = "duan"
 requires-python = ">=3.11"
-dependencies = ["requests>=2.31", "pydantic>=2.5"]
+dependencies = ["requests>=2.31,<3", "pydantic>=2"]
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff", "mypy"]
+
+[tool.ruff]
+line-length = 100
 ```
 
 ```bash
-pip install -e ".[dev]"    # cài dự án ở chế độ sửa được, kèm nhóm dev
+pip install -e ".[dev]"              # cài dự án ở chế độ sửa được + nhóm dev
 ```
 
-Một file thay cho `setup.py` + `requirements.txt` + `setup.cfg`. Đây là chuẩn hiện tại.
-
-## uv — nhanh hơn nhiều
-
-`uv` là trình quản lý gói viết bằng Rust, tương thích pip và nhanh hơn hàng chục lần:
+`uv` — nhanh hơn `pip` hàng chục lần, dùng chung định dạng:
 
 ```bash
-uv venv                    # tạo môi trường
-uv pip install -r requirements.txt
-uv add requests            # thêm gói và cập nhật pyproject.toml + lockfile
-uv run python chinh.py     # tự đảm bảo môi trường đúng trước khi chạy
+uv venv && uv pip install -r requirements.txt
+uv lock                              # sinh uv.lock — ghim chính xác, tái lập được
+uv sync                              # dựng lại môi trường ĐÚNG như lock
 ```
 
-`uv.lock` ghim toàn bộ cây phụ thuộc kèm hash — tương đương lockfile của npm/pnpm, thứ Python thiếu suốt nhiều năm.
+## Tại sao cần nó
 
-## Ghim phiên bản Python
+Vì hai file phục vụ hai mục đích khác nhau, và nhầm chúng là nguồn của nhiều rắc rối:
 
-Gói không phải thứ duy nhất khác nhau giữa các máy. Ghi rõ phiên bản Python:
-
-```
-# .python-version
-3.12
-```
-
-`pyenv`, `uv`, và nhiều công cụ CI đọc file này.
-
-## Công cụ chất lượng code
-
-```bash
-pip install ruff mypy pytest
-
-ruff check .        # lint, thay được flake8 + isort + nhiều plugin
-ruff format .       # định dạng, tương thích black
-mypy .              # kiểm tra kiểu tĩnh
-pytest              # chạy test
-```
-
-`ruff` nhanh tới mức chạy được ở mỗi lần lưu file.
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
+| File | Nói gì | Ai đọc |
 |---|---|---|
-| `sudo pip install` | Hỏng gói hệ thống | Luôn dùng môi trường ảo |
-| Commit `.venv/` | Repo phình hàng trăm MB | Thêm vào `.gitignore` |
-| Không ghim phiên bản | CI cài bản mới, vỡ bất ngờ | `pip-compile` hoặc `uv.lock` |
-| `pip freeze` làm nguồn sự thật | Không phân biệt được gói trực tiếp | Dùng `requirements.in` |
-| Quên kích hoạt venv | Cài nhầm vào Python hệ thống | Kiểm tra `(.venv)` ở dấu nhắc |
+| `pyproject.toml` | *"tôi cần requests từ 2.31 trở lên"* | Người phát triển, khi cài mới |
+| `requirements.txt` / `uv.lock` | *"lần build này dùng đúng 2.31.0 và 47 gói kèm theo"* | Máy chủ, CI, Docker |
 
-## Ghi nhớ
+**Thư viện** thì khai khoảng rộng (`>=2.31,<3`) để không xung đột với dự án dùng nó. **Ứng dụng** thì ghim chính xác, vì bạn muốn production giống hệt máy dev.
 
-- Một môi trường ảo cho mỗi dự án, không có ngoại lệ.
-- Tách "gói tôi cần" khỏi "cây phụ thuộc đầy đủ".
-- `pyproject.toml` là chuẩn hiện tại; `uv` là công cụ nhanh nhất.
-- Ghim cả phiên bản Python, không chỉ phiên bản gói.
+Ghim cả phiên bản Python nữa — đây là chỗ hay bị bỏ sót:
 
-## Tự kiểm tra
+```text
+.python-version    →  3.12.1        (pyenv, uv đọc file này)
+pyproject.toml     →  requires-python = ">=3.11"
+Dockerfile         →  FROM python:3.12.1-slim
+```
 
-1. Vì sao `pip freeze > requirements.txt` không đủ tốt về lâu dài?
-2. Đồng nghiệp chạy code của bạn bị lỗi import. Kiểm tra những gì, theo thứ tự nào?
-3. `pip install -e .` khác `pip install .` ở chỗ nào?
+Ba chỗ phải khớp nhau. Không khớp thì CI chạy Python 3.11, máy bạn 3.12, và một cú pháp mới sẽ nổ ở đúng nơi bạn không nhìn.
+
+Bộ công cụ chất lượng nên có trong mọi dự án:
+
+```bash
+ruff check . --fix          # lint + sửa tự động, thay cho flake8/isort/black
+ruff format .               # định dạng
+mypy .                      # kiểm kiểu — xem [[type-hint-trong-python]]
+pytest                      # test
+```
+
+## So sánh
+
+| Công cụ | Dùng khi |
+|---|---|
+| `venv` + `pip` | Có sẵn, không cài gì thêm — đủ cho hầu hết dự án |
+| `uv` | Muốn nhanh và có lock file chuẩn — lựa chọn tốt cho dự án mới |
+| Poetry | Thích quản lý phụ thuộc kiểu khai báo, cần publish thư viện |
+| Conda | Có phụ thuộc nhị phân nặng (khoa học dữ liệu, CUDA) |
+
+Với dự án web hoặc script thường: `venv` + `pip` là đủ, và `uv` nếu bạn muốn nhanh.
+
+## Dễ nhầm
+
+**1. Không dùng môi trường ảo.** Rồi một ngày hai dự án cần hai phiên bản Django khác nhau, và bạn phải chọn một.
+
+**2. Commit thư mục `.venv`.** Nó nặng hàng trăm MB và **chỉ chạy được trên đúng hệ điều hành đó**. Thêm vào `.gitignore`.
+
+**3. Ghim khoảng quá rộng cho ứng dụng.** `requests>=2.31` nghĩa là hôm nay bạn được 2.31, sáu tháng sau CI được 2.40, và không ai chủ động quyết định điều đó.
+
+**4. Không ghim phụ thuộc gián tiếp.** `pip install requests` ghim `requests` nhưng không ghim `urllib3` — và `urllib3` cũng có thể phá hỏng bạn. Dùng `pip freeze` hoặc lock file.
+
+**5. Quên kích hoạt môi trường.** `pip install` cài vào Python toàn cục, rồi bạn tự hỏi vì sao `import` không thấy. Kiểm bằng `which python`.
+
+**6. Trộn `pip` và `conda` trong một môi trường.** Hai bộ quản lý cùng ghi vào một chỗ, và không cái nào biết cái kia đã làm gì.
+
+## Mẹo nhớ
+
+> **Mỗi dự án một tủ đồ riêng.**
+>
+> **Thư viện khai khoảng rộng; ứng dụng ghim chính xác.**
+>
+> **Ghim cả phiên bản Python, ở cả ba chỗ.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Vấn đề gì xảy ra khi không dùng môi trường ảo?
+2. `pyproject.toml` và `requirements.txt` khác nhau về **mục đích** thế nào?
+3. Vì sao ghim `requests==2.31.0` vẫn chưa đủ để tái lập môi trường?
+4. Vì sao thư viện nên khai khoảng rộng còn ứng dụng thì ghim chặt?
+5. Ba chỗ cần khai phiên bản Python cho khớp nhau?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết các lệnh để dựng một dự án mới từ đầu: tạo môi trường, cài `requests` và `pytest` (pytest chỉ cho dev), ghim phiên bản, và ghi `.gitignore`.
+
+Tự kiểm: đồng nghiệp clone repo của bạn về, họ chạy **đúng mấy lệnh** là có môi trường y hệt bạn?
+
+## Thử sức
+
+CI của bạn chạy đúng sáu tháng rồi đột nhiên đỏ, dù **không ai đổi dòng code nào**.
+
+Nêu **ba** nguyên nhân có thể, xếp theo khả năng xảy ra. Rồi trả lời: thay đổi **nào** trong cách quản lý phụ thuộc sẽ khiến chuyện này không tái diễn — và nó đánh đổi cái gì?

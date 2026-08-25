@@ -4,160 +4,189 @@ slug: async-trong-python
 summary: Khi nào async giúp thật, GIL và vì sao một lời gọi đồng bộ làm đứng cả event loop.
 level: nang-cao
 tags: [python, async, asyncio, hieu-nang]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** biết async giải quyết loại việc nào, và tìm ra được nguyên nhân khi code async chạy chậm như đồng bộ.
+> **Sau bài này bạn sẽ:** biết async giúp được loại việc nào (và loại nào không), và nhận ra ngay khi một lời gọi đồng bộ đang làm đứng cả chương trình.
 
-## Async chỉ giúp việc chờ, không giúp việc tính
+## Ý tưởng chính
 
-Đây là điều phải hiểu trước mọi thứ khác:
+`async` trong Python giúp được **việc chờ**, không giúp **việc tính**.
 
-| Loại việc | Ví dụ | Dùng gì |
-|---|---|---|
-| **I/O-bound** — phần lớn thời gian là *chờ* | Gọi API, truy vấn DB, đọc file | `asyncio` ✅ |
-| **CPU-bound** — phần lớn thời gian là *tính* | Xử lý ảnh, nén, tính toán số | `multiprocessing` |
+Chờ mạng, chờ đĩa, chờ cơ sở dữ liệu — trong lúc đó CPU rảnh, và async cho phép làm việc khác. Nhưng nếu bạn đang tính toán nặng, async **không giúp gì cả**: chỉ có một luồng, và GIL bảo đảm mỗi lúc chỉ một luồng Python chạy bytecode.
 
-Vì **GIL** (Global Interpreter Lock), chỉ một luồng Python chạy bytecode tại một thời điểm. Async không phá vỡ điều đó — nó chỉ tận dụng khoảng thời gian chương trình đang *ngồi chờ* mạng để làm việc khác.
+## Mental model
 
-Dùng `asyncio` cho việc CPU-bound thì **chậm hơn** code đồng bộ, vì thêm chi phí quản lý mà không có khoảng chờ nào để tận dụng.
+Hãy nghĩ tới **một nhân viên phục vụ duy nhất trong quán**.
 
-## Cú pháp và cái bẫy đầu tiên
+> Anh ta nhận order bàn 1, **đưa vào bếp** — rồi không đứng chờ. Anh sang bàn 2, bàn 3 nhận order tiếp. Món nào xong thì bưng ra. Đây là `async`: **việc chờ** được xếp chồng lên nhau.
+>
+> Nhưng nếu bàn 1 nhờ anh **ngồi gấp 500 con hạc giấy**, thì cả quán đứng lại. Không ai được phục vụ cho tới khi anh gấp xong. Đây là **việc tính** — async không cứu được.
+
+Từ đó suy ra hai điều: async đáng dùng cho I/O, và **một lời gọi đồng bộ chậm trong code async là con hạc giấy đó**.
+
+## Ví dụ nhỏ
 
 ```python
 import asyncio
-import httpx
 
-async def lay_nguoi_dung(client: httpx.AsyncClient, id: str) -> dict:
-    res = await client.get(f"https://api.example.com/users/{id}")
-    res.raise_for_status()
-    return res.json()
+async def lay(id: int) -> dict:
+    await asyncio.sleep(1)          # giả lập chờ mạng
+    return {"id": id}
 
-async def main() -> None:
-    async with httpx.AsyncClient() as client:
-        nd = await lay_nguoi_dung(client, "u-1")
-        print(nd["name"])
+async def main():
+    a = await lay(1)                 # ❌ tuần tự: 1 giây
+    b = await lay(2)                 # ❌ thêm 1 giây nữa
+    # tổng 2 giây
 
 asyncio.run(main())
 ```
 
-`async def` tạo **coroutine**. Gọi nó mà không `await` thì không có gì chạy cả:
+## Code chạy thế nào
 
-```python
-lay_nguoi_dung(client, "u-1")          # ❌ RuntimeWarning: never awaited
-await lay_nguoi_dung(client, "u-1")    # ✅
+`await` **không** khởi chạy song song. Nó nói *"dừng ở đây tới khi xong"*:
+
+```text
+❌ Tuần tự
+   a = await lay(1)     [==== 1s ====]
+   b = await lay(2)                   [==== 1s ====]
+   ⇒ 2 giây
+
+✅ Song song
+   a, b = await asyncio.gather(lay(1), lay(2))
+   [==== 1s ====]   ← cả hai chạy chồng lên nhau
+   ⇒ 1 giây
 ```
 
-Python cảnh báo nhưng không lỗi — nên đây là loại bug âm thầm: hàm "không làm gì" mà không có exception nào.
-
-## Chạy song song: `gather`
-
-`await` tuần tự không nhanh hơn code đồng bộ chút nào:
+Và cái bẫy tinh vi hơn: gọi hàm async mà **không** `await` thì nó **chưa chạy gì cả**:
 
 ```python
-# ❌ 3 request nối tiếp: 300ms
-a = await lay_nguoi_dung(client, "u-1")
-b = await lay_nguoi_dung(client, "u-2")
-c = await lay_nguoi_dung(client, "u-3")
-
-# ✅ 3 request cùng lúc: ~100ms
-a, b, c = await asyncio.gather(
-    lay_nguoi_dung(client, "u-1"),
-    lay_nguoi_dung(client, "u-2"),
-    lay_nguoi_dung(client, "u-3"),
-)
+lay(1)              # ❌ tạo một coroutine rồi vứt đi; RuntimeWarning: never awaited
+await lay(1)        # ✅
 ```
 
-Đây là toàn bộ lý do người ta dùng async. Viết `await` liên tiếp là có cú pháp async mà không có lợi ích async.
-
-Mặc định `gather` **huỷ tất cả khi một cái lỗi**. Muốn giữ phần thành công:
+## Cú pháp
 
 ```python
-kq = await asyncio.gather(*tasks, return_exceptions=True)
-thanh_cong = [r for r in kq if not isinstance(r, Exception)]
-```
+import asyncio
 
-Với nhiều task và cần huỷ theo nhóm, `TaskGroup` (3.11+) tốt hơn:
+# Chạy nhiều việc song song
+kq = await asyncio.gather(lay(1), lay(2), lay(3))
+kq = await asyncio.gather(*[lay(i) for i in ids])
+kq = await asyncio.gather(*viec, return_exceptions=True)   # một cái lỗi không huỷ cả cụm
+
+# Giới hạn số việc đồng thời — bắt buộc khi ids lớn
+sem = asyncio.Semaphore(10)
+async def co_gioi_han(i):
+    async with sem:
+        return await lay(i)
+
+kq = await asyncio.gather(*[co_gioi_han(i) for i in range(1000)])
+```
 
 ```python
-async with asyncio.TaskGroup() as tg:
-    t1 = tg.create_task(lay_nguoi_dung(client, "u-1"))
-    t2 = tg.create_task(lay_nguoi_dung(client, "u-2"))
-# Ra khỏi block là mọi task đã xong. Một cái lỗi → cả nhóm bị huỷ gọn gàng.
-print(t1.result(), t2.result())
+# Timeout
+async with asyncio.timeout(5):        # Python 3.11+
+    await viec_cham()
+
+# Đẩy việc CPU nặng sang tiến trình khác
+kq = await asyncio.get_running_loop().run_in_executor(None, ham_nang, tham_so)
 ```
 
-## Giới hạn số việc đồng thời
+`Semaphore` là phần bị bỏ quên nhiều nhất: `gather` 1000 việc cùng lúc sẽ mở 1000 kết nối, làm sập server đối tác hoặc chính bạn.
 
-`gather` với 10.000 URL sẽ mở 10.000 kết nối cùng lúc — hết file descriptor, hoặc bị server chặn:
+## Tại sao cần nó
+
+Vì **lỗi phổ biến nhất là gọi hàm đồng bộ trong code async**, và nó âm thầm xoá sạch mọi lợi ích:
 
 ```python
-async def tai_tat_ca(urls: list[str], toi_da: int = 20) -> list[dict]:
-    sem = asyncio.Semaphore(toi_da)
-
-    async def mot(url: str) -> dict:
-        async with sem:                # tối đa 20 cái vào đây cùng lúc
-            return (await client.get(url)).json()
-
-    return await asyncio.gather(*(mot(u) for u in urls))
+async def lay(url):
+    return requests.get(url).json()      # ❌ requests là ĐỒNG BỘ
+                                          #    → chặn event loop
+                                          #    → mọi coroutine khác đứng chờ
 ```
-
-## Lỗi hay gặp nhất: gọi hàm đồng bộ trong async
-
-Đây là nguyên nhân số một của "code async mà chậm như đồng bộ":
 
 ```python
-async def xu_ly() -> None:
-    time.sleep(1)                    # ❌ ĐỨNG cả event loop 1 giây
-    requests.get(url)                # ❌ requests là đồng bộ — chặn hết
-    await asyncio.sleep(1)           # ✅ nhường quyền cho task khác
+async def lay(url):
+    async with httpx.AsyncClient() as c: # ✅ thư viện async thật
+        return (await c.get(url)).json()
 ```
 
-Event loop chạy trên **một luồng**. Một lời gọi chặn không nhường quyền, nên *mọi* task khác đứng chờ theo. Một `requests.get()` sót lại trong hàm async đủ để vô hiệu hoá toàn bộ tính đồng thời.
+Cùng lỗi đó với: `time.sleep` (dùng `asyncio.sleep`), driver cơ sở dữ liệu đồng bộ (dùng `asyncpg`, `aiomysql`), và `open()` cho file lớn.
 
-Bắt buộc dùng thư viện đồng bộ (driver DB cũ, thư viện xử lý ảnh) thì đẩy sang luồng khác:
+Cách nhận ra: **trong hàm `async`, mọi thao tác I/O đều phải có `await` đứng trước.** Thấy một lời gọi I/O không có `await` là đáng ngờ.
 
-```python
-kq = await asyncio.to_thread(ham_dong_bo_cham, tham_so)
-```
+Và với việc **tính toán nặng**, câu trả lời không phải async:
 
-Cặp thư viện tương ứng: `requests` → `httpx`/`aiohttp`, `psycopg2` → `asyncpg`, `time.sleep` → `asyncio.sleep`, `open()` → `aiofiles`.
+| Loại việc | Dùng |
+|---|---|
+| Chờ mạng, đĩa, cơ sở dữ liệu | `asyncio` |
+| Tính toán nặng (CPU) | `multiprocessing` / `ProcessPoolExecutor` |
+| Vài việc I/O đơn giản, code cũ | `ThreadPoolExecutor` |
 
-## Timeout
+Lý do là **GIL**: chỉ một luồng Python chạy bytecode tại một thời điểm, nên nhiều luồng không làm việc tính nhanh hơn. Nhiều **tiến trình** thì có, vì mỗi tiến trình có GIL riêng.
 
-Không có timeout thì một request treo giữ task đó mãi mãi:
+## So sánh
 
-```python
-async with asyncio.timeout(5):           # 3.11+
-    await lay_nguoi_dung(client, "u-1")
-
-# Cách cũ, tương đương
-await asyncio.wait_for(lay_nguoi_dung(client, "u-1"), timeout=5)
-```
-
-Cả hai ném `TimeoutError` và **huỷ task** khi hết hạn.
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
+| | Đồng bộ | Async |
 |---|---|---|
-| Gọi coroutine mà không `await` | Hàm không chạy, chỉ có warning | Luôn `await` |
-| `await` tuần tự nhiều việc độc lập | Không nhanh hơn đồng bộ chút nào | `asyncio.gather` |
-| Dùng `requests`/`time.sleep` trong async | Đứng cả event loop | `httpx`, `asyncio.sleep` |
-| Dùng asyncio cho việc CPU-bound | Chậm hơn code đồng bộ | `multiprocessing` |
-| `gather` hàng nghìn task | Hết file descriptor, bị chặn | `Semaphore` |
-| Không đặt timeout | Một request treo giữ task mãi | `asyncio.timeout` |
-| `asyncio.run()` gọi lồng nhau | `RuntimeError: loop already running` | Một `run()` ở điểm vào |
-| Bỏ qua giá trị trả về của `create_task` | Task bị GC giữa đường, lỗi bị nuốt | Giữ tham chiếu, hoặc `TaskGroup` |
+| 100 request HTTP | ~100 giây | ~2 giây |
+| 100 phép tính nặng | như nhau | **như nhau** |
+| Độ phức tạp code | Thấp | Cao hơn |
+| Thư viện | Đủ mọi thứ | Phải chọn bản async |
 
-## Ghi nhớ
+Dòng cuối là chi phí thật: chuyển sang async nghĩa là đổi cả stack — driver cơ sở dữ liệu, HTTP client, thư viện cache. Đừng chuyển vì "nghe hiện đại"; chuyển khi bạn thật sự bị nghẽn ở I/O.
 
-- Async cho việc **chờ**, không cho việc **tính** — GIL vẫn ở đó.
-- `await` tuần tự = không có lợi ích gì; `gather` mới là chỗ có lợi.
-- Một hàm đồng bộ trong async làm đứng toàn bộ event loop.
-- Luôn có timeout và giới hạn số việc đồng thời.
+## Dễ nhầm
 
-## Tự kiểm tra
+**1. Gọi hàm đồng bộ trong async.** Lỗi số một. Cả chương trình đứng và bạn không thấy dấu hiệu gì ngoài việc "async chẳng nhanh hơn".
 
-1. Vì sao asyncio không giúp gì cho việc xử lý ảnh?
-2. Ba `await` liên tiếp mất 300ms. Sửa thế nào để còn ~100ms?
-3. `time.sleep(1)` trong hàm async gây ra chuyện gì, và thay bằng gì?
+**2. `await` tuần tự việc chạy song song được.** Dùng `gather`.
+
+**3. Quên `await`.** Coroutine không chạy, và bạn chỉ nhận một cảnh báo dễ bỏ qua.
+
+**4. `gather` không giới hạn.** 10.000 việc cùng lúc là 10.000 kết nối. Dùng `Semaphore`.
+
+**5. Tưởng async làm việc tính nhanh hơn.** Không. Đó là việc của `multiprocessing`.
+
+**6. Trộn `asyncio.run()` nhiều lần.** Mỗi lần tạo một event loop mới rồi đóng; gọi lồng nhau sẽ lỗi. Một điểm vào `asyncio.run(main())` cho cả chương trình.
+
+**7. Quên xử lý huỷ.** Khi task bị huỷ, `CancelledError` được ném vào; nuốt nó bằng `except Exception` sẽ làm chương trình không tắt được.
+
+## Mẹo nhớ
+
+> **Async giúp việc CHỜ, không giúp việc TÍNH.**
+>
+> **Trong hàm async, mọi I/O phải có `await` đứng trước.**
+>
+> **`gather` để song song; `Semaphore` để không làm sập ai.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Async giúp loại việc nào, và vì sao không giúp việc tính?
+2. `await lay(1)` rồi `await lay(2)` mất bao lâu so với `gather(lay(1), lay(2))`?
+3. Chuyện gì xảy ra khi bạn gọi `requests.get` trong một hàm async?
+4. Vì sao `gather` 10.000 việc là ý tồi, và bạn sửa bằng gì?
+5. GIL ảnh hưởng thế nào tới lựa chọn giữa thread và process?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, sửa hàm này (có **ba** vấn đề):
+
+```python
+async def tai_tat_ca(urls):
+    kq = []
+    for url in urls:                       # 5000 url
+        kq.append(requests.get(url).json())
+    return kq
+```
+
+Tự kiểm: bản của bạn mở tối đa bao nhiêu kết nối cùng lúc, và một url hỏng thì 4999 cái còn lại có mất không?
+
+## Thử sức
+
+Bạn chuyển một API từ đồng bộ sang async. Kết quả đo: **không nhanh hơn chút nào**, có khi còn chậm hơn.
+
+Nêu **ba** nguyên nhân có thể, và với mỗi cái nói bạn **kiểm chứng bằng cách nào**. Gợi ý: một trong ba nằm ở tầng cơ sở dữ liệu, và một nằm ở chỗ bạn không ngờ — bản chất của chính công việc đó.
