@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { SEED_EXERCISES } from '@/lib/db/seed-data'
 import { bangNhau, hienGiaTri } from '@/lib/exercise/compare'
+import { maTrongLoiGiai } from '@/lib/exercise/parse'
 
 /**
  * Chạy lời giải Python của từng bài tập qua chính bộ test của nó, bằng `python3` thật.
@@ -31,8 +32,8 @@ const CO_PY = coPython3()
 const thuMuc = CO_PY ? mkdtempSync(join(tmpdir(), 'kh-bt-')) : ''
 
 function maPython(loiGiai: string): string | null {
-  const khop = /```py\n([\s\S]*?)```/.exec(loiGiai)
-  return khop?.[1] ?? null
+  const ma = maTrongLoiGiai(loiGiai).py
+  return ma === '' ? null : ma
 }
 
 describe.skipIf(!CO_PY)('lời giải Python', () => {

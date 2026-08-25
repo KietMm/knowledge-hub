@@ -158,6 +158,7 @@ function buildExercises(): Exercise[] {
         starter: tach.starter,
         boTest: tach.boTest,
         loiGiai: tach.loiGiai,
+        maLoiGiai: tach.maLoiGiai,
         order: Number(orderPrefix),
       }),
     )

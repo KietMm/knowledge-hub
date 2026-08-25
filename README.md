@@ -107,6 +107,16 @@ function haiTong(nums, target) {}
 Mọi thứ từ heading này trở đi bị ẩn sau nút "Xem lời giải".
 ````
 
+Khối code đầu tiên của mỗi ngôn ngữ trong phần lời giải được trích ra thành `maLoiGiai`
+lúc build, để panel bên cạnh ô soạn đổi qua lại JS/Python mà không phải cuộn. Trích bằng
+đúng hàm mà test "chạy lời giải qua bộ test của nó" dùng, nên thứ hiện trên panel đúng là
+thứ đã được kiểm. Từ `xl` trở lên khu làm bài chia hai cột (ô soạn | lời giải, panel
+`sticky`); hẹp hơn thì panel xếp xuống dưới ô soạn.
+
+Code lời giải vì vậy xuất hiện hai chỗ trên cùng trang — panel để liếc lúc đang gõ, và
+phần phân tích ở cuối trang để đọc liền mạch. Cách tránh trùng là gỡ code khỏi phần phân
+tích, nhưng khi đó các câu dẫn kiểu "cùng ý tưởng bằng Python…" thành mồ côi.
+
 Vì sao bộ test nằm trong thân bài chứ không ở frontmatter: bộ đọc frontmatter của dự án chỉ
 nhận giá trị vô hướng và mảng chuỗi một dòng (có chủ đích — xem `src/lib/frontmatter.ts`), mà
 một ca test là object lồng nhau.

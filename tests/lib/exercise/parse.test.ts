@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BaiTapError, tachBaiTap } from '@/lib/exercise/parse'
+import { BaiTapError, maTrongLoiGiai, tachBaiTap } from '@/lib/exercise/parse'
 
 const NGUON = [
   'Cho mảng `nums` và số `target`.',
@@ -88,5 +88,44 @@ describe('tachBaiTap', () => {
       '```',
     ].join('\n')
     expect(tachBaiTap(src).starter.js).toBe('const s = "```"')
+  })
+})
+
+describe('maTrongLoiGiai', () => {
+  const LOI_GIAI = [
+    'Ý tưởng: dùng bảng băm.',
+    '',
+    '```js',
+    'const seen = new Map()',
+    '```',
+    '',
+    'Bản Python ngắn hơn:',
+    '',
+    '```py',
+    'seen = {}',
+    '```',
+    '',
+    'Độ phức tạp O(n).',
+  ].join('\n')
+
+  it('tách được code của từng ngôn ngữ', () => {
+    const ma = maTrongLoiGiai(LOI_GIAI)
+    expect(ma.js).toBe('const seen = new Map()')
+    expect(ma.py).toBe('seen = {}')
+  })
+
+  it('lấy khối ĐẦU TIÊN của mỗi ngôn ngữ', () => {
+    // Lời giải hay có thêm đoạn minh hoạ cách sai ở phía sau; cái đứng đầu là lời giải chính.
+    const ma = maTrongLoiGiai(`${LOI_GIAI}\n\n\`\`\`js\n// cách chậm\n\`\`\``)
+    expect(ma.js).toBe('const seen = new Map()')
+  })
+
+  it('thiếu ngôn ngữ nào thì ngôn ngữ đó rỗng, không lỗi', () => {
+    expect(maTrongLoiGiai('```js\nx\n```')).toEqual({ js: 'x', py: '' })
+    expect(maTrongLoiGiai('')).toEqual({ js: '', py: '' })
+  })
+
+  it('nhận cả `javascript` và `python` viết đầy đủ', () => {
+    expect(maTrongLoiGiai('```javascript\na\n```\n```python\nb\n```')).toEqual({ js: 'a', py: 'b' })
   })
 })

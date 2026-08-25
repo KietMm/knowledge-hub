@@ -140,6 +140,10 @@ export const ExerciseSchema = z.object({
   starter: z.object({ js: z.string().min(1), py: z.string().default('') }),
   boTest: z.array(CaTestSchema).min(1, 'Bài tập phải có ít nhất một ca test'),
   loiGiai: z.string().default(''),
+  /** Code lời giải tách theo ngôn ngữ, cho panel cạnh ô soạn. Trích từ `loiGiai` lúc build. */
+  maLoiGiai: z
+    .object({ js: z.string().default(''), py: z.string().default('') })
+    .default({ js: '', py: '' }),
   order: z.number().int().nonnegative().default(0),
 })
 

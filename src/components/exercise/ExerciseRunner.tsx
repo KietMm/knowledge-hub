@@ -65,6 +65,8 @@ export function ExerciseRunner({
   starter,
   boTest,
   soSanh,
+  ngonNgu,
+  doiNgonNgu,
 }: {
   slug: string
   ham: string
@@ -72,9 +74,14 @@ export function ExerciseRunner({
   starter: Record<NgonNgu, string>
   boTest: CaTest[]
   soSanh: 'chinh-xac' | 'tap-hop'
+  /**
+   * Ngôn ngữ do `KhuLamBai` giữ, không phải state cục bộ: panel lời giải bên cạnh phải
+   * đổi theo cùng một lựa chọn.
+   */
+  ngonNgu: NgonNgu
+  doiNgonNgu: (nn: NgonNgu) => void
 }) {
   const coPython = starter.py !== ''
-  const [ngonNgu, setNgonNgu] = useState<NgonNgu>('js')
   const [ma, setMa] = useState<Record<NgonNgu, string>>({ js: starter.js, py: starter.py })
   const [dangChay, setDangChay] = useState(false)
   const [dangTaiPython, setDangTaiPython] = useState(false)
@@ -234,12 +241,13 @@ export function ExerciseRunner({
     doiMa(starter[ngonNgu])
   }
 
-  function doiNgonNgu(nn: NgonNgu) {
-    if (nn === ngonNgu || dangChay) return
-    setNgonNgu(nn)
+  // Đổi ngôn ngữ thì kết quả của ngôn ngữ trước không còn nghĩa gì — dọn đi thay vì để
+  // người học tưởng bài đã đạt ở ngôn ngữ đang chọn. Đặt trong effect vì lệnh đổi giờ đến
+  // từ cha (có thể do bấm nút ở panel lời giải), không còn qua một hàm của component này.
+  useEffect(() => {
     setKetQua(null)
     setLoiNap(null)
-  }
+  }, [ngonNgu])
 
   const soDat = (ketQua ?? []).filter((k) => k.trangThai === 'dat').length
   const daXong = ketQua !== null && !dangChay
@@ -268,7 +276,7 @@ export function ExerciseRunner({
                 key={nn}
                 role="tab"
                 aria-selected={ngonNgu === nn}
-                onClick={() => doiNgonNgu(nn)}
+                onClick={() => !dangChay && doiNgonNgu(nn)}
                 disabled={dangChay}
                 className={`px-3 py-1 font-mono text-xs transition-colors disabled:opacity-50 ${
                   ngonNgu === nn ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent/50'

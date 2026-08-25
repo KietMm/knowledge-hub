@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SEED_EXERCISES } from '@/lib/db/seed-data'
 import { bangNhau, hienGiaTri } from '@/lib/exercise/compare'
+import { maTrongLoiGiai } from '@/lib/exercise/parse'
 
 /**
  * Chạy lời giải chính thức của TỪNG bài tập qua chính bộ test của nó.
@@ -14,10 +15,13 @@ import { bangNhau, hienGiaTri } from '@/lib/exercise/compare'
  * lời giải chạy được ở đây thì nó chạy được ở trình duyệt.
  */
 
-/** Lấy khối code js đầu tiên trong phần lời giải (viết bằng markdown). */
+/**
+ * Dùng chính hàm mà pipeline build dùng để trích code cho panel lời giải — nhờ vậy thứ
+ * người học thấy trên panel đúng là thứ được chạy thử ở đây.
+ */
 function maLoiGiai(loiGiai: string): string | null {
-  const khop = /```js\n([\s\S]*?)```/.exec(loiGiai)
-  return khop?.[1] ?? null
+  const ma = maTrongLoiGiai(loiGiai).js
+  return ma === '' ? null : ma
 }
 
 function nap(ma: string, ham: string): (...args: unknown[]) => unknown {

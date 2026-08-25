@@ -43,6 +43,7 @@ export type BaiTapDaTach = {
   starter: Record<NgonNgu, string>
   boTest: CaTest[]
   loiGiai: string
+  maLoiGiai: Record<NgonNgu, string>
 }
 
 const HEADING_LOI_GIAI = /^##\s+Lời giải\s*$/
@@ -144,6 +145,7 @@ export function tachBaiTap(body: string): BaiTapDaTach {
   if (deBai === '') throw new BaiTapError('Bài tập không có đề bài')
 
   return {
+    maLoiGiai: maTrongLoiGiai(loiGiai),
     deBai,
     // Chưa có starter Python thì để rỗng: mảnh 2 mới thêm Python, và một file thiếu nó
     // không nên làm hỏng cả bản build.
@@ -165,4 +167,22 @@ export function tenHamPython(hamJs: string): string {
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
     .toLowerCase()
+}
+
+/**
+ * Code của lời giải, tách theo ngôn ngữ.
+ *
+ * Panel lời giải bên cạnh ô soạn cần code ở dạng dữ liệu (để đổi qua lại JS/Python mà
+ * không phải cuộn), trong khi phần phân tích ở dưới vẫn cần nguyên văn markdown. Hàm này
+ * là chỗ DUY NHẤT hai nhu cầu đó gặp nhau — cùng nó, `tests/lib/exercise/loi-giai*.test.ts`
+ * lấy code ra để chạy thử, nên thứ hiện trên panel đúng là thứ đã được kiểm.
+ *
+ * Lấy khối ĐẦU TIÊN của mỗi ngôn ngữ: lời giải có thể còn đoạn code minh hoạ cách sai hoặc
+ * biến thể phía sau, và cái đứng đầu luôn là lời giải chính.
+ */
+export function maTrongLoiGiai(loiGiai: string): Record<NgonNgu, string> {
+  if (loiGiai.trim() === '') return { js: '', py: '' }
+  const khoi = quetKhoi(loiGiai.replace(/\r\n/g, '\n').split('\n'))
+  const dau = (ten: string[]): string => khoi.find((k) => ten.includes(k.lang))?.code ?? ''
+  return { js: dau(['js', 'javascript']), py: dau(['py', 'python']) }
 }
