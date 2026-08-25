@@ -120,7 +120,7 @@
   --cm-punct: oklch(0.55 0.02 258);
   --cm-type: oklch(0.5 0.1 195);
   --cm-gutter: oklch(0.72 0.015 258);
-  --cm-cursor: oklch(0.45 0.11 264);
+  --cm-cursor: oklch(0.38 0.13 264);
   --cm-selection: oklch(0.86 0.03 258);
 
   --chart-1: oklch(0.62 0.14 250);
@@ -184,7 +184,7 @@
   --cm-punct: oklch(0.66 0.02 258);
   --cm-type: oklch(0.74 0.08 195);
   --cm-gutter: oklch(0.48 0.015 258);
-  --cm-cursor: oklch(0.8 0.09 264);
+  --cm-cursor: oklch(0.95 0.04 264);
   --cm-selection: oklch(0.36 0.03 258);
 
   --chart-1: oklch(0.7 0.13 250);

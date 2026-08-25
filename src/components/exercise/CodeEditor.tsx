@@ -12,7 +12,7 @@ import { javascript, javascriptLanguage } from '@codemirror/lang-javascript'
 import { python, pythonLanguage } from '@codemirror/lang-python'
 import { HighlightStyle, bracketMatching, indentUnit, syntaxHighlighting } from '@codemirror/language'
 import { EditorState } from '@codemirror/state'
-import { EditorView, keymap, lineNumbers } from '@codemirror/view'
+import { EditorView, drawSelection, keymap, lineNumbers } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 import { useEffect, useRef } from 'react'
 import { goiYThanhVienJs, goiYThanhVienPy } from '@/lib/exercise/completion'
@@ -60,7 +60,13 @@ const GIAO_DIEN = EditorView.theme({
     paddingRight: '0.5rem',
   },
   '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'transparent' },
-  '.cm-cursor': { borderLeftColor: 'var(--cm-cursor)' },
+  // Con trỏ 2px thay vì 1.2px mặc định: ở cỡ chữ 13px trên nền tối, một vạch 1px lẫn vào
+  // nét chữ và người gõ phải tìm nó bằng mắt sau mỗi lần click.
+  '.cm-cursor, .cm-dropCursor': {
+    borderLeftWidth: '2px',
+    borderLeftColor: 'var(--cm-cursor)',
+    marginLeft: '-1px',
+  },
   '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
     backgroundColor: 'var(--cm-selection)',
   },
@@ -118,6 +124,12 @@ export function CodeEditor({
       extensions: [
         lineNumbers(),
         history(),
+        // drawSelection là bắt buộc, không phải trang trí: thiếu nó, CodeMirror dùng con
+        // trỏ và vùng chọn GỐC của trình duyệt, và màu của chúng lấy theo cờ sáng/tối tĩnh
+        // của theme CodeMirror — mà theme ở đây khai là sáng, nên trên nền tối là con trỏ
+        // ĐEN trên nền ĐEN. Có nó thì CodeMirror tự vẽ, và màu đi theo CSS variable của
+        // app nên đổi theme là đổi màu, không phải dựng lại editor.
+        drawSelection(),
         bracketMatching(),
         closeBrackets(),
         autocompletion({ activateOnTyping: true, icons: false }),
