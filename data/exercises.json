@@ -1,0 +1,585 @@
+[
+  {
+    "id": "bt-hai-tong",
+    "slug": "hai-tong",
+    "title": "Hai tổng",
+    "doKho": "de",
+    "chuDe": [
+      "mang",
+      "bang-bam"
+    ],
+    "ham": "haiTong",
+    "baiHoc": "bang-bam",
+    "soSanh": "chinh-xac",
+    "deBai": "Cho mảng số nguyên `nums` và một số `target`. Trả về **chỉ số của hai phần tử** có tổng bằng `target`.\n\nMỗi bộ dữ liệu bảo đảm có đúng một đáp án, và không được dùng cùng một phần tử hai lần. Trả về mảng hai chỉ số theo thứ tự tăng dần.\n\n```\nnums = [2, 7, 11, 15], target = 9   →  [0, 1]   (vì nums[0] + nums[1] = 9)\nnums = [3, 2, 4],      target = 6   →  [1, 2]\n```\n\n**Ràng buộc:** `2 ≤ nums.length ≤ 10⁴`, mảng có thể chứa số âm.\n\n> Cách hiển nhiên là hai vòng lặp lồng nhau — `O(n²)`. Nộp thử cách đó trước cho quen bộ chấm, rồi tìm cách `O(n)`. Gợi ý: khi đang đứng ở phần tử `x`, bạn cần biết *đã từng gặp* `target - x` chưa.",
+    "starter": {
+      "js": "function haiTong(nums, target) {\n  // Viết lời giải ở đây\n}",
+      "py": "def hai_tong(nums, target):\n    # Viết lời giải ở đây\n    pass"
+    },
+    "boTest": [
+      {
+        "vao": [
+          [
+            2,
+            7,
+            11,
+            15
+          ],
+          9
+        ],
+        "ra": [
+          0,
+          1
+        ]
+      },
+      {
+        "vao": [
+          [
+            3,
+            2,
+            4
+          ],
+          6
+        ],
+        "ra": [
+          1,
+          2
+        ]
+      },
+      {
+        "vao": [
+          [
+            3,
+            3
+          ],
+          6
+        ],
+        "ra": [
+          0,
+          1
+        ]
+      },
+      {
+        "vao": [
+          [
+            -1,
+            -2,
+            -3,
+            -4,
+            -5
+          ],
+          -8
+        ],
+        "ra": [
+          2,
+          4
+        ]
+      },
+      {
+        "vao": [
+          [
+            0,
+            4,
+            3,
+            0
+          ],
+          0
+        ],
+        "ra": [
+          0,
+          3
+        ]
+      },
+      {
+        "vao": [
+          [
+            1,
+            5,
+            9,
+            13,
+            17,
+            21
+          ],
+          34
+        ],
+        "ra": [
+          3,
+          5
+        ],
+        "mo_ta": "mảng dài hơn"
+      },
+      {
+        "vao": [
+          [
+            2,
+            1,
+            9,
+            4,
+            4,
+            56,
+            90,
+            3
+          ],
+          8
+        ],
+        "ra": [
+          3,
+          4
+        ],
+        "an": true
+      }
+    ],
+    "loiGiai": "Ý tưởng: đổi câu hỏi \"có cặp nào cộng lại bằng target không\" thành \"số bù của phần tử này đã từng xuất hiện chưa\". Câu hỏi thứ hai là một phép **tra cứu**, và tra cứu là việc của bảng băm.\n\n```js\nfunction haiTong(nums, target) {\n  const daGap = new Map() // giá trị -> chỉ số\n\n  for (let i = 0; i < nums.length; i += 1) {\n    const bu = target - nums[i]\n    if (daGap.has(bu)) return [daGap.get(bu), i]\n    daGap.set(nums[i], i)\n  }\n  return []\n}\n```\n\nĐiểm tinh tế: **tra cứu trước rồi mới ghi vào bảng**. Làm ngược lại thì với `nums = [3, 3]` và `target = 6`, phần tử đầu sẽ tự khớp với chính nó.\n\nVì luôn tra trước khi ghi, chỉ số tìm được luôn nhỏ hơn `i` — nên `[daGap.get(bu), i]` đã tăng dần sẵn, không cần sắp xếp.\n\n| | Hai vòng lặp | Bảng băm |\n|---|---|---|\n| Thời gian | `O(n²)` | `O(n)` |\n| Bộ nhớ | `O(1)` | `O(n)` |\n\nVới `n = 10⁴`, hai vòng lặp là 100 triệu phép so sánh; bảng băm là 10 nghìn. Đây chính là đánh đổi bộ nhớ lấy thời gian nói ở [[danh-doi-bo-nho-va-thoi-gian]].",
+    "order": 1
+  },
+  {
+    "id": "bt-dao-nguoc-chuoi",
+    "slug": "dao-nguoc-chuoi",
+    "title": "Đảo ngược chuỗi tại chỗ",
+    "doKho": "de",
+    "chuDe": [
+      "mang",
+      "hai-con-tro"
+    ],
+    "ham": "daoNguoc",
+    "soSanh": "chinh-xac",
+    "deBai": "Cho một mảng ký tự `s`, đảo ngược thứ tự các phần tử và trả về chính mảng đó.\n\nYêu cầu: dùng bộ nhớ phụ `O(1)` — nghĩa là **không** tạo mảng mới, phải hoán đổi ngay trên mảng đầu vào.\n\n```\n[\"h\", \"e\", \"l\", \"l\", \"o\"]  →  [\"o\", \"l\", \"l\", \"e\", \"h\"]\n```\n\n> Đây là bài để làm quen với kỹ thuật **hai con trỏ**: một chạy từ đầu, một chạy từ cuối, gặp nhau ở giữa. `s.reverse()` giải xong trong một dòng nhưng bạn sẽ không học được gì — hãy viết vòng lặp.",
+    "starter": {
+      "js": "function daoNguoc(s) {\n  // Hoán đổi tại chỗ rồi trả về s\n}",
+      "py": "def dao_nguoc(s):\n    # Hoán đổi tại chỗ rồi trả về s\n    pass"
+    },
+    "boTest": [
+      {
+        "vao": [
+          [
+            "h",
+            "e",
+            "l",
+            "l",
+            "o"
+          ]
+        ],
+        "ra": [
+          "o",
+          "l",
+          "l",
+          "e",
+          "h"
+        ]
+      },
+      {
+        "vao": [
+          [
+            "H",
+            "a",
+            "n",
+            "n",
+            "a",
+            "h"
+          ]
+        ],
+        "ra": [
+          "h",
+          "a",
+          "n",
+          "n",
+          "a",
+          "H"
+        ]
+      },
+      {
+        "vao": [
+          [
+            "a"
+          ]
+        ],
+        "ra": [
+          "a"
+        ],
+        "mo_ta": "một phần tử"
+      },
+      {
+        "vao": [
+          []
+        ],
+        "ra": [],
+        "mo_ta": "mảng rỗng"
+      },
+      {
+        "vao": [
+          [
+            "a",
+            "b"
+          ]
+        ],
+        "ra": [
+          "b",
+          "a"
+        ],
+        "mo_ta": "số chẵn phần tử"
+      },
+      {
+        "vao": [
+          [
+            "1",
+            "2",
+            "3"
+          ]
+        ],
+        "ra": [
+          "3",
+          "2",
+          "1"
+        ],
+        "mo_ta": "số lẻ phần tử"
+      }
+    ],
+    "loiGiai": "```js\nfunction daoNguoc(s) {\n  let trai = 0\n  let phai = s.length - 1\n\n  while (trai < phai) {\n    ;[s[trai], s[phai]] = [s[phai], s[trai]]\n    trai += 1\n    phai -= 1\n  }\n  return s\n}\n```\n\nĐiều kiện dừng là `trai < phai`, không phải `trai <= phai`. Với số lẻ phần tử, phần tử giữa không cần đổi chỗ với chính nó; viết `<=` thì nó vẫn chạy đúng nhưng thừa một lượt.\n\nVòng lặp chạy `n/2` lần ⇒ `O(n)` thời gian, `O(1)` bộ nhớ. Không có cách nào nhanh hơn: muốn đảo thì phải chạm vào mọi phần tử ít nhất một lần.\n\nHai con trỏ chạy ngược chiều là mẫu dùng lại được cho: kiểm tra chuỗi đối xứng, tìm cặp có tổng cho trước trong **mảng đã sắp xếp**, và bài chứa nước.",
+    "order": 2
+  },
+  {
+    "id": "bt-cua-so-truot-dai-nhat",
+    "slug": "cua-so-truot-dai-nhat",
+    "title": "Chuỗi con không lặp dài nhất",
+    "doKho": "trung-binh",
+    "chuDe": [
+      "chuoi",
+      "cua-so-truot",
+      "bang-bam"
+    ],
+    "ham": "doDaiKhongLap",
+    "baiHoc": "bang-bam",
+    "soSanh": "chinh-xac",
+    "deBai": "Cho một chuỗi `s`, tìm **độ dài** của chuỗi con dài nhất không chứa ký tự lặp lại.\n\nChuỗi con phải **liên tiếp** — `\"abc\"` là chuỗi con của `\"abcde\"`, còn `\"ace\"` thì không.\n\n```\n\"abcabcbb\"  →  3   (\"abc\")\n\"bbbbb\"     →  1   (\"b\")\n\"pwwkew\"    →  3   (\"wke\", không phải \"pwke\" vì nó không liên tiếp)\n```\n\n**Ràng buộc:** `0 ≤ s.length ≤ 5·10⁴`.\n\n> Cách vét cạn là thử mọi chuỗi con — `O(n²)` hoặc tệ hơn. Kỹ thuật đúng là **cửa sổ trượt**: giữ một cửa sổ luôn hợp lệ, mở rộng bên phải, và khi gặp ký tự trùng thì kéo mép trái lên.",
+    "starter": {
+      "js": "function doDaiKhongLap(s) {\n  // Viết lời giải ở đây\n}",
+      "py": "def do_dai_khong_lap(s):\n    # Viết lời giải ở đây\n    pass"
+    },
+    "boTest": [
+      {
+        "vao": [
+          "abcabcbb"
+        ],
+        "ra": 3
+      },
+      {
+        "vao": [
+          "bbbbb"
+        ],
+        "ra": 1
+      },
+      {
+        "vao": [
+          "pwwkew"
+        ],
+        "ra": 3
+      },
+      {
+        "vao": [
+          ""
+        ],
+        "ra": 0,
+        "mo_ta": "chuỗi rỗng"
+      },
+      {
+        "vao": [
+          " "
+        ],
+        "ra": 1,
+        "mo_ta": "một khoảng trắng"
+      },
+      {
+        "vao": [
+          "dvdf"
+        ],
+        "ra": 3,
+        "mo_ta": "mép trái không được lùi"
+      },
+      {
+        "vao": [
+          "abba"
+        ],
+        "ra": 2,
+        "mo_ta": "bẫy: mép trái phải tiến, không lùi"
+      },
+      {
+        "vao": [
+          "tmmzuxt"
+        ],
+        "ra": 5,
+        "an": true
+      }
+    ],
+    "loiGiai": "Giữ hai chỉ số `trai` và `phai` làm hai mép cửa sổ, và một bảng ghi lần cuối mỗi ký tự xuất hiện ở đâu.\n\n```js\nfunction doDaiKhongLap(s) {\n  const lanCuoi = new Map() // ký tự -> chỉ số gần nhất\n  let trai = 0\n  let daiNhat = 0\n\n  for (let phai = 0; phai < s.length; phai += 1) {\n    const c = s[phai]\n    // Chỉ kéo mép trái khi ký tự trùng nằm TRONG cửa sổ hiện tại.\n    if (lanCuoi.has(c) && lanCuoi.get(c) >= trai) {\n      trai = lanCuoi.get(c) + 1\n    }\n    lanCuoi.set(c, phai)\n    daiNhat = Math.max(daiNhat, phai - trai + 1)\n  }\n  return daiNhat\n}\n```\n\nCả bài nằm ở điều kiện `lanCuoi.get(c) >= trai`. Bỏ nó đi thì `\"abba\"` cho kết quả sai: khi `phai` tới `'a'` cuối, bảng nói `'a'` từng ở chỉ số 0, và mép trái bị **kéo lùi** về 1 trong khi nó đã ở 2. Mép trái chỉ được tiến, không bao giờ lùi — đó là bất biến của kỹ thuật cửa sổ trượt.\n\n`O(n)` thời gian: mỗi mép đi qua chuỗi đúng một lần. Bộ nhớ `O(k)` với `k` là số ký tự phân biệt.",
+    "order": 3
+  },
+  {
+    "id": "bt-gop-khoang",
+    "slug": "gop-khoang",
+    "title": "Gộp các khoảng chồng nhau",
+    "doKho": "trung-binh",
+    "chuDe": [
+      "mang",
+      "sap-xep"
+    ],
+    "ham": "gopKhoang",
+    "soSanh": "chinh-xac",
+    "deBai": "Cho danh sách các khoảng `[[bat_dau, ket_thuc], ...]`, gộp mọi khoảng chồng lấn và trả về danh sách khoảng không chồng nhau, **sắp xếp tăng dần theo điểm bắt đầu**.\n\nHai khoảng chạm nhau ở đúng một điểm cũng được coi là chồng: `[1,4]` và `[4,5]` gộp thành `[1,5]`.\n\n```\n[[1,3], [2,6], [8,10], [15,18]]  →  [[1,6], [8,10], [15,18]]\n[[1,4], [4,5]]                   →  [[1,5]]\n```\n\nĐầu vào **không** bảo đảm đã sắp xếp.\n\n> Bài này là ví dụ đẹp của \"sắp xếp trước thì phần còn lại thành hiển nhiên\". Chưa sắp xếp thì phải so mọi khoảng với mọi khoảng; sắp xếp rồi thì chỉ cần so với khoảng liền trước.",
+    "starter": {
+      "js": "function gopKhoang(khoang) {\n  // Viết lời giải ở đây\n}",
+      "py": "def gop_khoang(khoang):\n    # Viết lời giải ở đây\n    pass"
+    },
+    "boTest": [
+      {
+        "vao": [
+          [
+            [
+              1,
+              3
+            ],
+            [
+              2,
+              6
+            ],
+            [
+              8,
+              10
+            ],
+            [
+              15,
+              18
+            ]
+          ]
+        ],
+        "ra": [
+          [
+            1,
+            6
+          ],
+          [
+            8,
+            10
+          ],
+          [
+            15,
+            18
+          ]
+        ]
+      },
+      {
+        "vao": [
+          [
+            [
+              1,
+              4
+            ],
+            [
+              4,
+              5
+            ]
+          ]
+        ],
+        "ra": [
+          [
+            1,
+            5
+          ]
+        ],
+        "mo_ta": "chạm nhau một điểm"
+      },
+      {
+        "vao": [
+          [
+            [
+              1,
+              4
+            ],
+            [
+              2,
+              3
+            ]
+          ]
+        ],
+        "ra": [
+          [
+            1,
+            4
+          ]
+        ],
+        "mo_ta": "khoảng nằm trọn bên trong"
+      },
+      {
+        "vao": [
+          [
+            [
+              5,
+              6
+            ],
+            [
+              1,
+              3
+            ]
+          ]
+        ],
+        "ra": [
+          [
+            1,
+            3
+          ],
+          [
+            5,
+            6
+          ]
+        ],
+        "mo_ta": "đầu vào chưa sắp xếp"
+      },
+      {
+        "vao": [
+          [
+            [
+              1,
+              4
+            ]
+          ]
+        ],
+        "ra": [
+          [
+            1,
+            4
+          ]
+        ],
+        "mo_ta": "một khoảng"
+      },
+      {
+        "vao": [
+          []
+        ],
+        "ra": [],
+        "mo_ta": "danh sách rỗng"
+      },
+      {
+        "vao": [
+          [
+            [
+              2,
+              3
+            ],
+            [
+              4,
+              5
+            ],
+            [
+              6,
+              7
+            ],
+            [
+              8,
+              9
+            ],
+            [
+              1,
+              10
+            ]
+          ]
+        ],
+        "ra": [
+          [
+            1,
+            10
+          ]
+        ],
+        "an": true
+      }
+    ],
+    "loiGiai": "```js\nfunction gopKhoang(khoang) {\n  if (khoang.length === 0) return []\n\n  // Sao chép trước khi sắp xếp: sửa mảng của người gọi là tác dụng phụ không ai mong đợi.\n  const daSap = [...khoang].sort((a, b) => a[0] - b[0])\n  const ketQua = [daSap[0]]\n\n  for (const [bat, ket] of daSap.slice(1)) {\n    const cuoi = ketQua[ketQua.length - 1]\n    if (bat <= cuoi[1]) {\n      // Chồng nhau: nới mép phải. Phải lấy max — khoảng mới có thể nằm TRỌN bên trong.\n      cuoi[1] = Math.max(cuoi[1], ket)\n    } else {\n      ketQua.push([bat, ket])\n    }\n  }\n  return ketQua\n}\n```\n\nHai chỗ dễ sai:\n\n1. **`Math.max` ở bước nới mép phải.** Gán thẳng `cuoi[1] = ket` thì `[[1,4], [2,3]]` cho ra `[1,3]` — khoảng bị co lại.\n2. **`sort((a, b) => a[0] - b[0])`, không phải `sort()`.** `sort()` mặc định so sánh theo chuỗi, nên `[10, ...]` đứng trước `[9, ...]`.\n\nSắp xếp là `O(n log n)`, một lượt quét là `O(n)` ⇒ tổng `O(n log n)`, và đây là chặn dưới: không sắp xếp thì không biết khoảng nào kề khoảng nào.",
+    "order": 4
+  },
+  {
+    "id": "bt-kiem-tra-ngoac-can-doi",
+    "slug": "kiem-tra-ngoac-can-doi",
+    "title": "Ngoặc cân đối",
+    "doKho": "de",
+    "chuDe": [
+      "ngan-xep",
+      "chuoi"
+    ],
+    "ham": "ngoacCanDoi",
+    "baiHoc": "ngan-xep-hang-doi-cay-do-thi",
+    "soSanh": "chinh-xac",
+    "deBai": "Cho chuỗi `s` chỉ gồm các ký tự `()[]{}`, kiểm tra chuỗi có cân đối không.\n\nCân đối nghĩa là: mỗi ngoặc mở được đóng bằng đúng loại ngoặc của nó, và đóng theo **đúng thứ tự lồng nhau**.\n\n```\n\"()\"        →  true\n\"()[]{}\"    →  true\n\"(]\"        →  false   (sai loại)\n\"([)]\"      →  false   (sai thứ tự lồng)\n\"{[]}\"      →  true\n```\n\n> Đây là bài tập kinh điển của ngăn xếp, và cũng chính là cách trình biên dịch kiểm tra dấu ngoặc trong code của bạn.",
+    "starter": {
+      "js": "function ngoacCanDoi(s) {\n  // Viết lời giải ở đây\n}",
+      "py": "def ngoac_can_doi(s):\n    # Viết lời giải ở đây\n    pass"
+    },
+    "boTest": [
+      {
+        "vao": [
+          "()"
+        ],
+        "ra": true
+      },
+      {
+        "vao": [
+          "()[]{}"
+        ],
+        "ra": true
+      },
+      {
+        "vao": [
+          "(]"
+        ],
+        "ra": false
+      },
+      {
+        "vao": [
+          "([)]"
+        ],
+        "ra": false,
+        "mo_ta": "sai thứ tự lồng"
+      },
+      {
+        "vao": [
+          "{[]}"
+        ],
+        "ra": true
+      },
+      {
+        "vao": [
+          ""
+        ],
+        "ra": true,
+        "mo_ta": "chuỗi rỗng là cân đối"
+      },
+      {
+        "vao": [
+          "("
+        ],
+        "ra": false,
+        "mo_ta": "mở mà không đóng"
+      },
+      {
+        "vao": [
+          ")"
+        ],
+        "ra": false,
+        "mo_ta": "đóng mà chưa mở"
+      },
+      {
+        "vao": [
+          "(((((((((())))))))))"
+        ],
+        "ra": true,
+        "an": true
+      },
+      {
+        "vao": [
+          "{[(])}"
+        ],
+        "ra": false,
+        "an": true
+      }
+    ],
+    "loiGiai": "```js\nconst CAP = { ')': '(', ']': '[', '}': '{' }\n\nfunction ngoacCanDoi(s) {\n  const ngan = []\n\n  for (const c of s) {\n    if (c === '(' || c === '[' || c === '{') {\n      ngan.push(c)\n    } else {\n      // Đóng mà ngăn xếp rỗng, hoặc cái trên cùng không phải bạn của nó ⇒ hỏng ngay.\n      if (ngan.pop() !== CAP[c]) return false\n    }\n  }\n  // Còn ngoặc chưa đóng thì cũng không cân đối — đây là dòng hay bị quên nhất.\n  return ngan.length === 0\n}\n```\n\nBa trường hợp sai và ba chỗ bắt chúng:\n\n| Sai kiểu | Ví dụ | Bắt ở đâu |\n|---|---|---|\n| Đóng khi chưa mở | `\")\"` | `ngan.pop()` ra `undefined` ≠ `'('` |\n| Đóng nhầm loại | `\"(]\"` | `pop()` ra `'('` ≠ `CAP[']']` |\n| Mở mà không đóng | `\"(\"` | `ngan.length === 0` ở cuối |\n\n`O(n)` thời gian, `O(n)` bộ nhớ cho ngăn xếp — trường hợp xấu nhất là chuỗi toàn ngoặc mở.\n\nVì sao phải là ngăn xếp chứ không phải bộ đếm: chỉ đếm số ngoặc mở/đóng thì `\"([)]\"` vẫn cân bằng về số lượng. Cái cần nhớ là **thứ tự**, và \"lấy ra cái vào sau cùng\" chính là định nghĩa của ngăn xếp — xem [[ngan-xep-hang-doi-cay-do-thi]].",
+    "order": 5
+  }
+]

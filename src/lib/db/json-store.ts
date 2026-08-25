@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { z } from 'zod'
 import { ReadOnlyError, laReadOnly } from './mode'
-import { SEED_CATEGORIES, SEED_NOTES, SEED_TOPICS } from './seed-data'
+import { SEED_CATEGORIES, SEED_EXERCISES, SEED_NOTES, SEED_TOPICS } from './seed-data'
 
 /**
  * Lớp lưu trữ thấp nhất: đọc/ghi một file JSON chứa một mảng bản ghi.
@@ -36,6 +36,7 @@ const TRONG_BUNDLE: Record<string, readonly unknown[]> = {
   'categories.json': SEED_CATEGORIES,
   'topics.json': SEED_TOPICS,
   'notes.json': SEED_NOTES,
+  'exercises.json': SEED_EXERCISES,
 }
 
 /** Đọc mỗi lần gọi (không cache) để test có thể trỏ sang thư mục tạm. */

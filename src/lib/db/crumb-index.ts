@@ -1,5 +1,6 @@
 import type { CrumbIndex } from '@/components/layout/HeaderBreadcrumbs'
 import * as categoriesRepo from './categories.repo'
+import * as exercisesRepo from './exercises.repo'
 import * as notesRepo from './notes.repo'
 import * as topicsRepo from './topics.repo'
 
@@ -8,10 +9,11 @@ import * as topicsRepo from './topics.repo'
  * không có `content` hay `summary`, nên nó nhỏ dù giáo trình có bao nhiêu bài.
  */
 export async function buildCrumbIndex(): Promise<CrumbIndex> {
-  const [categories, topics, notes] = await Promise.all([
+  const [categories, topics, notes, exercises] = await Promise.all([
     categoriesRepo.listAll(),
     topicsRepo.listAll(),
     notesRepo.listAll(),
+    exercisesRepo.listAll(),
   ])
 
   const categorySlugById = new Map(categories.map((c) => [c.id, c.slug]))
@@ -31,5 +33,6 @@ export async function buildCrumbIndex(): Promise<CrumbIndex> {
         { title: n.title, topicSlug: topicSlugById.get(n.topicId) ?? '' },
       ]),
     ),
+    exercises: Object.fromEntries(exercises.map((bt) => [bt.slug, bt.title])),
   }
 }

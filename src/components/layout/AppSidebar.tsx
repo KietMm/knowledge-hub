@@ -1,5 +1,7 @@
+import { Dumbbell } from 'lucide-react'
 import Link from 'next/link'
 import * as categoriesRepo from '@/lib/db/categories.repo'
+import * as exercisesRepo from '@/lib/db/exercises.repo'
 import { SidebarTree } from './SidebarTree'
 
 /**
@@ -10,7 +12,10 @@ import { SidebarTree } from './SidebarTree'
  * logo và link sao lưu sẽ trôi mất khỏi tầm mắt.
  */
 export async function AppSidebar() {
-  const tree = await categoriesRepo.listWithCounts()
+  const [tree, soBaiTap] = await Promise.all([
+    categoriesRepo.listWithCounts(),
+    exercisesRepo.listAll().then((bt) => bt.length),
+  ])
 
   return (
     <div className="flex h-full w-[264px] shrink-0 flex-col border-r bg-muted/30">
@@ -28,6 +33,21 @@ export async function AppSidebar() {
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
         <SidebarTree tree={tree} />
       </div>
+
+      {/* Bài tập nằm NGOÀI cây mảng/công nghệ vì nó không thuộc lộ trình nào — nhét nó
+          thành một nhánh trong cây sẽ nói sai về cấu trúc giáo trình. */}
+      {soBaiTap > 0 && (
+        <div className="shrink-0 border-t px-3 py-2">
+          <Link
+            href="/bt"
+            className="flex min-h-9 items-center gap-2 rounded px-2 text-sm outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Dumbbell className="size-4 text-muted-foreground" />
+            Bài tập
+            <span className="ml-auto font-mono text-[0.7rem] text-muted-foreground">{soBaiTap}</span>
+          </Link>
+        </div>
+      )}
 
       <div className="shrink-0 border-t px-4 py-3">
         <a

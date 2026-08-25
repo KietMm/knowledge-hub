@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import { BaiTapLienQuan } from '@/components/exercise/BaiTapLienQuan'
 import { LessonNav } from '@/components/notes/LessonNav'
 import { LevelBadge } from '@/components/notes/LevelBadge'
 import { NoteActions } from '@/components/notes/NoteActions'
@@ -8,6 +9,7 @@ import { ReadingProgress } from '@/components/notes/ReadingProgress'
 import { TagBadge } from '@/components/notes/TagBadge'
 import { Toc } from '@/components/notes/Toc'
 import { TocMobile } from '@/components/notes/TocMobile'
+import * as exercisesRepo from '@/lib/db/exercises.repo'
 import { laReadOnly } from '@/lib/db/mode'
 import * as notesRepo from '@/lib/db/notes.repo'
 import * as topicsRepo from '@/lib/db/topics.repo'
@@ -32,10 +34,11 @@ export default async function NotePage({ params }: { params: Promise<{ note: str
   if (note === null) notFound()
 
   // Bảng slug → tiêu đề để `[[slug]]` trong bài thành link mang đúng tiêu đề bài đích.
-  const [topic, neighbors, allNotes] = await Promise.all([
+  const [topic, neighbors, allNotes, baiTap] = await Promise.all([
     topicsRepo.findById(note.topicId),
     notesRepo.findNeighbors(note.id),
     notesRepo.listAll(),
+    exercisesRepo.listByBaiHoc(note.slug),
   ])
   const { html, toc } = await renderMarkdown(
     note.content,
@@ -99,6 +102,8 @@ export default async function NotePage({ params }: { params: Promise<{ note: str
           <TocMobile entries={toc} />
 
         <NoteContent html={html} />
+
+          <BaiTapLienQuan baiTap={baiTap} />
 
           <LessonNav
             prev={neighbors.prev}

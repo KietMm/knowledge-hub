@@ -37,7 +37,7 @@ Mở http://localhost:3000
 | `pnpm test` | Unit test tầng dữ liệu và các hàm thuần |
 | `pnpm typecheck` | Kiểm tra kiểu |
 | `pnpm seed` | Nạp dữ liệu mẫu (không ghi đè dữ liệu đã có) |
-| `pnpm content:build` | Biên dịch `content/` → `src/lib/db/seed-data.json` |
+| `pnpm content:build` | Biên dịch `content/` (bài học + bài tập) → `src/lib/db/seed-data.json` |
 | `pnpm content:sync` | Như trên, rồi ghi luôn vào `data/` (giữ các bài đã ghim) |
 
 ## Soạn bài học
@@ -75,9 +75,54 @@ Ràng buộc (script kiểm và báo lỗi rõ nếu sai):
 Sửa xong chạy `pnpm content:sync` rồi tải lại trang. Lệnh này ghi đè `data/` nhưng giữ
 nguyên trạng thái ghim; bài nào đổi slug thì mất ghim và script sẽ in ra danh sách đó.
 
+## Soạn bài tập
+
+Bài tập thuật toán nằm ở `content/bai-tap/NN-slug.md` — cùng quy ước tên file với bài học,
+nhưng là **thực thể riêng**: nó không thuộc công nghệ nào và không nằm trong lộ trình nào.
+
+````markdown
+---
+title: Hai tổng
+slug: hai-tong
+do_kho: de                  # de | trung-binh | kho
+chu_de: [mang, bang-bam]    # đi qua bảng nhãn như tag bài học
+ham: haiTong                # tên hàm bộ chấm sẽ gọi
+bai_hoc: bang-bam           # tuỳ chọn — slug bài học dạy kỹ thuật này
+so_sanh: chinh-xac          # chinh-xac | tap-hop (bỏ qua thứ tự)
+---
+
+Đề bài viết bằng markdown.
+
+```js starter
+function haiTong(nums, target) {}
+```
+
+```json test
+[{ "vao": [[2, 7, 11, 15], 9], "ra": [0, 1], "mo_ta": "ví dụ", "an": false }]
+```
+
+## Lời giải
+
+Mọi thứ từ heading này trở đi bị ẩn sau nút "Xem lời giải".
+````
+
+Vì sao bộ test nằm trong thân bài chứ không ở frontmatter: bộ đọc frontmatter của dự án chỉ
+nhận giá trị vô hướng và mảng chuỗi một dòng (có chủ đích — xem `src/lib/frontmatter.ts`), mà
+một ca test là object lồng nhau.
+
+- `vao` là danh sách **đối số**, không phải một giá trị: hàm hai tham số cần `[nums, target]`.
+- `an: true` giấu dữ liệu của ca đó, chỉ hiện đạt/không đạt — chống việc code cứng đáp án.
+- **Liên kết là một chiều:** chỉ bài tập khai `bai_hoc`; danh sách "luyện tập phần này" ở cuối
+  bài học được suy ra ngược lúc build, nên không có gì để lệch.
+- Có test chạy **chính lời giải trong file** qua **chính bộ test của nó** — một giá trị `ra`
+  gõ sai sẽ làm test đỏ, thay vì âm thầm báo sai cho người học đúng.
+
+Code chạy trong **Web Worker** ở máy người học, timeout 3 giây. Không có gì gửi lên máy chủ;
+bài làm và tiến độ nằm trong `localStorage` (bản triển khai công khai chỉ đọc, xem bên dưới).
+
 ## Dữ liệu
 
-Ba file JSON trong `data/`. Sao lưu: mở `/api/export`. Phục hồi: `POST /api/import` với chính file đó.
+Bốn file JSON trong `data/`. Sao lưu: mở `/api/export`. Phục hồi: `POST /api/import` với chính file đó.
 
 `data/` là dữ liệu **đang chạy** (sửa qua giao diện sẽ ghi vào đây); `content/` là **nguồn**
 của giáo trình. Hai thứ chỉ gặp nhau khi bạn chạy `content:sync`.

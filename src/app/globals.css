@@ -108,6 +108,21 @@
   --code-border: oklch(0.9 0.01 258);
   --code-chrome: oklch(0.945 0.011 258);
 
+  /* Bảng màu ô soạn code (CodeMirror). Đặt cùng tinh thần với vitesse-light mà shiki
+     dùng cho khối code trong bài học — nếu hai bên lệch màu thì cùng một đoạn code
+     nhìn ở bài học và ở ô soạn trông như hai ngôn ngữ khác nhau. */
+  --cm-keyword: oklch(0.52 0.14 25);
+  --cm-function: oklch(0.5 0.12 250);
+  --cm-string: oklch(0.5 0.1 145);
+  --cm-number: oklch(0.55 0.12 60);
+  --cm-comment: oklch(0.62 0.02 258);
+  --cm-property: oklch(0.45 0.09 285);
+  --cm-punct: oklch(0.55 0.02 258);
+  --cm-type: oklch(0.5 0.1 195);
+  --cm-gutter: oklch(0.72 0.015 258);
+  --cm-cursor: oklch(0.45 0.11 264);
+  --cm-selection: oklch(0.86 0.03 258);
+
   --chart-1: oklch(0.62 0.14 250);
   --chart-2: oklch(0.66 0.13 165);
   --chart-3: oklch(0.68 0.15 45);
@@ -159,6 +174,18 @@
   --code-foreground: oklch(0.9 0.008 258);
   --code-border: oklch(1 0 0 / 9%);
   --code-chrome: oklch(0.278 0.019 258);
+
+  --cm-keyword: oklch(0.72 0.12 25);
+  --cm-function: oklch(0.74 0.1 250);
+  --cm-string: oklch(0.74 0.1 145);
+  --cm-number: oklch(0.78 0.1 70);
+  --cm-comment: oklch(0.55 0.02 258);
+  --cm-property: oklch(0.75 0.08 285);
+  --cm-punct: oklch(0.66 0.02 258);
+  --cm-type: oklch(0.74 0.08 195);
+  --cm-gutter: oklch(0.48 0.015 258);
+  --cm-cursor: oklch(0.8 0.09 264);
+  --cm-selection: oklch(0.36 0.03 258);
 
   --chart-1: oklch(0.7 0.13 250);
   --chart-2: oklch(0.72 0.12 165);

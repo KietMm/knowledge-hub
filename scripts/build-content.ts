@@ -2,13 +2,17 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import { parseFrontmatter } from '../src/lib/frontmatter'
+import { tachBaiTap } from '../src/lib/exercise/parse'
 import {
   CategorySchema,
   NoteLevelSchema,
+  ExerciseSchema,
+  KieuSoSanhSchema,
   NoteSchema,
   SlugSchema,
   TopicSchema,
   type Category,
+  type Exercise,
   type Note,
   type Topic,
 } from '../src/lib/db/schema'
@@ -35,6 +39,8 @@ const ROOT = resolve(__dirname, '..')
 const CONTENT_DIR = join(ROOT, 'content')
 const SEED_JSON = join(ROOT, 'src', 'lib', 'db', 'seed-data.json')
 const DATA_DIR = join(ROOT, 'data')
+/** Bài tập nằm ngoài cây mảng/công nghệ: nó là kho riêng, không thuộc lộ trình nào. */
+const EXERCISE_DIR = join(CONTENT_DIR, 'bai-tap')
 
 /** Mốc thời gian cố định: chạy lại script không được tạo diff giả ở createdAt/updatedAt. */
 const BASE_TIME = Date.parse('2026-01-01T00:00:00.000Z')
@@ -55,6 +61,16 @@ const LessonFrontmatterSchema = z.object({
   summary: z.string().trim().min(1, 'Bài học phải có tóm tắt — nó hiện trên thẻ và trong ⌘K'),
   level: NoteLevelSchema,
   tags: z.array(z.string().trim().min(1)).min(1),
+})
+
+const ExerciseFrontmatterSchema = z.object({
+  title: z.string().trim().min(1),
+  slug: SlugSchema,
+  do_kho: z.enum(['de', 'trung-binh', 'kho']),
+  chu_de: z.array(z.string().trim().min(1)).min(1),
+  ham: z.string().trim().min(1, 'Phải khai tên hàm người học cần viết'),
+  bai_hoc: SlugSchema.optional(),
+  so_sanh: KieuSoSanhSchema.optional(),
 })
 
 /** Tên file dạng `01-ten-bai.md`: số ở đầu quyết định thứ tự bài trong lộ trình. */
@@ -84,7 +100,70 @@ function listLessonFiles(topicSlug: string): string[] {
   return files.sort()
 }
 
-function build(): { categories: Category[]; topics: Topic[]; notes: Note[] } {
+/**
+ * Đọc kho bài tập. Trả về mảng rỗng nếu chưa có thư mục — mảnh nội dung này là tuỳ
+ * chọn, không có bài tập nào thì app vẫn là một giáo trình hoàn chỉnh.
+ */
+function buildExercises(): Exercise[] {
+  if (!statSync(EXERCISE_DIR, { throwIfNoEntry: false })?.isDirectory()) return []
+
+  const files = readdirSync(EXERCISE_DIR)
+    .filter((name) => name.endsWith('.md'))
+    .sort()
+  const exercises: Exercise[] = []
+  const seen = new Set<string>()
+
+  for (const fileName of files) {
+    if (!FILE_NAME.test(fileName)) {
+      throw new Error(`Tên file sai dạng: content/bai-tap/${fileName} (cần "01-ten-bai.md")`)
+    }
+    const { data, body } = parseFrontmatter(readFileSync(join(EXERCISE_DIR, fileName), 'utf8'))
+    const parsed = ExerciseFrontmatterSchema.safeParse(data)
+    if (!parsed.success) {
+      throw new Error(`Frontmatter sai ở content/bai-tap/${fileName}:\n${formatIssues(parsed.error)}`)
+    }
+    const [, orderPrefix, fileSlug] = FILE_NAME.exec(fileName) ?? []
+    if (orderPrefix === undefined || fileSlug === undefined) {
+      throw new Error(`Không đọc được thứ tự từ tên file ${fileName}`)
+    }
+    if (fileSlug !== parsed.data.slug) {
+      throw new Error(
+        `content/bai-tap/${fileName}: tên file và slug phải trùng nhau ` +
+          `(file "${fileSlug}" vs frontmatter "${parsed.data.slug}")`,
+      )
+    }
+    if (seen.has(parsed.data.slug)) throw new Error(`Slug bài tập bị trùng: "${parsed.data.slug}"`)
+    seen.add(parsed.data.slug)
+
+    let tach
+    try {
+      tach = tachBaiTap(body)
+    } catch (loi) {
+      throw new Error(`content/bai-tap/${fileName}: ${(loi as Error).message}`)
+    }
+
+    exercises.push(
+      ExerciseSchema.parse({
+        id: `bt-${parsed.data.slug}`,
+        slug: parsed.data.slug,
+        title: parsed.data.title,
+        doKho: parsed.data.do_kho,
+        chuDe: parsed.data.chu_de,
+        ham: parsed.data.ham,
+        ...(parsed.data.bai_hoc === undefined ? {} : { baiHoc: parsed.data.bai_hoc }),
+        soSanh: parsed.data.so_sanh ?? 'chinh-xac',
+        deBai: tach.deBai,
+        starter: tach.starter,
+        boTest: tach.boTest,
+        loiGiai: tach.loiGiai,
+        order: Number(orderPrefix),
+      }),
+    )
+  }
+  return exercises
+}
+
+function build(): { categories: Category[]; topics: Topic[]; notes: Note[]; exercises: Exercise[] } {
   const structure = readStructure()
   const categories: Category[] = []
   const topics: Topic[] = []
@@ -166,13 +245,34 @@ function build(): { categories: Category[]; topics: Topic[]; notes: Note[] } {
     throw new Error(`Liên kết chéo [[...]] trỏ sai:\n${linkSai.join('\n')}`)
   }
 
+  const exercises = buildExercises()
+
+  // `bai_hoc` phải trỏ tới bài có thật: danh sách "bài tập luyện phần này" ở cuối bài học
+  // được suy ra từ chính trường này, nên trỏ sai nghĩa là bài tập biến mất khỏi bài học
+  // mà không ai nhận ra.
+  for (const bt of exercises) {
+    for (const match of `${bt.deBai}\n${bt.loiGiai}`.matchAll(/\[\[([a-z0-9-]+)\]\]/g)) {
+      const dich = match[1]
+      if (dich !== undefined && !slugCoThat.has(dich)) {
+        throw new Error(`Bài tập ${bt.slug} trỏ tới "[[${dich}]]" — không có bài nào mang slug này`)
+      }
+    }
+  }
+
+  const baiHocSai = exercises
+    .filter((bt) => bt.baiHoc !== undefined && !slugCoThat.has(bt.baiHoc))
+    .map((bt) => `  - bài tập ${bt.slug} trỏ tới bài học "${bt.baiHoc}" (không tồn tại)`)
+  if (baiHocSai.length > 0) {
+    throw new Error(`Liên kết bài tập → bài học trỏ sai:\n${baiHocSai.join('\n')}`)
+  }
+
   const categoryIds = new Set(categories.map((c) => c.id))
   for (const topic of topics) {
     if (!categoryIds.has(topic.categoryId)) {
       throw new Error(`Công nghệ "${topic.slug}" trỏ tới mảng không tồn tại: ${topic.categoryId}`)
     }
   }
-  return { categories, topics, notes }
+  return { categories, topics, notes, exercises }
 }
 
 /**
@@ -195,10 +295,11 @@ function writeJson(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
 }
 
-const { categories, topics, notes } = build()
-writeJson(SEED_JSON, { categories, topics, notes })
+const { categories, topics, notes, exercises } = build()
+writeJson(SEED_JSON, { categories, topics, notes, exercises })
 console.log(
-  `Đã dựng giáo trình: ${categories.length} mảng, ${topics.length} công nghệ, ${notes.length} bài học`,
+  `Đã dựng giáo trình: ${categories.length} mảng, ${topics.length} công nghệ, ` +
+    `${notes.length} bài học, ${exercises.length} bài tập`,
 )
 
 if (process.argv.includes('--sync')) {
@@ -209,6 +310,7 @@ if (process.argv.includes('--sync')) {
   writeJson(join(DATA_DIR, 'categories.json'), categories)
   writeJson(join(DATA_DIR, 'topics.json'), topics)
   writeJson(join(DATA_DIR, 'notes.json'), daGhim)
+  writeJson(join(DATA_DIR, 'exercises.json'), exercises)
 
   // Báo cả số ghim KHÔNG khớp: bài đổi slug thì đổi luôn id, và trạng thái ghim của
   // nó rơi mất một cách âm thầm nếu chỉ in ra con số khớp được.

@@ -11,6 +11,7 @@ export type CrumbIndex = {
   categories: Record<string, string>
   topics: Record<string, { name: string; categorySlug: string }>
   notes: Record<string, { title: string; topicSlug: string }>
+  exercises: Record<string, string>
 }
 
 /**
@@ -33,9 +34,19 @@ export function HeaderBreadcrumbs({ index }: { index: CrumbIndex }) {
 
 function duongDan(pathname: string, index: CrumbIndex): Crumb[] {
   const [, loai, slug] = pathname.split('/')
-  if (slug === undefined || slug === '') return []
-
   const goc: Crumb = { label: 'Trang chủ', href: '/' }
+
+  // Kho bài tập có trang danh sách riêng, nên nó là nhánh DUY NHẤT có breadcrumb ở
+  // mức không có slug — phải xử lý trước lối thoát bên dưới.
+  if (loai === 'bt') {
+    if (slug === undefined || slug === '') return [goc, { label: 'Bài tập' }]
+    const title = index.exercises[slug]
+    return title === undefined
+      ? []
+      : [goc, { label: 'Bài tập', href: '/bt' }, { label: title }]
+  }
+
+  if (slug === undefined || slug === '') return []
 
   if (loai === 'c') {
     const name = index.categories[slug]

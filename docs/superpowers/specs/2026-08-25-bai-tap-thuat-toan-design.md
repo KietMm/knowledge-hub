@@ -29,7 +29,8 @@ kiểu LeetCode, chấm bài tự động ngay trên web.
 
 ## Mô hình dữ liệu
 
-Một bài tập là một file `content/bai-tap/<slug>.md`:
+Một bài tập là một file `content/bai-tap/NN-<slug>.md` (giữ đúng quy ước tên file của
+bài học, để thứ tự nhìn thấy ngay từ tên file):
 
 ```markdown
 ---

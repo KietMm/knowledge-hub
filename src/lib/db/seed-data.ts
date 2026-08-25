@@ -1,5 +1,14 @@
 import { z } from 'zod'
-import { CategorySchema, NoteSchema, TopicSchema, type Category, type Note, type Topic } from './schema'
+import {
+  CategorySchema,
+  ExerciseSchema,
+  NoteSchema,
+  TopicSchema,
+  type Category,
+  type Exercise,
+  type Note,
+  type Topic,
+} from './schema'
 import bundle from './seed-data.json'
 
 /**
@@ -33,6 +42,10 @@ if (!topics.success) baoLoi('topics', topics.error)
 const notes = z.array(NoteSchema).safeParse(bundle.notes)
 if (!notes.success) baoLoi('notes', notes.error)
 
+const exercises = z.array(ExerciseSchema).safeParse(bundle.exercises)
+if (!exercises.success) baoLoi('exercises', exercises.error)
+
 export const SEED_CATEGORIES: Category[] = categories.data
 export const SEED_TOPICS: Topic[] = topics.data
 export const SEED_NOTES: Note[] = notes.data
+export const SEED_EXERCISES: Exercise[] = exercises.data

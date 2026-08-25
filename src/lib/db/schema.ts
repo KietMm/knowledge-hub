@@ -101,6 +101,49 @@ export type NoteUpdateInput = z.input<typeof NoteUpdateSchema>
 export type CategoryCreateInput = z.input<typeof CategoryCreateSchema>
 export type TopicCreateInput = z.input<typeof TopicCreateSchema>
 
+/**
+ * Bài tập thuật toán. Là thực thể RIÊNG chứ không phải một Note có thêm trường: nó
+ * không có `content` để render thẳng, không nằm trong lộ trình của một công nghệ, và
+ * vòng đời của nó khác hẳn — bài học thì đọc, bài tập thì chấm.
+ *
+ * Toàn bộ dữ liệu này do `pnpm content:build` sinh ra từ `content/bai-tap/`, không có
+ * đường nào sửa từ giao diện. Vì vậy schema không có *CreateInput đi kèm.
+ */
+export const DoKhoSchema = z.enum(['de', 'trung-binh', 'kho'])
+export type DoKho = z.infer<typeof DoKhoSchema>
+
+export const KieuSoSanhSchema = z.enum(['chinh-xac', 'tap-hop'])
+
+export const CaTestSchema = z.object({
+  /** Danh sách ĐỐI SỐ truyền vào hàm, không phải một giá trị đơn lẻ. */
+  vao: z.array(z.unknown()),
+  ra: z.unknown(),
+  mo_ta: z.string().optional(),
+  /** Ca ẩn: chỉ hiện đạt/không đạt để người học không code cứng đáp án theo ca hiện ra. */
+  an: z.boolean().optional(),
+})
+
+export const ExerciseSchema = z.object({
+  id: z.string().min(1),
+  slug: SlugSchema,
+  title: z.string().trim().min(1, 'Bài tập phải có tiêu đề'),
+  doKho: DoKhoSchema,
+  chuDe: z.array(z.string().trim().min(1)).min(1, 'Bài tập phải có ít nhất một chủ đề'),
+  /** Tên hàm người học phải định nghĩa — bộ chấm gọi đúng tên này. */
+  ham: z.string().trim().min(1),
+  /** Slug bài học liên quan. Liên kết MỘT chiều: danh sách ngược được suy ra lúc build. */
+  baiHoc: SlugSchema.optional(),
+  soSanh: KieuSoSanhSchema.default('chinh-xac'),
+  deBai: z.string().trim().min(1),
+  starter: z.object({ js: z.string().min(1), py: z.string().default('') }),
+  boTest: z.array(CaTestSchema).min(1, 'Bài tập phải có ít nhất một ca test'),
+  loiGiai: z.string().default(''),
+  order: z.number().int().nonnegative().default(0),
+})
+
+export type CaTest = z.infer<typeof CaTestSchema>
+export type Exercise = z.infer<typeof ExerciseSchema>
+
 /** Định dạng file backup của /api/export và /api/import. */
 export const ExportBundleSchema = z.object({
   version: z.literal(1),
