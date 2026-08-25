@@ -32,3 +32,39 @@ it('ghi chú mồ côi (topic đã mất) vẫn vào chỉ mục với tên côn
   const index = await buildSearchIndex()
   expect(index[0]?.topicName).toBe('')
 })
+
+it('bài học mang href /n/, bài tập mang href /bt/ và gom vào nhóm riêng', async () => {
+  // ⌘K điều hướng bằng `href` của từng mục, nên đây là chỗ duy nhất quyết định
+  // một kết quả tìm kiếm dẫn tới đâu.
+  const topic = await topicsRepo.create({ categoryId: 'c1', name: 'Docker', description: '', order: 0 })
+  await notesRepo.create({ topicId: topic.id, title: 'Dockerfile', summary: '', content: '' })
+  await fs.writeFile(
+    path.join(dir, 'exercises.json'),
+    JSON.stringify([
+      {
+        id: 'bt-hai-tong',
+        slug: 'hai-tong',
+        title: 'Hai tổng',
+        doKho: 'de',
+        chuDe: ['mang'],
+        ham: 'haiTong',
+        hamPy: 'hai_tong',
+        soSanh: 'chinh-xac',
+        deBai: 'Đề bài',
+        starter: { js: 'function haiTong() {}', py: '' },
+        boTest: [{ vao: [1], ra: 1 }],
+        loiGiai: '',
+        order: 1,
+      },
+    ]),
+    'utf8',
+  )
+
+  const index = await buildSearchIndex()
+  const baiHoc = index.find((i) => i.title === 'Dockerfile')
+  const baiTap = index.find((i) => i.title === 'Hai tổng')
+
+  expect(baiHoc?.href).toBe('/n/dockerfile')
+  expect(baiTap?.href).toBe('/bt/hai-tong')
+  expect(baiTap?.topicName).toBe('Bài tập')
+})

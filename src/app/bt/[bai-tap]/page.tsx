@@ -8,7 +8,6 @@ import { NoteContent } from '@/components/notes/NoteContent'
 import * as exercisesRepo from '@/lib/db/exercises.repo'
 import { nhanTag } from '@/lib/tag-label'
 import { buildDichLink } from '@/lib/db/link-index'
-import * as notesRepo from '@/lib/db/notes.repo'
 import { renderMarkdown } from '@/lib/markdown'
 
 type Params = Promise<{ 'bai-tap': string }>

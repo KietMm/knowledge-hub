@@ -13,11 +13,13 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command'
-import { searchNotes, type SearchItem, type SearchResult } from '@/lib/search'
+/** Kết quả đã rút gọn từ /api/search — vừa đủ cho phần hiển thị. */
+type KetQua = { id: string; title: string; summary: string; topicName: string; href: string }
 
-export function SearchPalette({ items }: { items: SearchItem[] }) {
+export function SearchPalette() {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [results, setResults] = useState<KetQua[]>([])
   const router = useRouter()
   const { resolvedTheme, setTheme } = useTheme()
 
@@ -39,14 +41,39 @@ export function SearchPalette({ items }: { items: SearchItem[] }) {
     if (!open) setQuery('')
   }, [open])
 
-  // Xếp hạng do lib/search.ts quyết định; cmdk chỉ lo phần hiển thị và bàn phím.
-  const results = useMemo(() => searchNotes(items, query), [items, query])
+  /**
+   * Gọi /api/search sau khi người dùng ngừng gõ 120ms.
+   *
+   * AbortController là bắt buộc chứ không phải tối ưu: gõ nhanh sinh ra nhiều lượt gọi
+   * chồng nhau, và nếu lượt cũ về sau lượt mới thì danh sách hiện kết quả của truy vấn
+   * đã cũ — lỗi rất khó tái hiện vì nó phụ thuộc độ trễ mạng.
+   */
+  useEffect(() => {
+    if (query.trim() === '') {
+      setResults([])
+      return
+    }
+    const bo = new AbortController()
+    const hen = setTimeout(() => {
+      fetch(`/api/search?q=${encodeURIComponent(query)}`, { signal: bo.signal })
+        .then((r) => (r.ok ? r.json() : { results: [] }))
+        .then((data: { results: KetQua[] }) => setResults(data.results))
+        .catch(() => {
+          // Bị huỷ (gõ tiếp) hoặc mạng lỗi: giữ nguyên kết quả đang hiện, đừng nháy về rỗng.
+        })
+    }, 120)
+
+    return () => {
+      clearTimeout(hen)
+      bo.abort()
+    }
+  }, [query])
 
   const grouped = useMemo(() => {
-    const map = new Map<string, SearchResult[]>()
-    for (const result of results) {
-      const key = result.item.topicName === '' ? 'Khác' : result.item.topicName
-      map.set(key, [...(map.get(key) ?? []), result])
+    const map = new Map<string, KetQua[]>()
+    for (const kq of results) {
+      const key = kq.topicName === '' ? 'Khác' : kq.topicName
+      map.set(key, [...(map.get(key) ?? []), kq])
     }
     return [...map.entries()]
   }, [results])
@@ -102,14 +129,14 @@ export function SearchPalette({ items }: { items: SearchItem[] }) {
             */}
             {grouped.length === 0 && (
               <div className="py-6 text-center text-sm text-muted-foreground">
-                {query === '' ? 'Gõ để bắt đầu tìm.' : 'Không tìm thấy bài học nào.'}
+                {query === '' ? 'Gõ để bắt đầu tìm.' : 'Không tìm thấy bài học hay bài tập nào.'}
               </div>
             )}
 
             {grouped.map(([topicName, group]) => (
               <CommandGroup key={topicName} heading={topicName}>
-                {group.map(({ item }) => (
-                  <CommandItem key={item.id} value={item.id} onSelect={() => go(`/n/${item.slug}`)}>
+                {group.map((item) => (
+                  <CommandItem key={item.id} value={item.id} onSelect={() => go(item.href)}>
                     <div className="flex min-w-0 flex-col">
                       <span className="truncate">{item.title}</span>
                       <span className="truncate text-xs text-muted-foreground">{item.summary}</span>

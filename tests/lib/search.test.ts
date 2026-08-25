@@ -4,7 +4,7 @@ import { searchNotes, type SearchItem } from '@/lib/search'
 function item(partial: Partial<SearchItem> & { id: string }): SearchItem {
   return {
     title: '', slug: partial.id, summary: '', content: '', tags: [],
-    topicName: 'Docker', topicSlug: 'docker', ...partial,
+    topicName: 'Docker', topicSlug: 'docker', href: `/n/${partial.id}`, ...partial,
   }
 }
 

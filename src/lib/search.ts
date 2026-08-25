@@ -14,6 +14,12 @@ export type SearchItem = {
   tags: string[]
   topicName: string
   topicSlug: string
+  /**
+   * Đường dẫn tới mục này. Mang theo trong item chứ không ghép từ slug ở nơi hiển thị:
+   * chỉ mục gồm cả bài học (`/n/…`) lẫn bài tập (`/bt/…`), và nơi hiển thị không nên
+   * phải biết một kết quả thuộc loại nào.
+   */
+  href: string
 }
 
 export type MatchField = 'title' | 'tag' | 'summary' | 'content'

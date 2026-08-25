@@ -175,6 +175,28 @@ npx vercel login && npx vercel  # bản vĩnh viễn trên tài khoản của b�
 Muốn **ghi được** trên bản công khai thì thay phần trong `src/lib/db/` bằng Postgres/SQLite —
 giao diện repository giữ nguyên nên `src/app/` và `src/components/` không phải sửa.
 
+## Tìm kiếm (⌘K)
+
+Chạy ở **máy chủ** qua `/api/search`, không phải ở client.
+
+Bản đầu dựng chỉ mục đầy đủ trong `layout.tsx` rồi truyền xuống client qua props. Cách đó
+đơn giản và tìm tức thì, nhưng chỉ mục phải mang theo **toàn bộ nội dung bài học** để tìm
+được cả trong thân bài — nghĩa là mọi trang, kể cả trang không ai bấm ⌘K, đều tải kèm cả
+giáo trình. Đo trên bản production với 157 bài:
+
+| Trang | Chỉ mục ở client | Qua `/api/search` |
+|---|---|---|
+| `/` | 1,43 MB | 306 KB |
+| `/bt` | 1,26 MB | 129 KB |
+| `/n/<bài>` | 1,29 MB | 160 KB |
+
+Xếp hạng vẫn do `src/lib/search.ts` quyết định — cùng một hàm thuần đã có test, chỉ đổi chỗ
+chạy. Client gọi sau khi ngừng gõ 120ms và huỷ lượt cũ bằng `AbortController`; thiếu phần
+huỷ thì kết quả của truy vấn cũ về sau có thể ghi đè kết quả mới.
+
+Chỉ mục gồm cả bài học lẫn bài tập; mỗi mục mang theo `href` của nó nên nơi hiển thị không
+phải biết kết quả thuộc loại nào.
+
 ## Kiến trúc
 
 - `src/lib/db/` — nơi **duy nhất** chạm tới dữ liệu. Không file nào trong `app/` hay `components/` được đọc file trực tiếp.

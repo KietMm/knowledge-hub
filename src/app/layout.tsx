@@ -10,7 +10,6 @@ import { ThemeProvider } from '@/components/layout/ThemeProvider'
 import { Topbar } from '@/components/layout/Topbar'
 import { SearchPalette } from '@/components/search/SearchPalette'
 import { buildCrumbIndex } from '@/lib/db/crumb-index'
-import { buildSearchIndex } from '@/lib/db/search-index'
 import { ensureSeeded } from '@/lib/db/seed'
 import './globals.css'
 
@@ -85,7 +84,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // layout — global-error.tsx mới là nơi xử lý. ensureSeeded() không nhớ promise lỗi,
   // nên sau khi sửa file và bấm "Thử lại", request kế tiếp sẽ đọc lại thật sự.
   await ensureSeeded()
-  const [searchIndex, crumbIndex] = await Promise.all([buildSearchIndex(), buildCrumbIndex()])
+  const crumbIndex = await buildCrumbIndex()
 
   // Cùng một cây danh mục dùng cho cả sidebar desktop lẫn sheet mobile — chỉ một trong
   // hai hiện tại mỗi khổ màn hình (lg:block / lg:hidden).
@@ -117,7 +116,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Topbar
                 nav={<MobileNav>{sidebar}</MobileNav>}
                 breadcrumbs={<HeaderBreadcrumbs index={crumbIndex} />}
-                search={<SearchPalette items={searchIndex} />}
+                search={<SearchPalette />}
               />
               <main
                 id="noi-dung"

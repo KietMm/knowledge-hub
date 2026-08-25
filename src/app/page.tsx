@@ -1,8 +1,10 @@
+import { Dumbbell } from 'lucide-react'
 import Link from 'next/link'
 import { LevelBar } from '@/components/notes/LevelBar'
 import { NoteCard } from '@/components/notes/NoteCard'
 import { getCategoryColorClassName } from '@/lib/category-color'
 import * as categoriesRepo from '@/lib/db/categories.repo'
+import * as exercisesRepo from '@/lib/db/exercises.repo'
 import * as notesRepo from '@/lib/db/notes.repo'
 import * as topicsRepo from '@/lib/db/topics.repo'
 import { getIcon } from '@/lib/icons'
@@ -18,12 +20,13 @@ import { cn } from '@/lib/utils'
  * nhất xuống dưới cùng vì đó là thông tin phụ.
  */
 export default async function DashboardPage() {
-  const [tree, starred, recent, topics, notesByTopic] = await Promise.all([
+  const [tree, starred, recent, topics, notesByTopic, baiTap] = await Promise.all([
     categoriesRepo.listWithCounts(),
     notesRepo.listStarred(),
     notesRepo.listRecent(6),
     topicsRepo.listAll(),
     notesRepo.groupByTopic(),
+    exercisesRepo.listAll(),
   ])
   const topicName = new Map(topics.map((t) => [t.id, t.name]))
 
@@ -49,7 +52,24 @@ export default async function DashboardPage() {
           <ThongKe nhan="Công nghệ" giaTri={String(tongCongNghe)} />
           <ThongKe nhan="Bài học" giaTri={String(tongBai)} />
           <ThongKe nhan="Thời lượng" giaTri={`~${formatReadingDuration(tongPhut)} đọc`} />
+          {baiTap.length > 0 && <ThongKe nhan="Bài tập" giaTri={String(baiTap.length)} />}
         </dl>
+
+        {baiTap.length > 0 && (
+          <Link
+            href="/bt"
+            className="flex items-start gap-3 rounded-xl border border-border bg-muted/30 p-4 transition-colors hover:bg-accent/40"
+          >
+            <Dumbbell className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+            <span className="space-y-1">
+              <span className="block font-medium">Luyện tập</span>
+              <span className="block text-sm text-muted-foreground">
+                {baiTap.length} bài thuật toán, viết code ngay trong trình duyệt bằng
+                JavaScript hoặc Python và chấm tự động.
+              </span>
+            </span>
+          </Link>
+        )}
 
         <p className="text-sm text-muted-foreground">
           Nhấn{' '}
