@@ -290,6 +290,13 @@ export function ExerciseRunner({
 
       <CodeEditor key={ngonNgu} value={ma[ngonNgu]} ngonNgu={ngonNgu} onChange={doiMa} />
 
+      {/* Gợi ý code chỉ hữu ích nếu người học biết nó tồn tại: bảng gợi ý tự bung khi gõ,
+          nhưng phím nhận và phím gọi lại thì không có cách nào đoán ra. */}
+      <p className="font-mono text-[0.7rem] text-muted-foreground">
+        <kbd className="rounded border px-1">Ctrl</kbd>+<kbd className="rounded border px-1">Space</kbd> gợi
+        ý · <kbd className="rounded border px-1">Tab</kbd> nhận · <kbd className="rounded border px-1">Esc</kbd> đóng
+      </p>
+
       {loiNap !== null && (
         <p className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 font-mono text-xs text-destructive">
           {loiNap}

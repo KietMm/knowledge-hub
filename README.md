@@ -119,6 +119,14 @@ một ca test là object lồng nhau.
   gõ sai sẽ làm test đỏ, thay vì âm thầm báo sai cho người học đúng. Lời giải JavaScript
   chạy trong vitest; lời giải Python chạy bằng `python3` thật, tự bỏ qua nếu máy không có.
 
+Ô soạn có **gợi ý code offline** (CodeMirror autocomplete): từ khoá, snippet `for`/`function`
+và biến đã khai trong chính code đang viết đến sẵn từ hai gói `@codemirror/lang-*`; phần
+method sau dấu chấm nằm ở `src/lib/exercise/completion.ts`. Danh sách method đó **biên soạn
+tay và không biết kiểu thật của biến** — CodeMirror không có bộ suy luận kiểu, và giải pháp
+"đúng kiểu" là nạp TypeScript (~7MB) vào trình duyệt cho một ô soạn 30 dòng. Đổi lại người
+học tra được tên hàm đã quên, nhưng có thể thấy method không áp dụng cho biến đang gõ.
+`Ctrl+Space` gọi gợi ý, `Tab` nhận, `Esc` đóng.
+
 Người học giải bằng **JavaScript hoặc Python**. Khối `py starter` là tuỳ chọn — không có
 thì bài đó chỉ hiện JavaScript. Tên hàm Python suy ra từ `ham` theo snake_case
 (`haiTong` → `hai_tong`), khai `ham_py` để ghi đè.
@@ -196,6 +204,33 @@ huỷ thì kết quả của truy vấn cũ về sau có thể ghi đè kết qu
 
 Chỉ mục gồm cả bài học lẫn bài tập; mỗi mục mang theo `href` của nó nên nơi hiển thị không
 phải biết kết quả thuộc loại nào.
+
+## Menu trái
+
+Bốn tầng, chỉ tầng cây cuộn được: logo / điều hướng chính (Trang chủ, Bài tập) / cây giáo
+trình / link sao lưu. Với 27 công nghệ, cây chắc chắn dài hơn màn hình — để cả khối cuộn thì
+logo và các mục chính trôi mất khỏi tầm mắt.
+
+Mục nào đang sáng do `src/lib/nav-active.ts` quyết định, không phải do so chuỗi rải trong
+JSX. Bản trước chỉ so `pathname === '/t/<slug>'`, nên **đang đọc bài học thì không mục nào
+sáng** — mất dấu vị trí ở đúng nơi người đọc ở lâu nhất.
+
+| Đường dẫn | Mục sáng |
+|---|---|
+| `/` | Trang chủ |
+| `/bt`, `/bt/<slug>` | Bài tập |
+| `/c/<slug>` | Mảng đó |
+| `/t/<slug>` | Công nghệ đó |
+| `/n/<slug>`, `/n/<slug>/edit` | Công nghệ **chứa** bài đó |
+| `/n/new` | Không mục nào |
+
+URL bài học không mang tên công nghệ, nên sidebar nhận thêm bảng tra `slug bài → slug công
+nghệ` (~6KB, chỉ hai chuỗi mỗi bài — không kèm nội dung).
+
+Quy ước tô màu: **chỉ một vùng sáng tại một thời điểm**. Mục đang xem có nền accent, thanh
+dọc bên trái và `aria-current="page"`; mảng chứa nó chỉ đậm chữ và tự mở ra chứ không tô nền
+— hai vùng sáng cùng lúc làm người đọc không biết mình đang ở đâu. Mục đang xem được cuộn
+vào giữa khi mở trang, nhưng chỉ khi nó nằm ngoài vùng nhìn.
 
 ## Kiến trúc
 

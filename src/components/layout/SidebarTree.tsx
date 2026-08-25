@@ -3,12 +3,27 @@
 import { ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import { getCategoryColorClassName } from '@/lib/category-color'
 import type { CategoryWithTopics } from '@/lib/db/categories.repo'
 import { getIcon } from '@/lib/icons'
+import { mucDangXem } from '@/lib/nav-active'
 import { cn } from '@/lib/utils'
+
+/**
+ * Cây giáo trình: mảng → công nghệ.
+ *
+ * Trạng thái active do `src/lib/nav-active.ts` quyết định (có test cho mọi hình dạng
+ * route), component này chỉ tô màu. Điểm quan trọng nhất: **đang đọc bài học `/n/<slug>`
+ * thì công nghệ chứa bài đó vẫn sáng** — bản trước chỉ so `pathname === '/t/<slug>'` nên
+ * sidebar trắng trơn ở đúng nơi người đọc ở lâu nhất.
+ *
+ * Quy ước tô màu, cố ý chỉ có MỘT vùng sáng tại một thời điểm:
+ *  - Mục đang xem: nền accent + thanh dọc bên trái + `aria-current="page"`.
+ *  - Mảng chứa mục đang xem: chỉ đậm chữ và tự mở ra, KHÔNG tô nền. Hai vùng sáng cùng
+ *    lúc làm người đọc không biết mình đang ở mục nào.
+ */
 
 const STORAGE_KEY = 'kh:sidebar-open'
 
@@ -25,9 +40,19 @@ function safeJsonParse(raw: string): unknown {
   }
 }
 
-export function SidebarTree({ tree }: { tree: CategoryWithTopics[] }) {
+export function SidebarTree({
+  tree,
+  baiHocThuocCongNghe,
+}: {
+  tree: CategoryWithTopics[]
+  /** slug bài học → slug công nghệ. Cần vì URL bài học không mang tên công nghệ. */
+  baiHocThuocCongNghe: Record<string, string>
+}) {
   const pathname = usePathname()
   const [open, setOpen] = useState<Record<string, boolean>>({})
+  const mucActive = useRef<HTMLAnchorElement | null>(null)
+
+  const { categorySlug, topicSlug } = mucDangXem(pathname, baiHocThuocCongNghe)
 
   // Đọc localStorage trong effect (không đọc lúc render) để server và client khớp nhau.
   useEffect(() => {
@@ -42,6 +67,19 @@ export function SidebarTree({ tree }: { tree: CategoryWithTopics[] }) {
     }
   }, [])
 
+  /**
+   * Cuộn tới mục đang xem — chỉ khi nó nằm ngoài vùng nhìn. Giáo trình có 27 công nghệ nên
+   * mục đang xem thường ở dưới màn hình khi mới mở trang. Điều kiện "ngoài vùng nhìn" là
+   * cần thiết: bấm vào một mục đang thấy rồi bị cuộn giật là khó chịu hơn cả không cuộn.
+   */
+  useEffect(() => {
+    const el = mucActive.current
+    if (el === null) return
+    const hop = el.getBoundingClientRect()
+    if (hop.top >= 0 && hop.bottom <= window.innerHeight) return
+    el.scrollIntoView({ block: 'center' })
+  }, [topicSlug, categorySlug])
+
   function toggle(slug: string) {
     setOpen((prev) => {
       const next = { ...prev, [slug]: !(prev[slug] ?? true) }
@@ -51,62 +89,101 @@ export function SidebarTree({ tree }: { tree: CategoryWithTopics[] }) {
   }
 
   return (
-    <nav aria-label="Danh mục kiến thức" className="space-y-1">
+    <nav aria-label="Giáo trình" className="space-y-0.5">
       {tree.map((category) => {
         const Icon = getIcon(category.icon)
-        const containsActive = category.topics.some((t) => pathname === `/t/${t.slug}`)
+        const laMangDangXem = categorySlug === category.slug
+        const chuaMucDangXem =
+          laMangDangXem || category.topics.some((t) => t.slug === topicSlug)
         const isOpen = open[category.slug] ?? true // mặc định mở; nhánh đang xem luôn mở
-        const expanded = isOpen || containsActive
+        const expanded = isOpen || chuaMucDangXem
 
         return (
           <div key={category.id}>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center">
               <button
                 type="button"
                 aria-expanded={expanded}
                 aria-label={`${expanded ? 'Thu gọn' : 'Mở rộng'} mảng ${category.name}`}
                 onClick={() => toggle(category.slug)}
-                className="rounded p-2 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground outline-none hover:bg-accent/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <ChevronRight className={cn('h-4 w-4 transition-transform', expanded && 'rotate-90')} />
+                <ChevronRight
+                  className={cn('size-3.5 transition-transform', expanded && 'rotate-90')}
+                />
               </button>
+
               <Link
                 href={`/c/${category.slug}`}
+                ref={laMangDangXem ? mucActive : undefined}
+                aria-current={laMangDangXem ? 'page' : undefined}
+                title={category.name}
                 className={cn(
-                  'flex min-h-9 flex-1 items-center gap-2 rounded px-2 py-2 text-sm font-medium outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring',
-                  pathname === `/c/${category.slug}` && 'bg-accent',
+                  'relative flex min-h-8 flex-1 items-center gap-2 overflow-hidden rounded-md px-2 py-1 text-sm outline-none transition-colors',
+                  'hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring',
+                  laMangDangXem
+                    ? 'bg-accent font-semibold text-accent-foreground'
+                    : chuaMucDangXem
+                      ? 'font-medium text-foreground'
+                      : 'font-medium text-muted-foreground',
                 )}
               >
+                <span
+                  aria-hidden
+                  className={cn(
+                    'absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-primary',
+                    laMangDangXem ? 'opacity-100' : 'opacity-0',
+                  )}
+                />
                 <span
                   className={cn(
                     'inline-flex shrink-0 items-center justify-center rounded p-1',
                     getCategoryColorClassName(category.color),
                   )}
                 >
-                  <Icon className="h-3.5 w-3.5" />
+                  <Icon className="size-3.5" />
                 </span>
-                {category.name}
-                <span className="ml-auto text-xs text-muted-foreground">{category.noteCount}</span>
+                <span className="truncate">{category.name}</span>
+                <span className="ml-auto shrink-0 font-mono text-[0.7rem] tabular-nums text-muted-foreground">
+                  {category.noteCount}
+                </span>
               </Link>
             </div>
 
             {expanded && (
-              <ul className="ml-6 border-l pl-2">
-                {category.topics.map((topic) => (
-                  <li key={topic.id}>
-                    <Link
-                      href={`/t/${topic.slug}`}
-                      aria-current={pathname === `/t/${topic.slug}` ? 'page' : undefined}
-                      className={cn(
-                        'flex min-h-9 items-center gap-2 rounded px-2 py-2 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring',
-                        pathname === `/t/${topic.slug}` && 'bg-accent font-medium',
-                      )}
-                    >
-                      {topic.name}
-                      <span className="ml-auto text-xs text-muted-foreground">{topic.noteCount}</span>
-                    </Link>
-                  </li>
-                ))}
+              <ul className="ml-[1.6rem] border-l border-border/70 pl-1.5">
+                {category.topics.map((topic) => {
+                  const active = topicSlug === topic.slug
+                  return (
+                    <li key={topic.id}>
+                      <Link
+                        href={`/t/${topic.slug}`}
+                        ref={active ? mucActive : undefined}
+                        aria-current={active ? 'page' : undefined}
+                        title={topic.name}
+                        className={cn(
+                          'relative flex min-h-8 items-center gap-2 overflow-hidden rounded-md px-2 py-1 text-sm outline-none transition-colors',
+                          'hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring',
+                          active
+                            ? 'bg-accent font-medium text-accent-foreground'
+                            : 'text-muted-foreground',
+                        )}
+                      >
+                        <span
+                          aria-hidden
+                          className={cn(
+                            'absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-primary',
+                            active ? 'opacity-100' : 'opacity-0',
+                          )}
+                        />
+                        <span className="truncate">{topic.name}</span>
+                        <span className="ml-auto shrink-0 font-mono text-[0.7rem] tabular-nums text-muted-foreground">
+                          {topic.noteCount}
+                        </span>
+                      </Link>
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </div>
