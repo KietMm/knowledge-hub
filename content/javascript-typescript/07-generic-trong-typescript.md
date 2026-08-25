@@ -4,135 +4,201 @@ slug: generic-trong-typescript
 summary: Viết hàm dùng lại được cho nhiều kiểu mà không mất thông tin kiểu — và biết khi nào generic là thừa.
 level: nang-cao
 tags: [typescript, generic]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** đọc được chữ ký kiểu `<T extends { id: string }>`, và tự viết được hàm tiện ích giữ nguyên kiểu đầu vào ở đầu ra.
+> **Sau bài này bạn sẽ:** viết được generic khi nó thật sự cần, và nhận ra ngay khi mình đang thêm `<T>` cho một hàm không cần tới nó.
 
-## Vấn đề generic giải quyết
+## Ý tưởng chính
+
+Generic giải quyết một tình huống rất cụ thể: **hàm phải hoạt động với nhiều kiểu, nhưng kiểu vào và kiểu ra có liên hệ với nhau.**
+
+Nếu không có liên hệ đó, bạn không cần generic. Đây là câu quan trọng nhất của bài, và cũng là thứ bị bỏ qua nhiều nhất.
+
+## Mental model
+
+Hãy nghĩ tới **cái hộp có dán nhãn** so với **cái hộp không nhãn**.
+
+> `any[]` là **hộp không nhãn**: bỏ gì vào cũng được, nhưng lúc lấy ra bạn không biết trong đó là gì — phải mở ra đoán.
+>
+> `T[]` là **hộp dán nhãn tự động**: bỏ táo vào thì nhãn ghi "táo", và lúc lấy ra TypeScript biết chắc đó là táo.
+>
+> `T` chính là **tờ nhãn để trống** — nó được điền lúc bạn dùng hàm, không phải lúc viết hàm.
+
+Generic không phải "kiểu linh hoạt". Nó là **cách giữ lại thông tin kiểu** đi xuyên qua một hàm.
+
+## Ví dụ nhỏ
 
 ```ts
-// Mất kiểu: kết quả là any, trình soạn thảo hết gợi ý
-function dauTien(mang: any[]): any {
-  return mang[0]
-}
-const ten = dauTien(['a', 'b'])   // any — .toUpperCase() không được gợi ý
+function dauTien(ds: any[]) { return ds[0] }
+const x = dauTien(['a', 'b'])       // x: any  ❌ mất nhãn, gõ x. không gợi ý gì
 
-// Generic: kiểu đầu vào chảy thẳng ra đầu ra
-function dauTien2<T>(mang: T[]): T | undefined {
-  return mang[0]
-}
-const ten2 = dauTien2(['a', 'b'])   // string | undefined
+function dauTienG<T>(ds: T[]): T | undefined { return ds[0] }
+const y = dauTienG(['a', 'b'])      // y: string ✅ nhãn được giữ
 ```
 
-`T` là **tham số kiểu** — chỗ trống được điền vào lúc gọi. Bạn hầu như không cần viết `dauTien2<string>([...])`; TypeScript tự suy ra từ đối số.
+Chú ý: bạn **không** phải viết `dauTienG<string>(...)`. TypeScript tự suy `T = string` từ đối số — và đó là cách dùng generic đúng nhất.
 
-## Ràng buộc với `extends`
+## Code chạy thế nào
 
-`T` trần nghĩa là "bất kỳ kiểu nào", nên bên trong hàm bạn gần như không làm gì được với nó. `extends` đặt yêu cầu tối thiểu:
+Generic được "điền nhãn" tại **chỗ gọi**, không phải chỗ định nghĩa:
 
-```ts
-function timTheoId<T extends { id: string }>(items: T[], id: string): T | undefined {
-  return items.find((item) => item.id === id)
-}
+```text
+Định nghĩa:  function dauTienG<T>(ds: T[]): T | undefined
 
-const users = [{ id: '1', ten: 'An' }]
-timTheoId(users, '1')?.ten     // TS vẫn biết có .ten — không bị thu về { id: string }
+Chỗ gọi 1:   dauTienG([1, 2, 3])
+             → TS nhìn đối số: number[]
+             → điền T = number
+             → chữ ký thành: (ds: number[]) => number | undefined
+
+Chỗ gọi 2:   dauTienG(['a'])
+             → điền T = string
+             → chữ ký thành: (ds: string[]) => string | undefined
 ```
 
-Điểm mấu chốt: hàm chỉ **yêu cầu** có `id`, nhưng **trả lại** đúng kiểu đầy đủ bạn truyền vào.
+Và toàn bộ chuyện này **biến mất khi biên dịch**. Code chạy thật chỉ là:
 
-## `keyof` và truy cập thuộc tính an toàn
+```js
+function dauTienG(ds) { return ds[0] }
+```
+
+Generic không tồn tại lúc chạy — nó chỉ là chỉ dẫn cho người soát vé ở cửa ([[typescript-nhap-mon]]).
+
+## Cú pháp
 
 ```ts
+// Ràng buộc: T phải có thuộc tính length
+function doDai<T extends { length: number }>(x: T) { return x.length }
+doDai('abc')        // ✅ 3
+doDai([1, 2])       // ✅ 2
+doDai(42)           // ❌ number không có length
+
+// keyof: khoá phải có thật trong object
 function lay<T, K extends keyof T>(obj: T, khoa: K): T[K] {
   return obj[khoa]
 }
+const u = { ten: 'An', tuoi: 30 }
+lay(u, 'ten')       // string ✅
+lay(u, 'email')     // ❌ lỗi ngay khi gõ
 
-const u = { id: '1', tuoi: 30 }
-lay(u, 'tuoi')     // number
-lay(u, 'email')    // Lỗi biên dịch: 'email' không phải khoá của u
+// Nhiều tham số kiểu + mặc định
+function ghep<A, B = A>(a: A, b: B): [A, B] { return [a, b] }
 ```
 
-Đây là mẫu dùng nhiều nhất khi viết hàm tiện ích cho object.
-
-## Giá trị mặc định và nhiều tham số kiểu
+Kiểu tiện ích có sẵn — **dùng thay vì tự viết**:
 
 ```ts
-type KetQuaApi<TData, TLoi = string> = 
-  | { ok: true; data: TData }
-  | { ok: false; loi: TLoi }
+Partial<T>            // mọi trường thành tuỳ chọn
+Required<T>           // ngược lại
+Pick<T, 'a' | 'b'>    // chỉ giữ vài trường
+Omit<T, 'mat-khau'>   // bỏ vài trường
+Record<K, V>          // { [k in K]: V }
+ReturnType<typeof f>  // kiểu trả về của một hàm
+Awaited<T>            // bóc Promise
+```
 
-async function goi<T>(url: string): Promise<KetQuaApi<T>> {
-  const res = await fetch(url)
-  if (!res.ok) return { ok: false, loi: `HTTP ${res.status}` }
-  return { ok: true, data: (await res.json()) as T }
+`Omit<NguoiDung, 'matKhau'>` là mẫu hay dùng nhất trong thực tế: kiểu trả về API = kiểu đầy đủ trừ đi trường nhạy cảm.
+
+## Tại sao cần nó
+
+Vì không có generic, bạn chỉ còn hai lựa chọn và **cả hai đều tệ**:
+
+```ts
+// Lựa chọn 1: any → mất hết kiểm tra
+function dauTien(ds: any[]): any {}
+
+// Lựa chọn 2: viết lại cho từng kiểu → lặp vô tận
+function dauTienSo(ds: number[]): number {}
+function dauTienChuoi(ds: string[]): string {}
+```
+
+Generic là con đường thứ ba: **viết một lần, giữ nguyên kiểu**.
+
+Chỗ nó có giá trị nhất trong code thật là **lớp truy cập dữ liệu**:
+
+```ts
+async function goiApi<T>(duongDan: string): Promise<T> {
+  const res = await fetch(duongDan)
+  return res.json()
 }
 
-const kq = await goi<NguoiDung[]>('/api/users')
-if (kq.ok) kq.data.length      // TS thu hẹp đúng nhánh
+const u = await goiApi<NguoiDung>('/api/user')   // u: NguoiDung
 ```
 
-## Conditional type và `infer`
+Nhưng chú ý — ví dụ trên cũng là một **cái bẫy**: `res.json()` trả về `any`, nên `T` ở đây chỉ là lời hứa của bạn chứ không được kiểm tra. Xem [[thu-hep-kieu-va-unknown]] để làm cho đúng.
 
-Dùng khi kiểu đầu ra phụ thuộc vào hình dạng của kiểu đầu vào:
+## So sánh
+
+Khi nào generic là **thừa** — bảng này quan trọng hơn phần cú pháp:
+
+| Tình huống | Kết luận |
+|---|---|
+| `T` chỉ xuất hiện **một lần** trong chữ ký | ❌ thừa — dùng thẳng kiểu đó hoặc `unknown` |
+| Kiểu vào và kiểu ra **không liên quan** | ❌ thừa |
+| Có `<T>` nhưng bên trong toàn `as` | ❌ đang giả vờ an toàn |
+| Kiểu ra **phụ thuộc** kiểu vào | ✅ đúng chỗ |
+| Giữ nhãn xuyên qua nhiều tầng gọi | ✅ đúng chỗ |
 
 ```ts
-type BocRa<T> = T extends Promise<infer U> ? U : T
-
-type A = BocRa<Promise<string>>   // string
-type B = BocRa<number>            // number
+// ❌ T chỉ xuất hiện một lần ⇒ không giữ được liên hệ nào
+function inRa<T>(x: T): void { console.log(x) }
+function inRa(x: unknown): void { console.log(x) }   // ✅ đơn giản hơn, tương đương
 ```
 
-`infer U` nghĩa là "đặt tên cho phần khớp được ở vị trí này". Đây là cơ chế đằng sau `Awaited<T>`, `ReturnType<T>`, `Parameters<T>` có sẵn.
+## Dễ nhầm
 
-## Kiểu tiện ích có sẵn — dùng thay vì viết lại
+**1. Thêm `<T>` cho mọi hàm.** Xem bảng trên. Generic thừa làm chữ ký khó đọc mà không mua được gì.
+
+**2. Đặt tên `T`, `U`, `V` cho mọi thứ.** Với generic đơn giản thì `T` ổn; với hàm nhiều tham số kiểu, tên có nghĩa dễ đọc hơn nhiều: `<TDuLieu, TKetQua>`.
+
+**3. Quên ràng buộc `extends`.**
 
 ```ts
-type NguoiDung = { id: string; ten: string; email: string; matKhau: string }
-
-type CongKhai = Omit<NguoiDung, 'matKhau'>            // bỏ trường
-type ChiTen = Pick<NguoiDung, 'id' | 'ten'>           // giữ trường
-type Nhap = Partial<NguoiDung>                        // mọi trường tuỳ chọn
-type DayDu = Required<Nhap>                           // ngược lại
-type Khoa = Readonly<NguoiDung>                       // không sửa được
-type BangTen = Record<string, NguoiDung>              // từ điển
-type TraVe = ReturnType<typeof goi>                   // kiểu trả về của hàm
-type CoThe = NonNullable<string | null>               // string
+function ten<T>(x: T) { return x.ten }        // ❌ TS không biết T có `ten`
+function ten<T extends { ten: string }>(x: T) { return x.ten }   // ✅
 ```
 
-`Omit` đặc biệt hữu ích cho ranh giới API: định nghĩa kiểu đầy đủ một lần rồi dẫn xuất kiểu "gửi ra ngoài" từ đó — thêm trường nhạy cảm sau này sẽ tự động không bị lộ.
+**4. Dùng generic để né việc thiết kế kiểu.** Nếu hàm của bạn nhận `<T>` rồi bên trong toàn `as any`, generic chỉ đang **che** vấn đề. Kiểu thật vẫn chưa được nghĩ ra.
 
-## Khi nào generic là thừa
+**5. Tự viết lại kiểu tiện ích có sẵn.** Trước khi viết một kiểu phức tạp, kiểm xem `Pick`, `Omit`, `Partial`, `ReturnType` đã làm sẵn chưa. Chúng được cả ngành hiểu, còn kiểu tự chế thì không.
 
-Generic chỉ đáng dùng khi kiểu **đi vào** ảnh hưởng kiểu **đi ra**. Nếu không:
+## Mẹo nhớ
+
+> **Generic là tờ nhãn để trống, điền lúc gọi.**
+>
+> **`T` xuất hiện đúng một lần trong chữ ký ⇒ bạn không cần generic.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Generic giải quyết vấn đề gì mà `any` không giải được?
+2. `T` được "điền" ở thời điểm nào, và có tồn tại lúc chạy không?
+3. Nêu ba dấu hiệu cho biết một generic là **thừa**.
+4. `extends` trong `<T extends { length: number }>` làm gì?
+5. `Omit<NguoiDung, 'matKhau'>` dùng để làm gì trong thực tế?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết hàm `nhomTheo` gom một mảng thành object theo khoá — **giữ nguyên kiểu phần tử** ở kết quả:
 
 ```ts
-// Thừa: T chỉ xuất hiện một lần
-function ghiLog<T>(x: T): void { console.log(x) }
-function ghiLog2(x: unknown): void { console.log(x) }   // đơn giản hơn, tương đương
+const ds = [{ loai: 'a', n: 1 }, { loai: 'b', n: 2 }, { loai: 'a', n: 3 }]
+const kq = nhomTheo(ds, 'loai')
+// kq phải có kiểu Record<string, { loai: string; n: number }[]>
 ```
 
-Quy tắc: **một tham số kiểu chỉ xuất hiện đúng một lần trong chữ ký thì gần như chắc chắn nên bỏ đi.**
+Tự kiểm: chữ ký của bạn có mấy tham số kiểu, và bạn ràng buộc khoá bằng `keyof` như thế nào?
 
-## Lỗi hay gặp
+## Thử sức
 
-| Lỗi | Vì sao | Sửa thế nào |
-|---|---|---|
-| `<T>` không ràng buộc rồi truy cập `T.id` | TS không biết `T` có gì | `T extends { id: string }` |
-| Viết `f<string>(x)` khắp nơi | Suy luận đã đủ | Bỏ tham số kiểu tường minh |
-| Generic có `T` chỉ ở tham số | Không mang lại gì | Dùng `unknown` |
-| Tự viết lại `Partial`, `Omit` | Có sẵn, chuẩn hơn | Dùng kiểu tiện ích |
-| `any[]` trong hàm dùng chung | Mất kiểu ở mọi nơi gọi | `T[]` |
+Hàm này biên dịch qua nhưng **không an toàn**:
 
-## Ghi nhớ
+```ts
+async function goiApi<T>(duongDan: string): Promise<T> {
+  const res = await fetch(duongDan)
+  return res.json()
+}
+```
 
-- Generic để **giữ** thông tin kiểu, không phải để "cho linh hoạt".
-- `extends` là yêu cầu tối thiểu, không phải thu hẹp kết quả.
-- `keyof` + `T[K]` là bộ đôi cho hàm tiện ích trên object.
-- Tham số kiểu chỉ xuất hiện một lần ⇒ bỏ đi.
-
-## Tự kiểm tra
-
-1. Viết `nhomTheo<T, K extends keyof T>(items: T[], khoa: K)` trả về `Record<string, T[]>`.
-2. `Omit<User, 'matKhau'>` an toàn hơn việc gõ tay danh sách trường ở chỗ nào?
-3. Vì sao `function f<T>(x: T): void` nên đổi thành `function f(x: unknown): void`?
+Chỉ ra chính xác chỗ TypeScript bị lừa. Rồi trả lời: **generic có phải công cụ đúng** cho bài toán này không, hay bạn cần một thứ khác hẳn — và thứ đó là gì?

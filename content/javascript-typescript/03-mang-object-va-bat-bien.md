@@ -4,152 +4,203 @@ slug: mang-object-va-bat-bien
 summary: Destructuring, spread, và bộ ba map/filter/reduce — cách xử lý dữ liệu mà không sửa dữ liệu gốc.
 level: co-ban
 tags: [javascript, mang, object, bat-bien]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** biến gần như mọi vòng `for` xử lý dữ liệu thành một chuỗi `filter → map → reduce` đọc được, và hiểu vì sao React yêu cầu không sửa state tại chỗ.
+> **Sau bài này bạn sẽ:** biết chắc thao tác nào **sửa** dữ liệu gốc và thao tác nào **tạo bản mới**, và viết được chuỗi biến đổi dữ liệu đọc như một câu tiếng Việt.
 
-## Destructuring: lấy đúng thứ mình cần
+## Ý tưởng chính
+
+Mọi thao tác trên mảng và object rơi vào đúng hai nhóm: **sửa tại chỗ** (mutating) và **tạo cái mới** (non-mutating).
+
+Nhóm thứ nhất nhanh hơn và tốn ít bộ nhớ hơn. Nhóm thứ hai **an toàn hơn nhiều**, vì nó không bao giờ làm hỏng dữ liệu của người khác. Biết mỗi hàm thuộc nhóm nào là kỹ năng nền của toàn bộ JavaScript hiện đại.
+
+## Mental model
+
+Hãy nghĩ tới **sửa ảnh**.
+
+> **Sửa tại chỗ** là vẽ thẳng lên bức ảnh gốc. Nhanh, không tốn giấy — nhưng ảnh gốc mất vĩnh viễn, và ai đang cầm bản in cũ sẽ thấy nó khác đi.
+>
+> **Tạo bản mới** là photocopy rồi vẽ lên bản sao. Tốn giấy hơn, nhưng **bản gốc còn nguyên**, và bạn so được trước–sau.
+
+React, Redux, và mọi hệ thống "phát hiện thay đổi" đều dựa vào cách thứ hai: chúng nhận ra dữ liệu đã đổi bằng cách kiểm tra *"còn là đúng bức ảnh cũ không?"* — nếu bạn vẽ đè lên ảnh gốc, chúng không thấy gì thay đổi cả.
+
+## Ví dụ nhỏ
 
 ```js
-const nguoiDung = { id: 1, ten: 'An', diaChi: { thanhPho: 'Hà Nội' } }
+const ds = [3, 1, 2]
 
-const { ten, diaChi: { thanhPho } } = nguoiDung
-const { email = 'chưa có' } = nguoiDung        // giá trị mặc định
-const { id, ...phanConLai } = nguoiDung        // rest: mọi thứ trừ id
+const daSap = [...ds].sort()   // photocopy rồi sắp → [1,2,3]
+console.log(ds)                // [3,1,2] — bản gốc còn nguyên ✅
 
-const [dau, thuHai, ...duoi] = [10, 20, 30, 40]
+ds.sort()                      // vẽ thẳng lên bản gốc
+console.log(ds)                // [1,2,3] — đã bị đổi ❌
 ```
 
-Dùng nhiều nhất ở tham số hàm — người đọc thấy ngay hàm cần gì:
+## Code chạy thế nào
 
-```js
-// Khó đọc: phải mở định nghĩa mới biết opts có gì
-function taoNut(opts) { ... }
+Chuỗi `filter → map → reduce` xử lý dữ liệu theo từng khâu, mỗi khâu **sinh ra dữ liệu mới**:
 
-// Rõ ràng: nhìn chữ ký là biết
-function taoNut({ nhan, kieu = 'chinh', tatCa = false }) { ... }
+```text
+donHang = [ {tien:50, xong:true}, {tien:30, xong:false}, {tien:20, xong:true} ]
+
+.filter(d => d.xong)          →  [ {50,true}, {20,true} ]        (mảng MỚI)
+.map(d => d.tien)             →  [ 50, 20 ]                       (mảng MỚI)
+.reduce((s, x) => s + x, 0)   →  0 → 50 → 70                      (một giá trị)
 ```
 
-## Spread: sao chép rồi sửa
+`reduce` là cái khó nhất trong ba, nên lần tay nó:
 
-```js
-const goc = { ten: 'An', tuoi: 30 }
-const moi = { ...goc, tuoi: 31 }        // goc không đổi
-
-const ds = [1, 2, 3]
-const dsMoi = [...ds, 4]                // ds không đổi
-const chen = [...ds.slice(0, 1), 99, ...ds.slice(1)]
+```text
+khởi tạo s = 0
+bước 1:  s=0,  x=50  →  s = 0 + 50 = 50
+bước 2:  s=50, x=20  →  s = 50 + 20 = 70
+kết quả: 70
 ```
 
-Spread chỉ sao chép **một tầng**. Object lồng bên trong vẫn dùng chung:
+`reduce` không chỉ để cộng. Nó là **hàm gộp tổng quát**: gộp mảng về một số, một chuỗi, một object, thậm chí một `Map`.
+
+## Cú pháp
 
 ```js
-const a = { cauHinh: { theme: 'dark' } }
+// Destructuring — lấy đúng thứ mình cần
+const { ten, tuoi = 0 } = nguoi          // kèm giá trị mặc định
+const [dau, ...conLai] = ds
+const { dia: { thanhPho } } = nguoi      // lồng nhau
+
+// Spread — sao chép rồi sửa
+const moi = { ...cu, tuoi: 31 }          // object mới, tuoi bị ghi đè
+const themVao = [...ds, 4]               // mảng mới
+```
+
+Nhóm **sửa tại chỗ** so với nhóm **tạo mới** — bảng này nên thuộc:
+
+| Sửa tại chỗ ⚠️ | Tạo cái mới ✅ |
+|---|---|
+| `push`, `pop`, `shift`, `unshift` | `[...ds, x]`, `ds.slice(1)` |
+| `splice` | `slice`, `filter` |
+| `sort`, `reverse` | `[...ds].sort()`, `[...ds].reverse()` |
+| `obj.x = 1`, `delete obj.x` | `{ ...obj, x: 1 }` |
+
+Hai cái bẫy nhất là `sort` và `reverse`: chúng trả về mảng nên **trông như** tạo mới, nhưng thật ra vừa sửa bản gốc vừa trả về chính nó.
+
+## Tại sao cần nó
+
+Vì sửa dữ liệu của người khác gây ra loại lỗi **không có dòng đỏ nào**:
+
+```js
+function sapXep(ds) {
+  return ds.sort((a, b) => a - b)   // ❌ sửa mảng của người gọi
+}
+
+const goc = [3, 1, 2]
+const kq = sapXep(goc)
+console.log(goc)   // [1,2,3] — người gọi không hề yêu cầu điều này
+```
+
+Người viết `sapXep` nghĩ mình đang trả về bản đã sắp. Người gọi nghĩ mảng của mình còn nguyên. Cả hai đều hợp lý, và lỗi hiện ra ở một chỗ thứ ba, muộn hơn nhiều. Đây chính là "tác dụng phụ trá hình" ở [[ham-dau-vao-dau-ra-va-tac-dung-phu]].
+
+Với React, hậu quả còn cụ thể hơn: sửa state tại chỗ thì **giao diện không cập nhật**, vì React so sánh tham chiếu chứ không so từng phần tử.
+
+## So sánh
+
+Khi nào chọn `for` thay vì `map/filter/reduce`:
+
+| Tình huống | Dùng |
+|---|---|
+| Biến đổi mỗi phần tử thành một phần tử | `map` |
+| Giữ lại một số phần tử | `filter` |
+| Gộp cả mảng về một giá trị | `reduce` |
+| Cần **dừng giữa chừng** | `for...of` + `break` (map/filter không dừng được) |
+| Mảng rất lớn, cần tối ưu bộ nhớ | `for` — chuỗi `map().filter()` sinh mảng trung gian |
+| Có tác dụng phụ (gọi API, ghi log) | `for...of` — `map` mà không dùng kết quả là dấu hiệu sai |
+
+## Dễ nhầm
+
+**1. Tưởng spread sao chép sâu.**
+
+```js
+const a = { ten: 'A', dia: { tp: 'HN' } }
 const b = { ...a }
-b.cauHinh.theme = 'light'
-a.cauHinh.theme       // 'light' — a bị sửa theo!
-
-const c = structuredClone(a)   // sao chép sâu, có sẵn trong Node 17+ và trình duyệt hiện đại
+b.dia.tp = 'HCM'
+console.log(a.dia.tp)   // 'HCM' ❌ — dia là CÙNG MỘT object
 ```
 
-## map, filter, reduce
+`...` chỉ chép **một tầng**. Tầng sâu hơn vẫn dùng chung — đây chính là chuyện "chép địa chỉ nhà" ở [[kieu-du-lieu-va-bien]]. Cần sao chép sâu thật thì dùng `structuredClone(a)`.
+
+**2. Dùng `map` khi ý là `forEach`.**
 
 ```js
-const donHang = [
-  { id: 1, tien: 120_000, trangThai: 'xong' },
-  { id: 2, tien: 80_000, trangThai: 'huy' },
-  { id: 3, tien: 250_000, trangThai: 'xong' },
-]
-
-// filter: giữ lại phần tử thoả điều kiện — số phần tử giảm, kiểu giữ nguyên
-const daXong = donHang.filter((d) => d.trangThai === 'xong')
-
-// map: biến đổi từng phần tử — số phần tử giữ nguyên, kiểu đổi
-const cacSoTien = daXong.map((d) => d.tien)
-
-// reduce: gộp cả mảng về một giá trị
-const tong = cacSoTien.reduce((tong, tien) => tong + tien, 0)   // 370000
+ds.map((x) => console.log(x))   // ❌ tạo một mảng [undefined,...] rồi vứt đi
+ds.forEach((x) => console.log(x))  // ✅
 ```
 
-Viết liền một mạch, đọc từ trên xuống như câu văn:
+**3. Quên giá trị khởi tạo của `reduce`.**
 
 ```js
-const tongDoanhThu = donHang
-  .filter((d) => d.trangThai === 'xong')
-  .reduce((tong, d) => tong + d.tien, 0)
+[].reduce((s, x) => s + x)      // ❌ TypeError với mảng rỗng
+[].reduce((s, x) => s + x, 0)   // ✅ trả 0
 ```
 
-### reduce để nhóm dữ liệu
-
-`reduce` mạnh nhất khi kết quả không phải là số:
+**4. Lồng `find` trong `map`.**
 
 ```js
-const theoTrangThai = donHang.reduce((nhom, don) => {
-  ;(nhom[don.trangThai] ??= []).push(don)
-  return nhom
-}, {})
-// { xong: [...], huy: [...] }
+don.map((d) => ({ ...d, khach: khach.find((k) => k.id === d.khachId) }))   // ❌ O(n×m)
 ```
 
-Từ Node 21 / trình duyệt mới có sẵn `Object.groupBy(donHang, (d) => d.trangThai)` làm đúng việc này.
+Dựng `Map` trước rồi tra — cùng vấn đề đã nói ở [[chon-sai-cau-truc-du-lieu-la-dat]].
 
-### Chọn đúng phương thức
-
-| Cần gì | Dùng | Trả về |
-|---|---|---|
-| Tìm một phần tử | `find` | phần tử hoặc `undefined` |
-| Tìm vị trí | `findIndex` | số hoặc `-1` |
-| Có ít nhất một thoả? | `some` | boolean |
-| Tất cả đều thoả? | `every` | boolean |
-| Có chứa giá trị? | `includes` | boolean |
-| Làm phẳng mảng lồng | `flat` / `flatMap` | mảng mới |
-| Sắp xếp | `toSorted` | **mảng mới** (`sort` sửa tại chỗ!) |
-
-## Sửa tại chỗ vs tạo mới
-
-Nhóm sửa tại chỗ (thay đổi mảng gốc): `push`, `pop`, `shift`, `unshift`, `splice`, `sort`, `reverse`.
-Nhóm tạo mới: `concat`, `slice`, `map`, `filter`, `toSorted`, `toReversed`, `toSpliced`, `with`.
+**5. Destructuring giá trị có thể `undefined`.**
 
 ```js
-const diem = [3, 1, 2]
-diem.sort()              // diem bị sắp xếp luôn — nguồn của nhiều bug khó tìm
-const daSap = [...diem].sort()   // cách cũ, an toàn
-const daSap2 = diem.toSorted()   // Node 20+, rõ nghĩa hơn
+const { ten } = layNguoiDung()        // ❌ nổ nếu hàm trả về undefined
+const { ten } = layNguoiDung() ?? {}  // ✅
 ```
 
-`sort()` mặc định so sánh theo **chuỗi**: `[10, 9, 1].sort()` cho `[1, 10, 9]`. Số phải truyền hàm so sánh: `.sort((a, b) => a - b)`.
+## Mẹo nhớ
 
-## Vì sao bất biến lại quan trọng
+> **Photocopy rồi vẽ, đừng vẽ lên bản gốc.**
+>
+> **`sort` và `reverse` trông như tạo mới nhưng SỬA tại chỗ.**
+>
+> **Spread chép một tầng, không chép sâu.**
 
-React, Redux và mọi thứ dùng so sánh nông (`prevState === nextState`) đều dựa vào việc **object mới ⇒ tham chiếu mới**:
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Kể bốn hàm mảng **sửa tại chỗ** và cách viết bất biến tương ứng.
+2. Vì sao `[...a]` không đủ khi object có tầng lồng nhau?
+3. `reduce` khác `map` ở chỗ nào — không phải cú pháp, mà về **kết quả**?
+4. Vì sao sửa state tại chỗ làm React không cập nhật giao diện?
+5. Khi nào `for...of` là lựa chọn đúng thay vì `map/filter`?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết hàm gộp danh sách đơn hàng thành tổng tiền **theo từng khách**, không sửa dữ liệu gốc:
 
 ```js
-// React sẽ KHÔNG render lại: vẫn cùng một mảng, tham chiếu không đổi
-setItems((cu) => { cu.push(moi); return cu })
-
-// Đúng: mảng mới, tham chiếu mới
-setItems((cu) => [...cu, moi])
+tongTheoKhach([
+  { khach: 'A', tien: 50 },
+  { khach: 'B', tien: 30 },
+  { khach: 'A', tien: 20 },
+])
+// → { A: 70, B: 30 }
 ```
 
-## Lỗi hay gặp
+Tự kiểm: bạn dùng `reduce` với giá trị khởi tạo là gì, và bên trong bạn **tạo object mới** hay sửa accumulator? Cả hai đều chạy — nêu lý do cho lựa chọn của bạn.
 
-| Lỗi | Vì sao sai | Sửa thế nào |
-|---|---|---|
-| `arr.sort()` trên state | Sửa mảng gốc tại chỗ | `[...arr].sort()` hoặc `toSorted()` |
-| `[10, 9, 1].sort()` | So sánh theo chuỗi | `.sort((a, b) => a - b)` |
-| `{ ...a }` cho object lồng nhau | Chỉ sao chép một tầng | `structuredClone(a)` |
-| `map` khi không dùng kết quả | Tạo mảng thừa, ý định không rõ | Dùng `forEach` hoặc `for...of` |
-| `reduce` để làm việc `map` làm được | Khó đọc hơn hẳn | Chọn phương thức đúng ý định |
+## Thử sức
 
-## Ghi nhớ
+Đoạn này in ra gì?
 
-- Destructuring ở tham số hàm làm chữ ký tự mô tả chính nó.
-- Spread sao chép **một tầng**; sâu hơn thì `structuredClone`.
-- `filter` lọc, `map` biến đổi, `reduce` gộp. Ba cái ghép lại thay được hầu hết vòng `for`.
-- Nhớ nhóm phương thức sửa tại chỗ — đặc biệt là `sort` và `reverse`.
+```js
+const goc = [{ n: 1 }, { n: 2 }]
+const sao = goc.map((x) => x)
+sao[0].n = 99
+sao.push({ n: 3 })
 
-## Tự kiểm tra
+console.log(goc.length, goc[0].n)
+```
 
-1. Cho danh sách sản phẩm, viết một biểu thức trả về `{ [danhMuc]: tongTien }`.
-2. Vì sao `setItems(cu => { cu.push(x); return cu })` không làm React render lại?
-3. `[...a]` và `structuredClone(a)` khác nhau ở đâu? Khi nào bắt buộc dùng cái sau?
+Gợi ý: `map` tạo mảng mới — nhưng nó chép **cái gì** vào mảng mới đó?

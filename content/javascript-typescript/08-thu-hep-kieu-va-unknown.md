@@ -4,106 +4,125 @@ slug: thu-hep-kieu-va-unknown
 summary: Cách xử lý dữ liệu chưa biết kiểu mà không dùng any, và cách viết hàm giúp TypeScript tự hiểu.
 level: nang-cao
 tags: [typescript, type-guard, unknown, zod]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** xử lý được `catch (error: unknown)` đúng cách, và thay mọi chỗ `as` bằng kiểm tra thật.
+> **Sau bài này bạn sẽ:** xử lý được dữ liệu từ bên ngoài mà không cần `any` hay `as`, và biết đặt việc kiểm tra ở đúng một chỗ.
 
-## `any` và `unknown`
+## Ý tưởng chính
 
-Cả hai đều nhận mọi giá trị. Khác biệt nằm ở chiều ngược lại:
+TypeScript biến mất lúc chạy. Nên với dữ liệu **từ bên ngoài** — API, file, `localStorage`, input người dùng — nó chỉ biết những gì bạn khai, và **nếu bạn khai sai thì nó tin bạn**.
+
+Có đúng hai cách xử lý tình huống đó: `any` (bỏ kiểm tra, và lỗi hiện ra ở nơi khác) hoặc `unknown` (buộc phải chứng minh trước khi dùng). Bài này về cách thứ hai.
+
+## Mental model
+
+Hãy nghĩ tới **một gói hàng lạ đặt trước cửa**.
+
+> `any` là **xé ra dùng luôn**, cứ tin đó là thứ bạn đặt. Nếu bên trong là thứ khác, bạn phát hiện ra khi đã đổ nó vào nồi.
+>
+> `unknown` là **gói hàng còn nguyên niêm phong**. TypeScript không cho bạn dùng cho tới khi bạn **kiểm tra và chứng minh** nó là gì.
+
+Việc "chứng minh" đó gọi là **thu hẹp kiểu** (narrowing), và mỗi lần bạn chứng minh được một điều, TypeScript ghi nhớ nó cho những dòng phía sau.
+
+## Ví dụ nhỏ
 
 ```ts
-let a: any = layDuLieu()
-a.bat_ky_cai_gi.sau_do()      // TS im lặng — sập lúc chạy
+function xuLy(x: unknown) {
+  x.toUpperCase()          // ❌ TS chặn: chưa biết x là gì
 
-let u: unknown = layDuLieu()
-u.gi_do                        // Lỗi biên dịch — phải kiểm tra trước
-if (typeof u === 'string') u.toUpperCase()   // OK sau khi thu hẹp
-```
-
-`any` **tắt** kiểm tra kiểu và lây lan sang mọi biểu thức chạm vào nó. `unknown` giữ kiểm tra nhưng bắt bạn chứng minh trước khi dùng. Với dữ liệu từ bên ngoài, `unknown` luôn là lựa chọn đúng.
-
-## Các cách thu hẹp kiểu
-
-```ts
-function xuLy(v: string | number | Date | null | undefined) {
-  if (v == null) return 'trống'                 // loại cả null và undefined
-  if (typeof v === 'string') return v.trim()    // typeof cho nguyên thuỷ
-  if (v instanceof Date) return v.toISOString()  // instanceof cho class
-  return v.toFixed(2)                            // còn lại chắc chắn là number
+  if (typeof x === 'string') {
+    x.toUpperCase()        // ✅ trong khối này, TS biết x là string
+  }
 }
 ```
 
-Với object, dùng `in` hoặc trường phân biệt:
+Một câu `if` và TypeScript **tự đổi kiểu của `x`** trong khối đó. Bạn không phải khai gì thêm.
 
-```ts
-type Chim = { bay: () => void }
-type Ca = { boi: () => void }
+## Code chạy thế nào
 
-function diChuyen(con: Chim | Ca) {
-  if ('bay' in con) con.bay()
-  else con.boi()
+Thu hẹp kiểu là TypeScript **theo dõi những gì bạn đã chứng minh**, theo từng nhánh:
+
+```text
+function f(x: string | number | null)
+
+vào hàm:              x: string | number | null
+
+if (x === null) {
+      trong đây:      x: null
+} else {
+      trong đây:      x: string | number      ← đã loại null
+  if (typeof x === 'string') {
+      trong đây:      x: string
+  } else {
+      trong đây:      x: number               ← chỉ còn một khả năng
+  }
 }
 ```
 
-TypeScript còn hiểu cả **thu hẹp theo phép gán** và **thu hẹp qua `Array.isArray`**, `switch` trên literal, và điều kiện `&&`/`||`.
+Nhánh `else` cuối cùng đáng chú ý: TypeScript **tự suy** ra `number` mà không cần bạn nói. Đây là lý do union type mạnh hơn nhiều so với `any` — nó cho phép suy luận theo nhánh.
 
-## Type guard tự viết
+Các cách thu hẹp, xếp theo tần suất dùng:
 
-Khi kiểm tra phức tạp hơn `typeof`, viết hàm trả về `x is T` để TypeScript hiểu:
+```ts
+typeof x === 'string'          // kiểu nguyên thuỷ
+x instanceof Error             // class
+'email' in x                   // object có thuộc tính này không
+Array.isArray(x)               // mảng
+x === null / x !== undefined   // loại null-ish
+if (!x) return                 // chặn sớm — cách gọn nhất
+```
+
+## Cú pháp
+
+**Type guard tự viết** — dạy TypeScript hiểu một kiểm tra của bạn:
 
 ```ts
 type NguoiDung = { id: string; ten: string }
 
-function laNguoiDung(v: unknown): v is NguoiDung {
+function laNguoiDung(x: unknown): x is NguoiDung {     // ← "x is T" là phần quan trọng
   return (
-    typeof v === 'object' && v !== null &&
-    'id' in v && typeof v.id === 'string' &&
-    'ten' in v && typeof v.ten === 'string'
+    typeof x === 'object' && x !== null &&
+    'id' in x && typeof (x as any).id === 'string' &&
+    'ten' in x && typeof (x as any).ten === 'string'
   )
 }
 
-const data: unknown = JSON.parse(chuoi)
-if (laNguoiDung(data)) {
-  data.ten           // TS biết là string
+if (laNguoiDung(du)) {
+  du.ten   // ✅ TS biết là NguoiDung
 }
 ```
 
-Cảnh báo quan trọng: `v is T` là **lời hứa của bạn**, TypeScript không kiểm tra thân hàm có đúng không. Guard viết ẩu nguy hiểm ngang `as`.
-
-## Bắt lỗi trong catch
-
-Từ TS 4.4, `catch (e)` có kiểu `unknown` (khi bật `useUnknownInCatchVariables`, đi kèm `strict`). Đúng, vì `throw` ném được bất cứ thứ gì:
+**Bắt lỗi trong `catch`** — chỗ ai cũng gặp:
 
 ```ts
-try {
-  await luu()
-} catch (error) {
-  const thongBao =
-    error instanceof Error ? error.message : 'Lỗi không xác định'
-  ghiLog(thongBao)
+try { } catch (e) {
+  // e là unknown (từ TS 4.4) — vì JS cho phép `throw` bất cứ thứ gì
+  const thongDiep = e instanceof Error ? e.message : String(e)
 }
 ```
 
-Mẫu này lặp lại nhiều nên đáng tách thành một hàm nhỏ dùng chung.
-
-## Assert function
+**Kiểm tra vét cạn với `never`** — bắt lỗi lúc biên dịch khi thêm loại mới:
 
 ```ts
-function assertLaChuoi(v: unknown): asserts v is string {
-  if (typeof v !== 'string') throw new TypeError('Cần một chuỗi')
-}
+type Trang = 'nhap' | 'cho' | 'xong'
 
-const x: unknown = layGiaTri()
-assertLaChuoi(x)
-x.toUpperCase()      // TS biết x là string từ dòng này trở đi
+function nhan(t: Trang): string {
+  switch (t) {
+    case 'nhap': return 'Nháp'
+    case 'cho': return 'Đang chờ'
+    case 'xong': return 'Hoàn tất'
+    default: {
+      const _het: never = t      // ❌ nếu thêm trạng thái mới mà quên xử lý → lỗi Ở ĐÂY
+      return _het
+    }
+  }
+}
 ```
 
-Khác type guard ở chỗ: guard trả về boolean để bạn rẽ nhánh, assert thì ném lỗi và thu hẹp kiểu cho **phần còn lại** của hàm.
+## Tại sao cần nó
 
-## Cách thực dụng nhất: zod ở ranh giới
-
-Viết type guard tay cho mọi hình dạng dữ liệu là việc tẻ nhạt và dễ sót. Ở ranh giới (HTTP response, file JSON, `localStorage`, biến môi trường), dùng schema:
+Vì cách thực dụng nhất không phải viết type guard bằng tay cho mọi thứ — mà là **kiểm tra một lần ở ranh giới**:
 
 ```ts
 import { z } from 'zod'
@@ -111,59 +130,103 @@ import { z } from 'zod'
 const NguoiDungSchema = z.object({
   id: z.string(),
   ten: z.string(),
-  email: z.string().email(),
+  tuoi: z.number().int().positive().optional(),
 })
-type NguoiDung = z.infer<typeof NguoiDungSchema>   // kiểu suy ra từ schema
 
-const res = await fetch('/api/me')
-const kq = NguoiDungSchema.safeParse(await res.json())
-if (!kq.success) {
-  return { ok: false, loi: 'Dữ liệu trả về không đúng định dạng' }
+type NguoiDung = z.infer<typeof NguoiDungSchema>    // ← kiểu SINH RA từ schema
+
+async function layNguoiDung(id: string): Promise<NguoiDung> {
+  const res = await fetch(`/api/users/${id}`)
+  return NguoiDungSchema.parse(await res.json())     // sai hình dạng → ném lỗi NGAY tại đây
 }
-kq.data.email    // vừa đúng kiểu, vừa đã kiểm tra thật lúc chạy
 ```
 
-Một schema cho **cả hai** việc — kiểm tra lúc chạy và sinh kiểu lúc biên dịch — nên hai thứ không bao giờ lệch nhau.
+Ba thứ bạn được cùng lúc:
 
-## Kiểm tra vét cạn với `never`
+```text
+① Kiểu TypeScript      (z.infer — không phải khai hai lần)
+② Kiểm tra lúc chạy    (parse)
+③ Lỗi nổ ĐÚNG CHỖ      (tại ranh giới, không phải ở chỗ dùng, ba tầng sau)
+```
+
+Điểm ③ là giá trị lớn nhất và ít người nói tới: không có nó, dữ liệu sai hình dạng lặng lẽ đi sâu vào hệ thống và nổ ở một nơi chẳng liên quan gì tới nguyên nhân.
+
+**Ranh giới** của một hệ thống gồm: phản hồi API, tham số URL, form người dùng nhập, `localStorage`, biến môi trường, nội dung file. Kiểm ở đó — bên trong thì tin kiểu.
+
+## So sánh
+
+| | `any` | `unknown` |
+|---|---|---|
+| Gán từ mọi kiểu vào | ✅ | ✅ |
+| Gán ra kiểu khác | ✅ (nguy hiểm) | ❌ phải thu hẹp trước |
+| Gọi phương thức trực tiếp | ✅ (nổ lúc chạy) | ❌ TS chặn |
+| Lây lan sang chỗ khác | ✅ | ❌ |
+
+Nguyên tắc: **`unknown` ở ranh giới, kiểu cụ thể ở bên trong, không bao giờ `any`.**
+
+## Dễ nhầm
+
+**1. Dùng `as` thay vì kiểm tra.**
 
 ```ts
-type TrangThai = 'cho' | 'chay' | 'xong'
+const u = duLieu as NguoiDung   // ❌ không kiểm gì cả, chỉ là lời hứa
+```
 
-function nhan(tt: TrangThai): string {
-  switch (tt) {
-    case 'cho': return 'Đang chờ'
-    case 'chay': return 'Đang chạy'
-    case 'xong': return 'Xong'
-    default: {
-      const chuaXuLy: never = tt      // thêm trạng thái mới -> lỗi ở đây
-      throw new Error(`Trạng thái lạ: ${String(chuaXuLy)}`)
-    }
-  }
+`as` chỉ nên dùng khi bạn biết điều mà TypeScript không thể biết, và điều đó **hiếm hơn** bạn tưởng.
+
+**2. Type guard sai mà TypeScript vẫn tin.**
+
+```ts
+function laSo(x: unknown): x is number {
+  return typeof x === 'string'   // ❌ SAI, nhưng TS tin tuyệt đối
 }
 ```
 
-Mẹo này biến việc "quên cập nhật một chỗ" từ bug lúc chạy thành lỗi lúc build.
+`x is T` chuyển trách nhiệm sang **bạn**. Viết sai thì không ai bắt được — đây là lý do nên ưu tiên zod hơn type guard tự viết.
 
-## Lỗi hay gặp
+**3. Quên rằng `typeof null === 'object'`.**
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| `const d = await res.json() as User` | Không ai kiểm tra, sập ở chỗ khác | `safeParse` bằng zod |
-| `catch (e: any)` | Mất kiểm tra, che lỗi thật | `unknown` + `instanceof Error` |
-| Type guard viết ẩu | Nói dối trình biên dịch | Kiểm tra đủ mọi trường |
-| `as unknown as T` | Ép hai bước để lách kiểm tra | Sửa mô hình kiểu |
-| Không có `default: never` | Thêm case mới lặng lẽ rơi ra ngoài | Thêm kiểm tra vét cạn |
+```ts
+if (typeof x === 'object') x.ten     // ❌ x có thể là null
+if (typeof x === 'object' && x !== null) x.ten   // ✅
+```
 
-## Ghi nhớ
+**4. Kiểm tra ở sai chỗ.** Kiểm ở mọi chỗ dùng thì code đầy `if` trùng lặp; không kiểm ở đâu cả thì lỗi nổ lung tung. Kiểm **đúng một lần, ở ranh giới**.
 
-- `unknown` cho dữ liệu bên ngoài, không bao giờ `any`.
-- `x is T` là lời hứa không được kiểm chứng — viết cẩn thận hoặc dùng zod.
-- Một schema zod thay cho cả kiểu lẫn validation.
-- `const _: never = x` trong `default` bắt được mọi case thiếu lúc build.
+**5. Bỏ qua mẫu `never`.** Nó là cách duy nhất bắt được "quên xử lý loại mới" **lúc biên dịch**. Không có nó, thêm một trạng thái vào union chỉ lộ ra khi có người dùng thật gặp phải.
 
-## Tự kiểm tra
+## Mẹo nhớ
 
-1. Vì sao `unknown` an toàn hơn `any` khi nhận dữ liệu từ `res.json()`?
-2. Viết type guard cho `{ kieu: 'anh', url: string } | { kieu: 'chu', noiDung: string }`.
-3. Thêm một giá trị vào union `TrangThai`. Chỗ nào trong code sẽ báo lỗi, và vì sao đó là điều tốt?
+> **`any` là xé gói ra dùng luôn. `unknown` là còn nguyên niêm phong.**
+>
+> **Kiểm tra một lần ở ranh giới, tin kiểu ở bên trong.**
+>
+> **`as` là lời hứa, không phải kiểm tra.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Vì sao TypeScript **không** bảo vệ được dữ liệu từ API?
+2. `any` và `unknown` khác nhau ở chỗ nào — nêu hậu quả thực tế của mỗi cái?
+3. `x is NguoiDung` chuyển trách nhiệm cho ai?
+4. Kể ba chỗ là "ranh giới" của một ứng dụng web.
+5. Mẫu `const _het: never = t` bắt được lỗi gì, và bắt vào **lúc nào**?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết hàm đọc cấu hình từ `localStorage` an toàn:
+
+```ts
+function docCauHinh(): { theme: 'sang' | 'toi'; coChu: number } {
+  // localStorage có thể: không có key, JSON hỏng, hoặc đúng JSON nhưng sai hình dạng
+}
+```
+
+Tự kiểm: bạn xử lý **ba** tình huống hỏng đó ở mấy chỗ, và hàm của bạn trả về gì khi dữ liệu sai — ném lỗi hay dùng giá trị mặc định? Nêu lý do.
+
+## Thử sức
+
+Đội bạn có quy ước: *"mọi phản hồi API đều `as` sang kiểu đã khai, cho nhanh"*. Hệ thống chạy ổn hai năm.
+
+Rồi backend đổi `tuoi` từ `number` sang `string`. Hãy mô tả **chính xác** chuyện gì xảy ra: lỗi nổ ở đâu, thông báo lỗi trông thế nào, và mất bao lâu để lần ra nguyên nhân. Sau đó: nếu có zod ở ranh giới thì ba câu trả lời trên đổi thành gì?

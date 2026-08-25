@@ -4,159 +4,202 @@ slug: ham-closure-va-this
 summary: Hàm là giá trị, closure là hàm nhớ được nơi nó sinh ra, và this được quyết định lúc gọi chứ không lúc viết.
 level: co-ban
 tags: [javascript, ham, closure, this]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** giải thích được vì sao một callback lại "mất" `this`, và dùng closure để giữ trạng thái riêng tư mà không cần class.
+> **Sau bài này bạn sẽ:** giải thích được vì sao một hàm vẫn "nhớ" biến sau khi hàm cha đã chạy xong, và tự suy ra `this` bằng cách nhìn **lời gọi** thay vì nhìn định nghĩa.
 
-## Hàm là một giá trị
+## Ý tưởng chính
 
-Trong JavaScript, hàm gán được vào biến, truyền được làm tham số, trả về được từ hàm khác:
+Trong JavaScript, hàm là **một giá trị** như số hay chuỗi: gán vào biến được, truyền làm tham số được, trả về từ hàm khác được.
 
-```js
-const nhanDoi = (x) => x * 2
-const apDung = (fn, giaTri) => fn(giaTri)
+Từ một điều đó sinh ra hai thứ hay gây bối rối nhất cho người mới: **closure** (hàm mang theo nơi nó sinh ra) và **`this`** (thứ được quyết định lúc gọi, không phải lúc viết).
 
-apDung(nhanDoi, 21)   // 42
-```
+## Mental model
 
-Đây là nền tảng của `map`/`filter`/`reduce`, của middleware, của mọi callback.
+Hai hình ảnh cho hai khái niệm:
 
-### Ba cách viết, khác nhau ở `this` và hoisting
+> **Closure là chiếc ba lô.** Khi một hàm được tạo ra, nó **đeo theo một chiếc ba lô** chứa mọi biến ở nơi nó sinh ra. Hàm đi đâu, ba lô theo đó — kể cả khi ngôi nhà nó sinh ra đã bị dỡ bỏ.
+>
+> **`this` là chữ "tôi" trong một câu nói.** Câu *"tôi trả tiền"* không cho biết ai trả — phải xem **ai đang nói câu đó**. `this` cũng vậy: cùng một hàm, ai gọi thì `this` là người đó.
 
-```js
-function a() {}              // khai báo: được hoisting, gọi trước dòng viết vẫn chạy
-const b = function () {}     // biểu thức: chỉ dùng được sau dòng khai báo
-const c = () => {}           // arrow: không có this/arguments riêng
-```
+Người mới hay tìm `this` bằng cách nhìn chỗ hàm được **định nghĩa**. Sai chỗ — phải nhìn chỗ hàm được **gọi**.
 
-## Closure: hàm nhớ nơi nó sinh ra
-
-Khi một hàm được tạo bên trong hàm khác, nó giữ luôn quyền truy cập vào biến của hàm bao — **kể cả sau khi hàm bao đã chạy xong**:
+## Ví dụ nhỏ
 
 ```js
 function taoBoDem() {
-  let dem = 0                 // biến này sống lâu hơn taoBoDem()
+  let so = 0                    // biến này nằm trong "ngôi nhà"
+  return () => { so += 1; return so }   // hàm con đeo ba lô chứa `so`
+}
+
+const dem = taoBoDem()
+dem()   // 1
+dem()   // 2
+```
+
+`taoBoDem()` đã chạy xong và kết thúc từ lâu. Nhưng `so` vẫn sống — vì hàm được trả về đang **đeo nó trong ba lô**.
+
+## Code chạy thế nào
+
+```text
+const dem = taoBoDem()
+  → tạo biến so = 0 trong lần gọi này
+  → tạo hàm mũi tên, ĐÓNG GÓI tham chiếu tới `so` vào ba lô của nó
+  → taoBoDem kết thúc — nhưng `so` KHÔNG bị dọn, vì còn hàm đang giữ nó
+
+dem()   → mở ba lô, thấy so = 0 → tăng thành 1 → trả 1
+dem()   → mở ba lô, thấy so = 1 → tăng thành 2 → trả 2
+```
+
+Điểm quan trọng: **mỗi lần gọi `taoBoDem()` tạo một ba lô mới**.
+
+```js
+const a = taoBoDem()
+const b = taoBoDem()
+a(); a()   // 1, 2
+b()        // 1  ← ba lô riêng, không dính gì tới a
+```
+
+## Cú pháp
+
+```js
+function ten() {}              // khai báo — được "kéo lên đầu" (hoisting)
+const ten = function () {}     // biểu thức hàm
+const ten = () => {}           // hàm mũi tên — KHÔNG có `this` riêng
+```
+
+Bốn quy tắc xác định `this`, theo **thứ tự ưu tiên**:
+
+```text
+1. Hàm mũi tên      → this LẤY TỪ NƠI ĐỊNH NGHĨA, không đổi được
+2. Gọi kèm new      → this là object vừa tạo
+3. call/apply/bind  → this là thứ bạn truyền vào
+4. Gọi qua dấu chấm → this là thứ đứng TRƯỚC dấu chấm
+5. Không có gì      → undefined (strict) hoặc globalThis
+```
+
+Quy tắc 4 giải thích gần như mọi lỗi `this` bạn sẽ gặp: `obj.f()` thì `this` là `obj`; nhưng `const f = obj.f; f()` thì **không còn ai đứng trước dấu chấm**, và `this` mất.
+
+## Tại sao cần nó
+
+Closure không phải khái niệm học thuật — bạn dùng nó mỗi ngày mà không gọi tên:
+
+```js
+// Giữ trạng thái riêng tư, không lộ ra ngoài
+function taoKho() {
+  const items = []                       // không ai bên ngoài chạm được
   return {
-    tang: () => (dem += 1),
-    doc: () => dem,
+    them: (x) => items.push(x),
+    demSo: () => items.length,
   }
 }
 
-const bd = taoBoDem()
-bd.tang()
-bd.tang()
-bd.doc()      // 2
-bd.dem        // undefined — không ai chạm được vào dem từ bên ngoài
+// Nhớ tham số cho lần gọi sau
+const nhan = (he) => (x) => x * he
+const gapDoi = nhan(2)
+gapDoi(5)   // 10
+
+// Mọi callback đều là closure
+setTimeout(() => console.log(ten), 1000)   // `ten` đến từ ba lô
 ```
 
-Đó là cách tạo trạng thái riêng tư thật sự: `dem` không phải thuộc tính, không có cách nào đọc trực tiếp.
+Ba mẫu trên phủ phần lớn code bất đồng bộ và code React bạn viết. Hook trong React về bản chất là closure — và phần lớn bug "giá trị cũ" trong `useEffect` là bug về ba lô.
 
-### Ứng dụng thường gặp: debounce
+## Dễ nhầm
+
+**1. Ba lô giữ **tham chiếu**, không giữ ảnh chụp.**
 
 ```js
-function debounce(fn, ms) {
-  let timer            // closure giữ timer giữa các lần gọi
-  return (...args) => {
-    clearTimeout(timer)
-    timer = setTimeout(() => fn(...args), ms)
-  }
-}
+for (var i = 0; i < 3; i++) setTimeout(() => console.log(i), 0)
+// → 3, 3, 3   ❌ cả ba hàm dùng CHUNG một biến i, và lúc chúng chạy thì i đã là 3
 
-const timKiem = debounce((tuKhoa) => console.log('tìm', tuKhoa), 300)
+for (let i = 0; i < 3; i++) setTimeout(() => console.log(i), 0)
+// → 0, 1, 2   ✅ let tạo một biến MỚI cho mỗi vòng ⇒ ba ba lô khác nhau
 ```
 
-Không có closure thì `timer` phải là biến toàn cục, và hai ô tìm kiếm trên cùng trang sẽ giẫm chân nhau.
+Đây là ví dụ kinh điển nhất về closure, và cũng là lý do thực dụng nhất để không dùng `var`.
 
-### Bẫy closure kinh điển trong vòng lặp
+**2. Mất `this` khi truyền phương thức đi.**
 
 ```js
-for (var i = 0; i < 3; i++) {
-  setTimeout(() => console.log(i), 0)
-}
-// In ra: 3, 3, 3 — chỉ có MỘT biến i, và lúc callback chạy thì i đã là 3
-
-for (let i = 0; i < 3; i++) {
-  setTimeout(() => console.log(i), 0)
-}
-// In ra: 0, 1, 2 — let tạo một biến i mới cho mỗi vòng lặp
+const nguoi = { ten: 'An', chao() { console.log(this.ten) } }
+nguoi.chao()                    // 'An' ✅
+const f = nguoi.chao
+f()                             // undefined ❌ không còn ai trước dấu chấm
+setTimeout(nguoi.chao, 100)     // undefined ❌ cùng lý do
+setTimeout(() => nguoi.chao(), 100)   // 'An' ✅ giữ nguyên lời gọi
 ```
 
-## `this` được quyết định lúc gọi
-
-`this` **không** phụ thuộc vào nơi hàm được viết, mà vào cách hàm được gọi:
+**3. Dùng hàm mũi tên làm phương thức của object.**
 
 ```js
-const nguoiDung = {
-  ten: 'An',
-  chao() {
-    return `Xin chào ${this.ten}`
+const nguoi = { ten: 'An', chao: () => console.log(this.ten) }
+nguoi.chao()   // undefined ❌ mũi tên lấy `this` từ nơi định nghĩa (ngoài object)
+```
+
+Nhưng trong class thì mũi tên lại **đúng** cho callback, vì nó khoá `this` vào instance:
+
+```js
+class Nut {
+  ten = 'Gửi'
+  onClick = () => console.log(this.ten)   // ✅ truyền đi đâu cũng giữ this
+}
+```
+
+**4. Tưởng closure gây rò bộ nhớ.** Nó chỉ rò khi bạn **giữ hàm sống mãi** mà hàm đó đeo ba lô nặng — ví dụ một listener không bao giờ gỡ, đeo theo cả một mảng lớn. Bản thân closure không rò.
+
+**5. Nhầm hoisting của `function` và `const`.**
+
+```js
+f()                  // ✅ chạy được — khai báo function được kéo lên
+function f() {}
+
+g()                  // ❌ ReferenceError
+const g = () => {}
+```
+
+## Mẹo nhớ
+
+> **Closure = hàm đeo ba lô chứa nơi nó sinh ra.**
+>
+> **`this` = chữ "tôi": xem AI ĐANG GỌI, không xem chỗ viết.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Vì sao `so` vẫn sống sau khi `taoBoDem()` đã kết thúc?
+2. Hai lần gọi `taoBoDem()` dùng chung hay riêng biến `so`? Vì sao?
+3. Vì sao vòng `for` với `var` in ra `3, 3, 3` còn `let` in ra `0, 1, 2`?
+4. `const f = obj.chao; f()` làm mất `this` — giải thích bằng quy tắc nào?
+5. Khi nào hàm mũi tên là lựa chọn **sai** cho một phương thức?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết hàm `chiGoiMotLan(fn)` — trả về một hàm chỉ thật sự chạy `fn` ở lần gọi đầu tiên, những lần sau trả lại kết quả cũ:
+
+```js
+const khoiTao = chiGoiMotLan(() => { console.log('chạy'); return 42 })
+khoiTao()   // in "chạy", trả 42
+khoiTao()   // không in gì, trả 42
+```
+
+Tự kiểm: trong ba lô của hàm bạn trả về có những biến nào?
+
+## Thử sức
+
+Đoạn này in ra gì, và vì sao?
+
+```js
+const obj = {
+  ten: 'A',
+  ds: ['x', 'y'],
+  in() {
+    this.ds.forEach(function (i) { console.log(this.ten, i) })
   },
 }
-
-nguoiDung.chao()              // "Xin chào An" — gọi qua object, this = nguoiDung
-
-const chao = nguoiDung.chao   // tách hàm ra khỏi object
-chao()                        // "Xin chào undefined" — this không còn là nguoiDung
+obj.in()
 ```
 
-Đây chính là lý do callback hay "mất" `this`:
-
-```js
-setTimeout(nguoiDung.chao, 100)          // hỏng
-setTimeout(() => nguoiDung.chao(), 100)  // đúng — vẫn gọi qua object
-setTimeout(nguoiDung.chao.bind(nguoiDung), 100) // đúng — buộc cứng this
-```
-
-### Arrow function không có `this` riêng
-
-Arrow lấy `this` từ phạm vi bao quanh lúc **định nghĩa**. Nhờ vậy nó lý tưởng cho callback:
-
-```js
-class GioHang {
-  items = []
-  tongTien() {
-    // arrow ở đây thấy this của tongTien -> chính là instance
-    return this.items.reduce((tong, item) => tong + item.gia * this.tyGia, 0)
-  }
-}
-```
-
-Nhưng chính vì thế, **đừng** dùng arrow làm method của object literal:
-
-```js
-const sai = {
-  ten: 'An',
-  chao: () => `Xin chào ${this.ten}`,  // this là module/window, không phải object
-}
-```
-
-## Bốn quy tắc xác định `this`, theo thứ tự ưu tiên
-
-1. `new Fn()` → `this` là object vừa tạo.
-2. `fn.call(obj)` / `fn.apply(obj)` / `fn.bind(obj)` → `this` là `obj`.
-3. `obj.fn()` → `this` là `obj`.
-4. `fn()` → `this` là `undefined` (strict mode) hoặc global.
-
-Arrow function nằm ngoài cả bốn quy tắc: nó không có `this` để gán.
-
-## Lỗi hay gặp
-
-| Lỗi | Vì sao sai | Sửa thế nào |
-|---|---|---|
-| `element.addEventListener('click', obj.xuLy)` | Mất `this` khi tách hàm | `() => obj.xuLy()` hoặc `.bind(obj)` |
-| Arrow làm method trong object literal | Không có `this` riêng | Dùng cú pháp `xuLy() {}` |
-| `var` trong vòng lặp có callback | Mọi callback chia sẻ một biến | Dùng `let` |
-| Tạo hàm mới trong render mỗi lần | Closure mới ⇒ tham chiếu đổi ⇒ con re-render | `useCallback` hoặc đưa ra ngoài |
-
-## Ghi nhớ
-
-- Closure = hàm + môi trường biến nơi nó sinh ra. Đó là cách có trạng thái riêng tư.
-- `let` tạo biến mới mỗi vòng lặp; `var` thì không.
-- `this` do **cách gọi** quyết định, không do nơi viết.
-- Arrow không có `this` riêng — dùng cho callback, tránh cho method.
-
-## Tự kiểm tra
-
-1. Viết `taoIdSinhTuDong()` trả về hàm mỗi lần gọi cho ra 1, 2, 3… mà không dùng biến toàn cục.
-2. Vì sao `const f = obj.method; f()` lại lỗi trong khi `obj.method()` chạy tốt?
-3. Khi nào **không** nên dùng arrow function?
+Gợi ý: hàm truyền vào `forEach` được **gọi như thế nào**? Sau khi trả lời, hãy nêu **ba cách** sửa — và nói cách nào bạn chọn trong code thật.

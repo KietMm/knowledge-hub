@@ -4,151 +4,185 @@ slug: typescript-nhap-mon
 summary: Khi nào dùng type, khi nào dùng interface, và vì sao khai báo kiểu thừa lại làm code tệ đi.
 level: co-ban
 tags: [typescript, type-system, interface]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** viết được kiểu cho một API response mà không cần `any`, và hiểu vì sao trình soạn thảo tự biết kiểu ở phần lớn chỗ bạn định gõ tay.
+> **Sau bài này bạn sẽ:** biết chỗ nào **nên** khai kiểu và chỗ nào nên để TypeScript tự suy, và không còn phân vân giữa `type` và `interface`.
 
-## TypeScript làm gì
+## Ý tưởng chính
 
-TypeScript kiểm tra kiểu **lúc biên dịch** rồi xoá sạch kiểu đi. Lúc chạy chỉ còn JavaScript thuần — nghĩa là:
+TypeScript không đổi cách chương trình chạy. Nó chỉ làm đúng một việc: **kiểm tra trước khi chạy rằng bạn không dùng dữ liệu sai cách**, rồi biến mất hoàn toàn lúc biên dịch.
 
-- Kiểu **không** kiểm tra dữ liệu từ mạng, file, `localStorage`. Đó là việc của zod hoặc một hàm validate viết tay.
-- Kiểu **không** làm chương trình chạy nhanh hơn.
-- Kiểu bắt được sai sót trước khi chạy, và làm trình soạn thảo gợi ý được.
+Nói cách khác: TypeScript là một **bộ kiểm tra**, không phải một ngôn ngữ chạy được. Hiểu điều này giải thích cả điểm mạnh lẫn giới hạn của nó.
 
-```ts
-const data = await res.json()   // kiểu là any — TypeScript hết cách kiểm tra
-const user = UserSchema.parse(data)  // zod kiểm tra thật lúc chạy, rồi mới có kiểu chắc chắn
-```
+## Mental model
 
-## Để TypeScript tự suy luận
+Hãy nghĩ tới **người soát vé ở cửa rạp** so với **bảo vệ bên trong rạp**.
 
-Đây là thói quen quan trọng nhất của người mới:
+> TypeScript là **người soát vé ở cửa**: kiểm tra lúc bạn đi vào, và chỉ có mặt ở đó. Vào được rồi thì anh ta không theo dõi bạn nữa.
+>
+> Dữ liệu từ API, từ file, từ input người dùng **không đi qua cửa đó** — chúng rơi thẳng vào trong rạp. Với những dữ liệu này, TypeScript chỉ biết những gì **bạn khai**, và nếu bạn khai sai thì nó tin bạn.
 
-```ts
-// Thừa: TypeScript đã biết
-const ten: string = 'An'
-const so: number = 42
+Đó là lý do `as SomeType` nguy hiểm: nó là bạn tự ký vào vé cho mình. Và cũng là lý do phải kiểm tra dữ liệu thật ở ranh giới — xem [[thu-hep-kieu-va-unknown]].
 
-// Đủ
-const ten = 'An'
-const so = 42
-```
-
-Chỗ **nên** ghi kiểu rõ là **ranh giới**: tham số hàm, kiểu trả về của hàm export, và hình dạng dữ liệu từ bên ngoài. Bên trong thân hàm, để nó tự suy luận — code ngắn hơn và tự cập nhật khi bạn đổi cấu trúc.
+## Ví dụ nhỏ
 
 ```ts
-export function tinhTong(gioHang: Item[]): number {
-  const daChon = gioHang.filter((i) => i.chon)   // Item[] — tự suy ra
-  return daChon.reduce((t, i) => t + i.gia, 0)
-}
-```
-
-## type và interface
-
-```ts
-interface NguoiDung {
-  id: string
-  ten: string
-  email?: string          // tuỳ chọn
-  readonly taoLuc: Date   // không gán lại được sau khi tạo
+function chao(ten: string) {
+  return `Xin chào ${ten.toUpperCase()}`
 }
 
-type NguoiDung2 = {
-  id: string
-  ten: string
-}
+chao('An')     // ✅
+chao(42)       // ❌ lỗi ngay khi gõ, không phải lúc chạy
 ```
 
-Với object thuần, hai cách gần như tương đương. Khác biệt thật sự:
+Không có TypeScript, `42.toUpperCase()` mới nổ — và nó nổ ở production, lúc 2 giờ sáng, chứ không phải lúc bạn đang gõ.
 
-| | `interface` | `type` |
-|---|---|---|
-| Union (`A \| B`) | Không | Có |
-| Kiểu nguyên thuỷ, tuple | Không | Có |
-| Kế thừa | `extends` | `&` (intersection) |
-| Khai báo trùng tên | **Gộp lại** (declaration merging) | Lỗi |
-| Mapped/conditional type | Không | Có |
+## Code chạy thế nào
 
-**Quy tắc thực dụng:** dùng `type` mặc định vì nó làm được mọi thứ; dùng `interface` khi viết thư viện cần cho người khác mở rộng, hoặc khi cần merge với kiểu của bên thứ ba.
+TypeScript **suy luận** kiểu từ giá trị, nên phần lớn thời gian bạn không cần khai gì:
 
-Điểm dễ bỏ sót: declaration merging cắt cả hai chiều — tiện khi mở rộng `Window`, nhưng cũng nghĩa là hai `interface` trùng tên ở hai file sẽ **âm thầm gộp** thay vì báo lỗi.
+```text
+const ten = 'An'                    → TS suy ra: 'An'  (literal type, vì const)
+let tuoi = 30                       → TS suy ra: number
+const ds = [1, 2, 3]                → TS suy ra: number[]
+const f = (x: number) => x * 2      → TS suy ra kiểu trả về: number
+```
 
-## Union và literal type
-
-Đây là chỗ TypeScript mạnh hơn hẳn các ngôn ngữ có kiểu khác:
+Và đây là chỗ người mới hay làm hỏng:
 
 ```ts
-type TrangThai = 'cho' | 'dang-chay' | 'xong' | 'loi'
+// ❌ Khai thừa — mất thông tin, thêm chữ
+const trangThai: string = 'dang_giao'
+// kiểu là string ⇒ gán 'linh tinh' vào cũng được
 
-function hienThi(tt: TrangThai) {
-  switch (tt) {
+// ✅ Để TS tự suy
+const trangThai = 'dang_giao'
+// kiểu là 'dang_giao' ⇒ chặt hơn, và tự thành union khi cần
+```
+
+**Quy tắc:** khai kiểu ở **ranh giới** (tham số hàm, kiểu trả về của API, dữ liệu vào), để TS tự suy ở **bên trong**.
+
+## Cú pháp
+
+```ts
+type NguoiDung = { id: string; ten: string; tuoi?: number }   // ? = tuỳ chọn
+
+interface Khach { id: string; ten: string }
+interface Khach { email: string }        // interface GỘP được khi khai trùng tên
+
+type Trang = 'nhap' | 'cho' | 'xong'      // union of literal — dùng rất nhiều
+type Id = string | number
+
+type CoTen = { ten: string }
+type CoTuoi = { tuoi: number }
+type Ca = CoTen & CoTuoi                  // giao hai kiểu
+
+const ds: string[] = []
+const cap: [number, string] = [1, 'a']    // tuple: cố định độ dài và kiểu từng ô
+const bang: Record<string, number> = {}
+```
+
+## Tại sao cần nó
+
+Ba thứ TypeScript mua cho bạn, xếp theo giá trị thực tế:
+
+**1. Đổi tên và refactor không sợ.** Đổi một trường trong `NguoiDung` thì mọi chỗ dùng sai đều sáng đỏ ngay — thay vì phát hiện bằng cách chạy thử từng màn hình.
+
+**2. Tài liệu luôn đúng.** Chữ ký `function tinhPhi(don: DonHang): number` nói rõ hơn mọi comment, và không bao giờ lỗi thời.
+
+**3. Union type bắt được ca bạn quên xử lý.**
+
+```ts
+type Trang = 'nhap' | 'cho' | 'xong'
+
+function nhan(t: Trang) {
+  switch (t) {
+    case 'nhap': return 'Nháp'
     case 'cho': return 'Đang chờ'
-    case 'dang-chay': return 'Đang chạy'
-    case 'xong': return 'Hoàn tất'
-    case 'loi': return 'Có lỗi'
+    // ❌ TS báo: thiếu 'xong' — nếu bật kiểm tra vét cạn
   }
 }
 ```
 
-Thêm một trạng thái mới vào union, mọi `switch` thiếu nhánh sẽ báo lỗi ngay — kiểu bắt giúp bạn tìm hết chỗ cần sửa.
+Đây là giá trị lớn nhất mà người mới ít nhận ra: TypeScript không chỉ chặn lỗi, nó **liệt kê giúp bạn những trường hợp cần nghĩ tới**.
 
-### Discriminated union: mô hình hoá trạng thái đúng cách
+## So sánh
 
-```ts
-type KetQua =
-  | { trangThai: 'dang-tai' }
-  | { trangThai: 'thanh-cong'; data: NguoiDung[] }
-  | { trangThai: 'loi'; loi: string }
+`type` và `interface` — khác biệt thực tế nhỏ hơn nhiều so với lượng tranh cãi:
 
-function render(kq: KetQua) {
-  if (kq.trangThai === 'thanh-cong') {
-    return kq.data.length          // TS biết chắc có data ở nhánh này
-  }
-  // kq.data ở đây là lỗi biên dịch — đúng, vì chưa tải xong thì làm gì có data
-}
-```
-
-So với `{ dangTai: boolean; data?: X[]; loi?: string }`, cách này loại bỏ hẳn các tổ hợp vô nghĩa như "vừa đang tải vừa có lỗi".
-
-## Mảng, tuple, và Record
-
-```ts
-const ten: string[] = []
-const cap: [number, number] = [10, 20]           // tuple: đúng 2 phần tử
-const nhan: Record<string, string> = { vi: 'Xin chào' }
-const daDoc: Set<string> = new Set()
-```
-
-## `strict` và `noUncheckedIndexedAccess`
-
-Luôn bật `"strict": true`. Ngoài ra bật thêm `noUncheckedIndexedAccess` — nó khiến việc truy cập theo chỉ số trả về `T | undefined`, đúng với thực tế:
-
-```ts
-const items = ['a', 'b']
-const x = items[10]     // với cờ này: string | undefined -> buộc bạn xử lý
-console.log(x.length)   // lỗi biên dịch, thay vì sập lúc chạy
-```
-
-## Lỗi hay gặp
-
-| Lỗi | Vì sao tệ | Thay bằng |
+| | `type` | `interface` |
 |---|---|---|
-| `any` để "cho nó chạy" | Tắt kiểm tra và lan sang chỗ khác | `unknown` rồi thu hẹp |
-| `as` để dập lỗi | Nói dối trình biên dịch, sập lúc chạy | Sửa kiểu, hoặc validate bằng zod |
-| Ghi kiểu cho mọi biến cục bộ | Ồn, và không tự cập nhật | Để TS suy luận |
-| `{ dangTai, data?, loi? }` | Sinh tổ hợp trạng thái vô nghĩa | Discriminated union |
-| Tin kiểu của `res.json()` | Lúc chạy không ai kiểm tra | Parse bằng zod |
+| Object shape | ✅ | ✅ |
+| Union (`A \| B`) | ✅ | ❌ |
+| Tuple, kiểu hàm gọn | ✅ | Vụng hơn |
+| Khai trùng tên thì **gộp** | ❌ | ✅ |
+| Mở rộng | `&` | `extends` |
 
-## Ghi nhớ
+Quy ước thực dụng: **mặc định dùng `type`; dùng `interface` khi bạn *muốn* người khác gộp thêm vào** (thường là khi viết thư viện). Quan trọng hơn cả hai: **nhất quán trong một dự án**.
 
-- Kiểu biến mất lúc chạy: dữ liệu bên ngoài vẫn phải validate.
-- Ghi kiểu ở ranh giới, để suy luận ở bên trong.
-- `type` mặc định, `interface` khi cần mở rộng.
-- Discriminated union diễn tả trạng thái chính xác hơn nhiều cờ boolean rời rạc.
+## Dễ nhầm
 
-## Tự kiểm tra
+**1. Dùng `any` để cho qua lỗi.** `any` tắt hoàn toàn kiểm tra — và nó **lây lan**: mọi thứ chạm vào `any` cũng thành `any`. Nếu chưa biết kiểu, dùng `unknown` (buộc phải kiểm tra trước khi dùng).
 
-1. Viết kiểu cho một ô tìm kiếm có bốn trạng thái: chưa gõ, đang tìm, có kết quả, không có kết quả.
-2. Vì sao `const x: string = 'a'` là thừa còn `function f(x: string)` thì không?
-3. `as unknown as Foo` sai ở chỗ nào? Khi nào chấp nhận được?
+**2. Tin vào `as`.**
+
+```ts
+const u = duLieu as NguoiDung   // ❌ chỉ là lời hứa của bạn, TS không kiểm gì
+```
+
+`as` không kiểm tra lúc chạy. Với dữ liệu từ bên ngoài, dùng zod hoặc một type guard thật.
+
+**3. Không bật `strict`.** Không có nó, `null` và `undefined` lọt vào mọi kiểu, và bạn mất phần lớn giá trị của TypeScript. Bật `strict: true` ngay từ file `tsconfig.json` đầu tiên.
+
+**4. Quên rằng truy cập mảng có thể trả `undefined`.**
+
+```ts
+const x = ds[10]     // TS nói number, thực tế có thể undefined
+```
+
+Bật `noUncheckedIndexedAccess: true` thì TS nói đúng sự thật (`number | undefined`) và buộc bạn xử lý. Phiền hơn, nhưng đây là nguồn lỗi runtime rất phổ biến.
+
+**5. Tưởng TypeScript bảo vệ lúc chạy.** Nó biến mất sau khi biên dịch. Dữ liệu từ API sai hình dạng thì chương trình vẫn nổ như thường — người soát vé chỉ đứng ở cửa.
+
+## Mẹo nhớ
+
+> **TypeScript là người soát vé ở cửa, không phải bảo vệ bên trong.**
+>
+> **Khai kiểu ở ranh giới, để TS tự suy ở bên trong.**
+>
+> **`as` là tự ký vé cho mình.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. TypeScript làm gì, và **không** làm gì lúc chương trình chạy?
+2. Vì sao `const trangThai: string = 'dang_giao'` là khai thừa và tệ hơn không khai?
+3. Chỗ nào **nên** khai kiểu tường minh?
+4. `any` và `unknown` khác nhau ở chỗ nào?
+5. Vì sao `as NguoiDung` không an toàn với dữ liệu từ API?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, khai kiểu cho một hệ đơn hàng có ba trạng thái (`nhap`, `dang_giao`, `da_huy`), trong đó **chỉ đơn đã huỷ mới có lý do huỷ**:
+
+```ts
+// Yêu cầu: TS phải BÁO LỖI khi đọc don.lyDoHuy trên đơn chưa huỷ
+```
+
+Tự kiểm: bạn dùng một `type` với trường tuỳ chọn, hay một union của ba kiểu? Cách nào bắt được lỗi ở đề bài?
+
+## Thử sức
+
+Đoạn này biên dịch qua nhưng nổ lúc chạy. Chỉ ra chính xác **chỗ TypeScript bị lừa**, và sửa lại:
+
+```ts
+type NguoiDung = { ten: string; tuoi: number }
+
+const res = await fetch('/api/user')
+const u = (await res.json()) as NguoiDung
+console.log(u.ten.toUpperCase())
+```
+
+Sau đó trả lời câu khó hơn: **ranh giới** của hệ thống bạn nằm ở đâu, và bạn đặt việc kiểm tra ở những chỗ nào?
