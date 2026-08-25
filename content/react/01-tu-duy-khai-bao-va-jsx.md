@@ -4,145 +4,188 @@ slug: tu-duy-khai-bao-va-jsx
 summary: Vì sao React không cho bạn sửa DOM trực tiếp, và UI thực chất là một hàm của state.
 level: co-ban
 tags: [react, jsx, co-ban]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** ngừng nghĩ theo kiểu "khi bấm nút thì đổi chữ trong thẻ div", và bắt đầu nghĩ "giao diện trông thế nào ứng với mỗi trạng thái".
+> **Sau bài này bạn sẽ:** giải thích được vì sao React cấm bạn sửa DOM trực tiếp, và đọc JSX như thứ nó thật sự là — lời gọi hàm.
 
-## Mệnh lệnh và khai báo
+## Ý tưởng chính
 
-Cách làm cũ (mệnh lệnh — bạn ra lệnh từng bước cho DOM):
+Trước React, bạn viết giao diện bằng cách **ra lệnh từng bước**: tìm phần tử, đổi chữ, thêm class, xoá node. Bạn chịu trách nhiệm giữ cho màn hình luôn khớp với dữ liệu.
+
+React đảo ngược chuyện đó. Bạn **mô tả màn hình trông thế nào ứng với dữ liệu hiện tại**, và React lo phần cập nhật. Một câu:
+
+```text
+UI = f(state)
+```
+
+## Mental model
+
+Hãy nghĩ tới hai cách đặt món ở quán.
+
+> **Mệnh lệnh** là bạn vào bếp: bật bếp, cho dầu, thái hành, đảo 30 giây… Bạn kiểm soát từng bước — và chịu trách nhiệm nếu quên một bước.
+>
+> **Khai báo** là bạn nói *"cho tôi phở bò tái"*. Bạn mô tả **kết quả mong muốn**; bếp lo cách làm.
+
+React là cách thứ hai. Và điều quan trọng: khi bạn muốn đổi món, bạn **không chạy vào bếp sửa nồi** — bạn gọi món mới. Sửa DOM trực tiếp chính là chạy vào bếp, và React sẽ ghi đè lên đúng chỗ bạn vừa sửa ở lần render sau.
+
+## Ví dụ nhỏ
 
 ```js
-const nut = document.querySelector('#gui')
-nut.addEventListener('click', async () => {
-  nut.disabled = true
-  nut.textContent = 'Đang gửi...'
-  await gui()
-  nut.disabled = false
-  nut.textContent = 'Gửi'
-})
+// Mệnh lệnh — bạn tự giữ cho màn hình khớp dữ liệu
+const nut = document.querySelector('#nut')
+nut.textContent = daThich ? 'Đã thích' : 'Thích'
+nut.classList.toggle('active', daThich)
 ```
 
-Vấn đề: mỗi trạng thái mới (lỗi, thử lại, hết hạn) bạn phải tự nhớ **mọi** thứ cần bật/tắt. Bỏ sót một dòng là giao diện kẹt ở trạng thái sai — bug kinh điển "nút mãi mãi Đang gửi...".
+```jsx
+// Khai báo — bạn mô tả, React đồng bộ
+<button className={daThich ? 'active' : ''}>
+  {daThich ? 'Đã thích' : 'Thích'}
+</button>
+```
 
-Cách của React (khai báo — bạn mô tả kết quả):
+Đoạn trên có **hai chỗ** phải nhớ cập nhật khi `daThich` đổi. Đoạn dưới có **không chỗ nào** — vì bạn không cập nhật gì cả, bạn mô tả lại từ đầu.
 
-```tsx
-function NutGui() {
-  const [dangGui, setDangGui] = useState(false)
+## Code chạy thế nào
 
-  return (
-    <button
-      disabled={dangGui}
-      onClick={async () => {
-        setDangGui(true)
-        await gui()
-        setDangGui(false)
-      }}
-    >
-      {dangGui ? 'Đang gửi...' : 'Gửi'}
-    </button>
-  )
+JSX **không phải HTML trong JavaScript**. Nó là cú pháp rút gọn của lời gọi hàm:
+
+```text
+Bạn viết:
+  <button className="nut" onClick={xuLy}>Gửi</button>
+
+Trình biên dịch đổi thành:
+  jsx('button', { className: 'nut', onClick: xuLy, children: 'Gửi' })
+
+Hàm đó trả về:
+  { type: 'button', props: { className: 'nut', onClick: xuLy, children: 'Gửi' } }
+                     ↑ một OBJECT MÔ TẢ, chưa có gì trên màn hình
+```
+
+Rồi React so bản mô tả mới với bản cũ và **chỉ sửa phần khác nhau** trên DOM thật.
+
+Hiểu điều này giải thích ngay ba thứ:
+
+```text
+① className thay vì class   → đây là JavaScript, `class` là từ khoá
+② onClick nhận HÀM, không phải chuỗi   → nó là một thuộc tính object
+③ {} là "chèn giá trị JavaScript vào đây"
+```
+
+Và nó cũng giải thích vì sao **component phải viết hoa chữ đầu**: `<button>` biến thành chuỗi `'button'` (thẻ HTML), còn `<Nut>` biến thành **biến** `Nut` (component của bạn). Viết `<nut>` thì React đi tìm thẻ HTML tên "nut" và không thấy gì.
+
+## Cú pháp
+
+```jsx
+// Chèn giá trị
+<h1>{tieuDe}</h1>
+<div style={{ color: 'red' }}>          {/* object, nên hai lớp ngoặc */}
+
+// Điều kiện — JSX không có if, nên dùng biểu thức
+{daDangNhap && <Chao />}                {/* hiện khi đúng */}
+{daDangNhap ? <Chao /> : <DangNhap />}  {/* hai nhánh */}
+
+// Danh sách
+{ds.map((x) => <li key={x.id}>{x.ten}</li>)}
+
+// Nhiều phần tử không cần thẻ bọc
+<>
+  <Header />
+  <Main />
+</>
+```
+
+## Tại sao cần nó
+
+Vì cách mệnh lệnh **hỏng dần theo số trạng thái**. Một nút có 2 trạng thái thì bạn nhớ được; một form có 6 trường, 3 mức lỗi và 2 trạng thái gửi thì có `2⁶ × 3 × 2` tổ hợp — và bạn phải nhớ cập nhật đúng mọi chỗ cho **mỗi** tổ hợp.
+
+Với cách khai báo, số tổ hợp không đổi, nhưng bạn chỉ viết **một** biểu thức mô tả và React lo phần còn lại. Đây là lý do thật sự của React — không phải "ảo DOM nhanh hơn".
+
+Và một hệ quả kèm theo: **dữ liệu chảy một chiều**, từ cha xuống con qua props. Con muốn đổi dữ liệu thì gọi hàm cha đưa cho:
+
+```jsx
+function Cha() {
+  const [ten, setTen] = useState('')
+  return <Con ten={ten} onDoi={setTen} />
 }
 ```
 
-Bạn chỉ khai báo: *ứng với `dangGui` thì giao diện trông thế này*. React lo phần cập nhật DOM. Công thức gói gọn: **UI = f(state)**.
+Nhờ vậy khi một giá trị sai, bạn chỉ cần đi ngược lên theo một đường duy nhất để tìm nguồn.
 
-## JSX chỉ là cú pháp gọi hàm
+## Dễ nhầm
 
-```tsx
-<button className="chinh" onClick={xuLy}>Gửi</button>
-// biên dịch thành (đại ý):
-jsx('button', { className: 'chinh', onClick: xuLy, children: 'Gửi' })
+**1. Sửa DOM trực tiếp trong component.**
+
+```jsx
+document.querySelector('#x').textContent = 'A'   // ❌ React sẽ ghi đè ở lần render sau
 ```
 
-Nghĩa là JSX là **biểu thức**: gán vào biến được, trả về từ hàm được, bỏ vào mảng được.
+**2. Dùng chỉ số mảng làm `key`.**
 
-### Những khác biệt so với HTML
-
-| HTML | JSX | Vì sao |
-|---|---|---|
-| `class` | `className` | `class` là từ khoá của JS |
-| `for` | `htmlFor` | `for` là từ khoá |
-| `onclick="..."` | `onClick={fn}` | Truyền hàm thật, không phải chuỗi |
-| `style="color: red"` | `style={{ color: 'red' }}` | Object, thuộc tính camelCase |
-| `<br>` | `<br />` | Mọi thẻ phải đóng |
-
-### Dấu ngoặc nhọn là "thoát sang JavaScript"
-
-```tsx
-<div title={ten}>          {/* giá trị JS */}
-  {ten}                     {/* nội dung JS */}
-  {tuoi >= 18 && <p>Đủ tuổi</p>}          {/* hiện có điều kiện */}
-  {dangTai ? <Spinner /> : <DanhSach />}   {/* chọn một trong hai */}
-</div>
+```jsx
+{ds.map((x, i) => <li key={i}>{x.ten}</li>)}   // ❌ hỏng khi chèn/xoá/sắp xếp
+{ds.map((x) => <li key={x.id}>{x.ten}</li>)}   // ✅
 ```
 
-Bẫy với `&&`: nếu vế trái là **số 0**, React sẽ in ra `0` chứ không phải không in gì.
+`key` là cách React nhận ra *"phần tử này vẫn là phần tử cũ"*. Dùng chỉ số thì khi bạn xoá phần tử đầu, mọi phần tử sau đó **đổi key** — React tưởng tất cả đều là phần tử mới, và state bên trong chúng (ô input đang gõ dở, chẳng hạn) bị đặt nhầm chỗ.
 
-```tsx
-{soLuong && <Badge>{soLuong}</Badge>}        // soLuong = 0 -> hiện "0"
-{soLuong > 0 && <Badge>{soLuong}</Badge>}    // đúng
+**3. Bẫy `&&` với số 0.**
+
+```jsx
+{ds.length && <Danh sach />}     // ❌ mảng rỗng → in ra số 0 trên màn hình
+{ds.length > 0 && <DanhSach />}  // ✅
 ```
 
-## Danh sách và `key`
+`0` là giá trị "giả" nhưng React vẫn **render** nó, khác với `false` hay `null`.
 
-```tsx
-<ul>
-  {sanPham.map((sp) => (
-    <li key={sp.id}>{sp.ten}</li>
-  ))}
-</ul>
+**4. Gọi hàm thay vì truyền hàm.**
+
+```jsx
+<button onClick={xuLy()}>    {/* ❌ chạy NGAY lúc render */}
+<button onClick={xuLy}>      {/* ✅ truyền hàm */}
+<button onClick={() => xuLy(id)}>   {/* ✅ cần tham số thì bọc lại */}
 ```
 
-`key` giúp React biết phần tử nào là phần tử nào giữa hai lần render. Dùng **id ổn định**, không dùng chỉ số mảng — với chỉ số, khi xoá phần tử đầu, React tưởng bạn chỉ đổi nội dung tất cả các dòng, và state bên trong (ô input đang gõ, checkbox đang tick) sẽ dính nhầm dòng.
+**5. Tưởng JSX là HTML.** `for` thành `htmlFor`, `class` thành `className`, thuộc tính viết `camelCase`. Không phải React khó tính — đó là **JavaScript**, và những tên kia đã có nghĩa khác.
 
-## Fragment
+## Mẹo nhớ
 
-Một component phải trả về **một** node gốc. Cần nhiều thẻ ngang hàng thì dùng fragment:
+> **UI = f(state). Bạn mô tả món ăn, không chạy vào bếp.**
+>
+> **JSX là lời gọi hàm, không phải HTML.**
 
-```tsx
-return (
-  <>
-    <h1>Tiêu đề</h1>
-    <p>Nội dung</p>
-  </>
-)
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Khác biệt gốc rễ giữa cách mệnh lệnh và cách khai báo khi làm giao diện?
+2. `<div className="a">x</div>` biến thành cái gì sau khi biên dịch?
+3. Vì sao component phải viết hoa chữ đầu?
+4. `key` dùng để làm gì, và vì sao dùng chỉ số mảng lại hỏng?
+5. Vì sao `{ds.length && <X/>}` in ra số 0?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, đổi đoạn mệnh lệnh này sang component React:
+
+```js
+const el = document.querySelector('#thongBao')
+if (loi) { el.textContent = loi; el.className = 'loi' }
+else if (dangTai) { el.textContent = 'Đang tải...'; el.className = 'cho' }
+else { el.textContent = ''; el.className = '' }
 ```
 
-Trong `map` cần cả fragment lẫn key thì viết đủ: `<Fragment key={id}>`.
+Tự kiểm: component của bạn có bao nhiêu nhánh, và có chỗ nào bạn phải "nhớ dọn dẹp" như bản gốc không?
 
-## Props: dữ liệu chảy một chiều
+## Thử sức
 
-```tsx
-type Props = { ten: string; tuoi?: number; onChon: (id: string) => void }
+Đoạn này có một lỗi khiến ô input **mất chữ đang gõ** khi người dùng xoá một dòng phía trên:
 
-function The({ ten, tuoi = 0, onChon }: Props) {
-  return <button onClick={() => onChon(ten)}>{ten} — {tuoi}</button>
-}
+```jsx
+{congViec.map((cv, i) => (
+  <input key={i} defaultValue={cv.ten} />
+))}
 ```
 
-Props là **chỉ đọc**. Component con không sửa props; nó gọi callback do cha truyền xuống, cha đổi state, rồi giá trị mới chảy xuống. Một chiều, luôn luôn.
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| `key={index}` | State dính nhầm dòng khi xoá/chèn | Dùng id ổn định |
-| `{count && <X/>}` | Hiện số `0` trên màn hình | `{count > 0 && <X/>}` |
-| `onClick={xuLy()}` | Gọi ngay lúc render | `onClick={xuLy}` hoặc `() => xuLy(a)` |
-| Sửa props trong con | Vi phạm luồng một chiều | Gọi callback lên cha |
-| `class=` trong JSX | React cảnh báo, class không áp dụng | `className=` |
-
-## Ghi nhớ
-
-- UI = f(state). Mô tả kết quả, đừng ra lệnh từng bước.
-- JSX là biểu thức JavaScript, không phải template chuỗi.
-- `key` phải ổn định và duy nhất trong cùng danh sách.
-- Dữ liệu chảy xuống, sự kiện bay lên.
-
-## Tự kiểm tra
-
-1. Viết lại đoạn code mệnh lệnh ở đầu bài để xử lý thêm trạng thái lỗi. So sánh độ dài với bản React.
-2. Vì sao `key={index}` gây bug khi xoá phần tử đầu danh sách?
-3. `onClick={xuLy}` và `onClick={() => xuLy()}` khác nhau khi nào?
+Giải thích chuyện gì xảy ra ở tầng `key` — và vì sao đổi sang `key={cv.id}` lại sửa được, dù `defaultValue` không hề thay đổi.

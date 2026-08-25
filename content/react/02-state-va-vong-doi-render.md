@@ -4,143 +4,198 @@ slug: state-va-vong-doi-render
 summary: useState thực sự làm gì, vì sao state không cập nhật ngay sau setState, và cách gộp state cho đúng.
 level: co-ban
 tags: [react, state, usestate]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** hiểu vì sao `console.log` ngay sau `setState` vẫn in giá trị cũ, và biết chọn giữa nhiều `useState` rời hay một object state.
+> **Sau bài này bạn sẽ:** hiểu vì sao `console.log` ngay sau `setState` vẫn in giá trị cũ, và biết chọn giữa `setX(v)` và `setX(prev => ...)` mà không phải đoán.
 
-## Một lần render là một ảnh chụp
+## Ý tưởng chính
 
-Mỗi lần render, React gọi lại hàm component. Mọi biến, mọi hàm bên trong đều được tạo mới. Giá trị state trong lần render đó là **hằng số** — nó không thay đổi giữa chừng:
+Mỗi lần render, component của bạn chạy lại từ đầu và tạo ra **một ảnh chụp**: các biến state trong lần chạy đó là **hằng số**, không đổi cho tới hết lần render.
 
-```tsx
-function BoDem() {
+`setState` không sửa ảnh chụp hiện tại. Nó **yêu cầu React chụp một ảnh mới**.
+
+## Mental model
+
+Hãy nghĩ tới **một tấm ảnh chụp màn hình**.
+
+> Bạn đang cầm ảnh chụp lúc 10:00, trong đó `so = 0`. Bạn gọi `setSo(1)` — nghĩa là *"chụp lại giúp tôi, lần này với so = 1"*.
+>
+> Nhưng **tấm ảnh trong tay bạn vẫn là ảnh cũ**. Nhìn vào nó, `so` vẫn là 0, và sẽ mãi là 0 — vì đó là ảnh, không phải cửa sổ nhìn ra ngoài.
+>
+> Ảnh mới đến ở lần render sau.
+
+Người mới nhìn `so` như một cái cửa sổ (nhìn vào là thấy giá trị hiện tại). Thực tế nó là **tấm ảnh**. Toàn bộ phần "khó hiểu" của `useState` biến mất khi bạn đổi hình dung này.
+
+## Ví dụ nhỏ
+
+```jsx
+const [so, setSo] = useState(0)
+
+function tang() {
+  setSo(so + 1)
+  console.log(so)   // ❌ vẫn in 0 — đang đọc tấm ảnh cũ
+}
+```
+
+## Code chạy thế nào
+
+Ba lời gọi liên tiếp — đây là chỗ ai cũng vấp:
+
+```text
+so = 0 trong lần render này
+
+setSo(so + 1)   →  setSo(0 + 1)  →  yêu cầu: "lần sau so = 1"
+setSo(so + 1)   →  setSo(0 + 1)  →  yêu cầu: "lần sau so = 1"   ← `so` VẪN là 0!
+setSo(so + 1)   →  setSo(0 + 1)  →  yêu cầu: "lần sau so = 1"
+
+⇒ render lại: so = 1, không phải 3
+```
+
+Vì `so` là hằng số trong ảnh chụp, cả ba dòng đều tính `0 + 1`. Cách sửa là **mô tả phép biến đổi thay vì giá trị**:
+
+```text
+setSo(p => p + 1)   →  xếp hàng: "lấy giá trị trước, cộng 1"
+setSo(p => p + 1)   →  xếp hàng: "lấy giá trị trước, cộng 1"
+setSo(p => p + 1)   →  xếp hàng: "lấy giá trị trước, cộng 1"
+
+React chạy lần lượt: 0 → 1 → 2 → 3   ⇒ so = 3 ✅
+```
+
+Quy tắc rút ra:
+
+```text
+Giá trị mới KHÔNG phụ thuộc giá trị cũ  →  setX(v)
+Giá trị mới CÓ phụ thuộc giá trị cũ     →  setX(prev => ...)
+```
+
+React cũng **gộp** nhiều `setState` trong cùng một sự kiện thành **một** lần render — nên gọi năm lần `setState` không làm component render năm lần.
+
+## Cú pháp
+
+```jsx
+const [so, setSo] = useState(0)
+const [ds, setDs] = useState([])
+
+// Khởi tạo tốn kém: truyền HÀM, không truyền giá trị
+const [x, setX] = useState(tinhToanNang())      // ❌ chạy MỖI lần render
+const [x, setX] = useState(() => tinhToanNang()) // ✅ chỉ chạy lần đầu
+
+// State phải bất biến — tạo mới, đừng sửa tại chỗ
+setDs([...ds, moi])                       // ✅
+setDs(ds.push(moi))                        // ❌ push sửa tại chỗ và trả về số
+setNguoi({ ...nguoi, tuoi: 31 })           // ✅
+```
+
+## Tại sao cần nó
+
+Vì **sửa state tại chỗ thì giao diện không cập nhật** — và đây là bug khó hiểu nhất với người mới:
+
+```jsx
+ds.push(moi)      // ❌ mảng đổi ruột, nhưng vẫn là CÙNG một mảng
+setDs(ds)         //    React so tham chiếu: "vẫn thế" → không render lại
+```
+
+React kiểm tra thay đổi bằng cách so **tham chiếu** (`===`), không so từng phần tử — vì so từng phần tử trên cây dữ liệu lớn sẽ chậm hơn cả việc render lại. Đó là lý do bạn phải đưa cho nó **một object mới**. Cùng chủ đề với [[mang-object-va-bat-bien]].
+
+Hai kỹ thuật đi kèm, dùng rất nhiều trong thực tế:
+
+**Nâng state lên** — hai component cần cùng một dữ liệu thì đặt state ở **cha chung gần nhất**, truyền xuống bằng props.
+
+**Reset state bằng `key`** — muốn một component quên sạch state cũ khi dữ liệu đổi:
+
+```jsx
+<HoSo key={nguoiDungId} id={nguoiDungId} />
+```
+
+Đổi `key` ⇒ React coi đây là component **khác** ⇒ dựng lại từ đầu với state mới. Gọn hơn nhiều so với `useEffect` đi dọn từng trường.
+
+## So sánh
+
+Chia state thế nào cho hợp lý:
+
+| Tình huống | Cách làm |
+|---|---|
+| Các giá trị **luôn đổi cùng nhau** | Gộp vào một object |
+| Các giá trị độc lập | Tách thành nhiều `useState` |
+| Giá trị **suy ra được** từ state khác | ❌ đừng đưa vào state — tính khi render |
+| State có nhiều nhánh chuyển tiếp | `useReducer` |
+
+Dòng thứ ba là lỗi phổ biến nhất:
+
+```jsx
+const [ds, setDs] = useState([])
+const [soLuong, setSoLuong] = useState(0)   // ❌ suy ra được từ ds ⇒ sẽ có lúc lệch nhau
+const soLuong = ds.length                    // ✅ luôn đúng, không cần đồng bộ
+```
+
+Mọi state dư thừa đều là một cơ hội để hai nguồn sự thật lệch nhau.
+
+## Dễ nhầm
+
+**1. Đọc state ngay sau `setState`.** Đã nói ở trên — bạn đang đọc tấm ảnh cũ.
+
+**2. Dùng `setX(v)` khi giá trị phụ thuộc giá trị cũ.** Đặc biệt nguy hiểm trong `setTimeout`, `setInterval` và callback bất đồng bộ, nơi ảnh chụp đã rất cũ.
+
+**3. Sửa state tại chỗ.** `push`, `sort`, `splice`, `obj.x = 1` — xem lại bảng ở [[mang-object-va-bat-bien]].
+
+**4. Gọi hàm khởi tạo mỗi lần render.** `useState(tinhNang())` chạy `tinhNang()` **mọi lần render** rồi vứt kết quả đi. Truyền hàm vào để nó chỉ chạy lần đầu.
+
+**5. Nhồi mọi thứ vào một object state khổng lồ.** Mỗi lần đổi một trường phải trải lại cả object, và mọi thứ dùng nó đều render lại. Tách theo nhóm thật sự đổi cùng nhau.
+
+## Mẹo nhớ
+
+> **State trong một lần render là TẤM ẢNH, không phải cửa sổ.**
+>
+> **Phụ thuộc giá trị cũ ⇒ `setX(prev => ...)`.**
+>
+> **Suy ra được thì đừng cho vào state.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Vì sao `console.log(so)` ngay sau `setSo(so + 1)` vẫn in giá trị cũ?
+2. Ba lần `setSo(so + 1)` liên tiếp cho ra kết quả gì, và vì sao?
+3. Khi nào bắt buộc dùng `setX(prev => ...)`?
+4. Vì sao `ds.push(x); setDs(ds)` không làm giao diện cập nhật?
+5. Đổi `key` của một component thì chuyện gì xảy ra với state của nó?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, sửa component này:
+
+```jsx
+function GioHang() {
+  const [items, setItems] = useState([])
+  const [tong, setTong] = useState(0)
+
+  function them(sp) {
+    items.push(sp)
+    setItems(items)
+    setTong(tong + sp.gia)
+  }
+  return <button onClick={() => them({ gia: 10 })}>Thêm</button>
+}
+```
+
+Tự kiểm: bạn tìm ra **ba** lỗi chứ? Và sau khi sửa, `tong` còn nên là state nữa không?
+
+## Thử sức
+
+Component này in ra số nào sau 3 giây, và vì sao?
+
+```jsx
+function Dem() {
   const [so, setSo] = useState(0)
 
-  function tang() {
-    setSo(so + 1)
-    console.log(so)      // vẫn là giá trị CŨ — biến so của lần render này
+  function batDau() {
+    for (let i = 0; i < 3; i++) {
+      setTimeout(() => setSo(so + 1), 1000 * i)
+    }
   }
-
-  return <button onClick={tang}>{so}</button>
+  return <button onClick={batDau}>{so}</button>
 }
 ```
 
-`setSo` không sửa biến `so`; nó **đặt lịch** render lại với giá trị mới. Biến `so` của lần render hiện tại vĩnh viễn giữ giá trị cũ.
-
-## Gộp cập nhật (batching)
-
-React gộp nhiều lần `setState` trong cùng một sự kiện thành một lần render:
-
-```tsx
-function tangBaLan() {
-  setSo(so + 1)     // so là 0 -> đặt lịch: 1
-  setSo(so + 1)     // so vẫn là 0 -> đặt lịch: 1
-  setSo(so + 1)     // so vẫn là 0 -> đặt lịch: 1
-}
-// Kết quả: 1, không phải 3
-```
-
-Muốn cộng dồn, dùng dạng **hàm cập nhật** — nó nhận giá trị mới nhất trong hàng đợi:
-
-```tsx
-function tangBaLan() {
-  setSo((truoc) => truoc + 1)
-  setSo((truoc) => truoc + 1)
-  setSo((truoc) => truoc + 1)
-}
-// Kết quả: 3
-```
-
-Quy tắc: **giá trị mới phụ thuộc giá trị cũ ⇒ dùng hàm cập nhật.** Từ React 18, batching áp dụng cả trong `setTimeout` và `await`, không chỉ trong event handler.
-
-## State phải bất biến
-
-React so sánh bằng `Object.is`. Sửa tại chỗ ⇒ tham chiếu không đổi ⇒ không render lại:
-
-```tsx
-// Sai
-setItems((cu) => { cu.push(moi); return cu })
-setUser((cu) => { cu.ten = 'An'; return cu })
-
-// Đúng
-setItems((cu) => [...cu, moi])
-setUser((cu) => ({ ...cu, ten: 'An' }))
-setItems((cu) => cu.filter((i) => i.id !== id))
-setItems((cu) => cu.map((i) => (i.id === id ? { ...i, xong: true } : i)))
-```
-
-## Khởi tạo tốn kém
-
-Đối số của `useState` được **đánh giá ở mọi lần render**, dù chỉ dùng ở lần đầu:
-
-```tsx
-const [state, setState] = useState(tinhToanNang())      // chạy mỗi lần render!
-const [state2, setState2] = useState(() => tinhToanNang())  // chỉ chạy lần đầu
-```
-
-## Chia state thế nào cho hợp lý
-
-Nguyên tắc: **state phải tối thiểu**. Cái gì tính được từ cái khác thì đừng lưu.
-
-```tsx
-// Thừa: hoTen luôn suy ra được, và có thể lệch với ho/ten
-const [ho, setHo] = useState('')
-const [ten, setTen] = useState('')
-const [hoTen, setHoTen] = useState('')
-
-// Đủ
-const [ho, setHo] = useState('')
-const [ten, setTen] = useState('')
-const hoTen = `${ho} ${ten}`     // tính lúc render, không bao giờ lệch
-```
-
-Gộp vào một object khi các trường **luôn thay đổi cùng nhau**; tách riêng khi chúng độc lập. Trường hợp trạng thái phức tạp có nhiều nhánh (đang tải / thành công / lỗi), dùng `useReducer` hoặc một discriminated union thay vì ba biến boolean rời — như vậy không thể rơi vào trạng thái "vừa đang tải vừa có lỗi".
-
-## Nâng state lên (lifting state up)
-
-Hai component anh em cần chung dữ liệu ⇒ đặt state ở cha chung gần nhất:
-
-```tsx
-function Cha() {
-  const [tuKhoa, setTuKhoa] = useState('')
-  return (
-    <>
-      <OTimKiem giaTri={tuKhoa} onDoi={setTuKhoa} />
-      <KetQua tuKhoa={tuKhoa} />
-    </>
-  )
-}
-```
-
-## Reset state bằng `key`
-
-Muốn một component quên sạch state cũ khi dữ liệu đổi, đổi `key` của nó:
-
-```tsx
-<FormChinhSua key={nguoiDungId} nguoiDung={nguoiDung} />
-```
-
-Đổi `key` ⇒ React huỷ instance cũ và tạo mới ⇒ state bên trong về giá trị ban đầu. Gọn hơn nhiều so với một `useEffect` đi đồng bộ lại từng trường.
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| `console.log(x)` ngay sau `setX` | In giá trị cũ, tưởng là bug | Đó là đúng — log ở thân component |
-| `setSo(so + 1)` nhiều lần | Chỉ tăng 1 | `setSo(s => s + 1)` |
-| `arr.push` rồi `setArr(arr)` | Không render lại | `setArr([...arr, x])` |
-| `useState(taoDuLieu())` | Chạy mỗi lần render | `useState(() => taoDuLieu())` |
-| Lưu giá trị suy ra được vào state | Hai nguồn sự thật, dễ lệch | Tính lúc render |
-
-## Ghi nhớ
-
-- State của một lần render là ảnh chụp bất biến.
-- Phụ thuộc giá trị cũ ⇒ dùng hàm cập nhật.
-- State tối thiểu; cái gì suy ra được thì tính, đừng lưu.
-- Đổi `key` là cách reset state gọn nhất.
-
-## Tự kiểm tra
-
-1. Vì sao `setSo(so + 1)` ba lần chỉ tăng 1?
-2. Form có `email`, `matKhau`, `dangGui`, `loi`. Nên gộp thành mấy state? Vì sao?
-3. Cách nào reset toàn bộ form khi người dùng chọn bản ghi khác — `useEffect` hay `key`?
+Gợi ý: mỗi `setTimeout` đeo theo **ảnh chụp nào**? Sau khi trả lời, sửa lại để nó đếm tới 3.

@@ -4,151 +4,198 @@ slug: hook-tuy-chinh-va-quy-tac-hook
 summary: Vì sao hook không được gọi trong if, và cách gom logic lặp lại thành hook dùng chung.
 level: trung-cap
 tags: [react, hook, custom-hook]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** hiểu cơ chế đằng sau "Rendered fewer hooks than expected", và tự viết được hook tái sử dụng.
+> **Sau bài này bạn sẽ:** giải thích được **vì sao** hook không được gọi trong `if` (không phải "vì React quy định thế"), và tự viết được hook tuỳ chỉnh đúng cách.
 
-## Hai quy tắc, một lý do
+## Ý tưởng chính
 
-1. Chỉ gọi hook ở **cấp cao nhất** của component — không trong `if`, vòng lặp, hàm lồng, hay sau một lần `return` sớm.
-2. Chỉ gọi hook từ **component React** hoặc từ **hook khác**.
+Hai quy tắc hook — **chỉ gọi ở cấp cao nhất** và **chỉ gọi trong component hoặc hook khác** — không phải quy ước tuỳ tiện. Chúng là **hệ quả trực tiếp** của cách React lưu state.
 
-Lý do: React không biết tên hook của bạn. Nó lưu state theo **thứ tự gọi**. Lần render đầu gọi `useState` → `useEffect` → `useState`, React ghi lại là khe 0, 1, 2. Lần sau nếu bạn bỏ qua khe 0 vì một điều kiện, mọi thứ lệch một bậc và state của hook này rơi vào hook khác.
+Hiểu cơ chế đó thì hai quy tắc trở nên hiển nhiên, và bạn không bao giờ vi phạm chúng nữa.
 
-```tsx
-// Sai
-if (dangDangNhap) {
-  const [ten, setTen] = useState('')     // số hook thay đổi giữa các lần render
+## Mental model
+
+Hãy tưởng tượng React giữ state của component trong **một dãy ngăn kéo đánh số**, và nó **không biết tên** các hook của bạn.
+
+> Mỗi lần render, React mở lại từ ngăn số 0 và phát theo **thứ tự bạn gọi**:
+>
+> ```text
+> useState(0)   → phát ngăn #0
+> useState('')  → phát ngăn #1
+> useEffect(fn) → phát ngăn #2
+> ```
+>
+> Lần render sau, nếu bạn gọi ít hơn một hook vì một câu `if`, thì hook thứ hai của bạn **nhận nhầm ngăn của hook thứ ba**. Mọi state lệch nhau một ô.
+
+React không có cách nào phát hiện chuyện này — nó chỉ đếm. Đó là toàn bộ lý do của quy tắc.
+
+## Ví dụ nhỏ
+
+```jsx
+function X({ hien }) {
+  if (hien) {
+    const [a, setA] = useState(1)   // ❌ có lúc gọi, có lúc không
+  }
+  const [b, setB] = useState(2)     // ← ngăn của b nhảy chỗ tuỳ theo `hien`
 }
+```
 
-// Đúng: điều kiện nằm bên trong hook, không bao quanh hook
-const [ten, setTen] = useState('')
+```jsx
+function X({ hien }) {
+  const [a, setA] = useState(1)     // ✅ luôn gọi, luôn đúng thứ tự
+  const [b, setB] = useState(2)
+  if (!hien) return null            // điều kiện đặt SAU khi đã gọi hết hook
+}
+```
+
+## Code chạy thế nào
+
+Lần theo tình huống lỗi cho thật cụ thể:
+
+```text
+render 1 — hien = true
+  useState(1) → ngăn #0 = 1     (a)
+  useState(2) → ngăn #1 = 2     (b)
+
+render 2 — hien = false
+  (câu if bị bỏ qua, useState(1) KHÔNG được gọi)
+  useState(2) → ngăn #0         ← b giờ đọc ngăn của a!
+
+⇒ b nhận giá trị 1, và mọi setB ghi đè vào state của a
+```
+
+Không có lỗi nào được ném ra. Chỉ là dữ liệu sai — loại bug tệ nhất.
+
+Hệ quả thực dụng: **mọi hook phải nằm ở cấp cao nhất của hàm, trước mọi `return` sớm**. Điều kiện đặt bên trong hook, không đặt quanh hook:
+
+```jsx
 useEffect(() => {
-  if (!dangDangNhap) return
-  ...
-}, [dangDangNhap])
+  if (!hien) return          // ✅ điều kiện Ở TRONG effect
+  dangKy()
+}, [hien])
 ```
 
-Return sớm cũng vậy — mọi hook phải nằm **trên** mọi `return`.
+## Cú pháp
 
-## Hook tuỳ chỉnh chỉ là một hàm
+Hook tuỳ chỉnh **chỉ là một hàm** có tên bắt đầu bằng `use` và gọi hook khác bên trong:
 
-Hook tuỳ chỉnh là hàm tên bắt đầu bằng `use` và gọi hook khác bên trong. Nó gom **logic**, không gom **state** — mỗi component gọi nó nhận một bản state riêng.
-
-```tsx
-function useDoRong() {
-  const [rong, setRong] = useState(() => window.innerWidth)
-
-  useEffect(() => {
-    const xuLy = () => setRong(window.innerWidth)
-    window.addEventListener('resize', xuLy)
-    return () => window.removeEventListener('resize', xuLy)
-  }, [])
-
-  return rong
-}
-```
-
-### Ví dụ hay dùng: lưu vào localStorage
-
-```tsx
-function useLuuTru<T>(khoa: string, macDinh: T) {
-  const [giaTri, setGiaTri] = useState<T>(() => {
-    // Đọc trong hàm khởi tạo, không phải trong effect: tránh nháy một nhịp
-    // hiển thị giá trị mặc định rồi mới nhảy sang giá trị đã lưu.
+```jsx
+function useLocalStorage(khoa, macDinh) {
+  const [gt, setGt] = useState(() => {
     try {
-      const raw = window.localStorage.getItem(khoa)
-      return raw === null ? macDinh : (JSON.parse(raw) as T)
-    } catch {
-      return macDinh
-    }
+      const raw = localStorage.getItem(khoa)
+      return raw === null ? macDinh : JSON.parse(raw)
+    } catch { return macDinh }
   })
 
   useEffect(() => {
-    window.localStorage.setItem(khoa, JSON.stringify(giaTri))
-  }, [khoa, giaTri])
+    try { localStorage.setItem(khoa, JSON.stringify(gt)) } catch {}
+  }, [khoa, gt])
 
-  return [giaTri, setGiaTri] as const
+  return [gt, setGt]
+}
+
+// Dùng như hook có sẵn
+const [theme, setTheme] = useLocalStorage('theme', 'sang')
+```
+
+Tiền tố `use` không phải để cho đẹp: **ESLint dựa vào nó** để biết đây là hook và áp dụng kiểm tra quy tắc.
+
+## Tại sao cần nó
+
+Vì hook tuỳ chỉnh là cách **duy nhất** để dùng lại logic có state trong React. Component dùng lại giao diện; hook dùng lại **hành vi**.
+
+```jsx
+// Trước: ba component cùng lặp lại một mớ
+function A() {
+  const [dl, setDl] = useState(null)
+  const [tai, setTai] = useState(true)
+  useEffect(() => { /* fetch, cleanup, xử lý lỗi */ }, [])
+}
+// B, C lặp lại y hệt...
+
+// Sau: một hook, ba chỗ dùng
+function useTaiDuLieu(url) { /* logic ở đây một lần */ }
+```
+
+Điều quan trọng cần hiểu: **mỗi component gọi hook được một bản state riêng**. Hai component cùng dùng `useTaiDuLieu` không hề chia sẻ dữ liệu — hook dùng chung **công thức**, không dùng chung **trạng thái**.
+
+Hai hook có sẵn hay bị bỏ quên:
+
+**`useRef` — giá trị không gây render.** Dùng cho: giữ id của timer, tham chiếu tới phần tử DOM, giữ giá trị của lần render trước.
+
+```jsx
+const idTimer = useRef(null)     // đổi .current KHÔNG làm render lại
+const oInput = useRef(null)      // <input ref={oInput} /> → oInput.current
+```
+
+**`useReducer` — khi state có nhiều nhánh chuyển tiếp.** Khi bạn có bốn `useState` luôn đổi cùng nhau theo những quy tắc phức tạp, gom chúng lại thành một reducer làm mọi chuyển trạng thái nằm ở **một chỗ đọc được**.
+
+## So sánh
+
+| Cần dùng lại | Dùng |
+|---|---|
+| Giao diện | Component |
+| Logic có state | **Hook tuỳ chỉnh** |
+| Hàm thuần, không state | Hàm thường (không cần `use`) |
+| Giá trị dùng chung cho cả cây | Context — [[context-va-quan-ly-state]] |
+
+Dòng thứ ba đáng nhớ: không phải hàm nào trong dự án React cũng cần thành hook. `dinhDangTien(x)` chỉ là một hàm.
+
+## Dễ nhầm
+
+**1. Gọi hook trong `if`, vòng lặp, hoặc sau `return` sớm.** Đã nói ở trên. Nhớ: **`return null` sớm cũng là vi phạm** nếu còn hook nằm dưới nó.
+
+**2. Quên tiền tố `use`.** Không có nó, ESLint không kiểm tra quy tắc hook cho hàm đó, và bạn mất lớp bảo vệ duy nhất.
+
+**3. Tưởng hook tuỳ chỉnh chia sẻ state.** Mỗi lời gọi là một bản riêng. Muốn chia sẻ thật thì cần Context hoặc thư viện state ngoài.
+
+**4. Nhồi quá nhiều vào một hook.** Hook trả về mười thứ và nhận sáu tham số là dấu hiệu nó đang làm nhiều việc — cùng vấn đề với [[ket-dinh-cao-lien-ket-long]].
+
+**5. Dùng `useRef` để lưu thứ đáng lẽ là state.** Đổi `ref.current` **không** làm giao diện cập nhật. Nếu giá trị đó phải hiện lên màn hình, nó là state.
+
+## Mẹo nhớ
+
+> **React phát state theo NGĂN ĐÁNH SỐ, theo thứ tự gọi — nên thứ tự không được đổi.**
+>
+> **Component dùng lại giao diện; hook dùng lại hành vi.**
+>
+> **Mỗi lời gọi hook có bản state riêng.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Vì sao gọi hook trong `if` làm state lệch — giải thích bằng cơ chế, không bằng "React quy định"?
+2. `return null` sớm có vi phạm quy tắc hook không? Khi nào?
+3. Tiền tố `use` phục vụ điều gì?
+4. Hai component cùng dùng một hook tuỳ chỉnh có chia sẻ state không?
+5. Khi nào dùng `useRef` thay vì `useState`?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết hook `useDebounce(giaTri, delay)` trả về giá trị chỉ cập nhật sau khi người dùng ngừng gõ `delay` mili giây:
+
+```jsx
+const tuKhoaCho = useDebounce(tuKhoa, 300)
+```
+
+Tự kiểm: effect của bạn có hàm dọn dẹp không, và **vì sao nó bắt buộc phải có** ở bài này?
+
+## Thử sức
+
+Component này chạy đúng khi `hien = true` nhưng vỡ khi người dùng bật tắt:
+
+```jsx
+function Bang({ hien, id }) {
+  if (!hien) return null
+
+  const [dl, setDl] = useState(null)
+  useEffect(() => { tai(id).then(setDl) }, [id])
+  return <div>{dl?.ten}</div>
 }
 ```
 
-Chú ý `as const` ở cuối: không có nó, kiểu trả về là `(T | Dispatch<T>)[]` và destructuring sẽ mất kiểu.
-
-Lưu ý với SSR (Next.js): `window` không tồn tại ở server. Hook đọc `window` phải nằm trong Client Component, và giá trị khởi tạo phải khớp giữa server và client nếu không muốn lỗi hydration — cách an toàn là khởi tạo bằng giá trị mặc định rồi đọc `localStorage` trong effect.
-
-### Hook debounce cho ô tìm kiếm
-
-```tsx
-function useTriHoan<T>(giaTri: T, ms: number): T {
-  const [daTriHoan, setDaTriHoan] = useState(giaTri)
-
-  useEffect(() => {
-    const id = setTimeout(() => setDaTriHoan(giaTri), ms)
-    return () => clearTimeout(id)     // gõ tiếp -> huỷ hẹn giờ cũ
-  }, [giaTri, ms])
-
-  return daTriHoan
-}
-
-// Dùng
-const [tuKhoa, setTuKhoa] = useState('')
-const tuKhoaTriHoan = useTriHoan(tuKhoa, 300)
-useEffect(() => { void timKiem(tuKhoaTriHoan) }, [tuKhoaTriHoan])
-```
-
-## `useRef`: giá trị không gây render
-
-`useRef` giữ một giá trị qua các lần render mà **không** kích hoạt render khi đổi:
-
-```tsx
-const oNhap = useRef<HTMLInputElement>(null)
-const soLanRender = useRef(0)
-
-soLanRender.current += 1        // đổi thoải mái, không render lại
-<input ref={oNhap} />
-oNhap.current?.focus()
-```
-
-Dùng ref cho: tham chiếu DOM, id của timer, giá trị lần trước, cờ nội bộ. **Không** dùng ref cho dữ liệu cần hiển thị — nó đổi mà màn hình không cập nhật.
-
-## `useReducer` khi state có nhiều nhánh
-
-```tsx
-type TrangThai = { dem: number; buoc: number }
-type HanhDong = { kieu: 'tang' } | { kieu: 'giam' } | { kieu: 'datBuoc'; buoc: number }
-
-function reducer(tt: TrangThai, hd: HanhDong): TrangThai {
-  switch (hd.kieu) {
-    case 'tang': return { ...tt, dem: tt.dem + tt.buoc }
-    case 'giam': return { ...tt, dem: tt.dem - tt.buoc }
-    case 'datBuoc': return { ...tt, buoc: hd.buoc }
-  }
-}
-
-const [trangThai, dispatch] = useReducer(reducer, { dem: 0, buoc: 1 })
-```
-
-Đáng đổi sang reducer khi: nhiều `setState` luôn đi cùng nhau, hoặc logic chuyển trạng thái phức tạp và cần test riêng (reducer là hàm thuần — test không cần render gì cả).
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Hook trong `if` | "Rendered fewer hooks than expected" | Đưa điều kiện vào trong hook |
-| Hook sau `return` sớm | Cùng lỗi trên | Mọi hook lên trên cùng |
-| Hook tuỳ chỉnh không bắt đầu bằng `use` | ESLint không kiểm tra được | Đổi tên |
-| Trả về mảng mà thiếu `as const` | Mất kiểu khi destructure | Thêm `as const` |
-| Dùng ref cho dữ liệu hiển thị | Đổi mà không render lại | Dùng state |
-
-## Ghi nhớ
-
-- React nhận diện hook theo thứ tự gọi — thứ tự phải giống nhau ở mọi lần render.
-- Hook tuỳ chỉnh chia sẻ logic, không chia sẻ state.
-- `useRef` cho thứ không ảnh hưởng giao diện.
-- `useReducer` cho state nhiều nhánh; nó cũng là hàm thuần dễ test.
-
-## Tự kiểm tra
-
-1. Vì sao gọi hook trong `if` làm hỏng state của các hook sau nó?
-2. Viết `useOnline()` trả về boolean, có dọn dẹp listener đầy đủ.
-3. Khi nào ref là lựa chọn đúng, khi nào phải dùng state?
+Sửa lại, rồi trả lời: nếu chỉ **di chuyển** `if (!hien) return null` xuống dưới, component có tải dữ liệu ngay cả khi đang ẩn không — và đó có phải điều bạn muốn?
