@@ -4,128 +4,186 @@ slug: app-router-va-cau-truc-file
 summary: Mỗi tên file đặc biệt trong app/ có một nhiệm vụ — layout, loading, error, not-found và route động.
 level: co-ban
 tags: [nextjs, app-router, routing]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** nhìn cây thư mục là đọc ra được sơ đồ URL của ứng dụng, và biết đặt file nào ở đâu.
+> **Sau bài này bạn sẽ:** nhìn cây thư mục `app/` là đọc ra được toàn bộ bản đồ URL, và biết đặt file nào ở đâu mà không phải tra tài liệu.
 
-## Thư mục là URL
+## Ý tưởng chính
 
-Trong App Router, đường dẫn URL chính là đường dẫn thư mục dưới `app/`:
+Trong App Router, **cấu trúc thư mục chính là bảng định tuyến**. Không có file cấu hình route nào cả — bạn tạo thư mục, và URL xuất hiện.
 
-```
+Bên trong mỗi thư mục, **tên file quyết định vai trò**: `page` là nội dung, `layout` là khung bao, `loading` là màn hình chờ, `error` là lưới an toàn.
+
+## Mental model
+
+Hãy nghĩ tới **các lớp áo mặc chồng lên nhau**.
+
+> Thư mục lồng nhau = áo mặc chồng: `app/layout` là áo trong cùng, `app/blog/layout` khoác thêm bên ngoài, và `page` là người mặc.
+>
+> Khi bạn đi từ `/blog/a` sang `/blog/b`, **những lớp áo bên ngoài không cởi ra** — chỉ người bên trong đổi. Đó là lý do sidebar không nhấp nháy, và state trong layout không mất khi điều hướng.
+
+Hình ảnh đó giải thích luôn `loading.tsx`: nó là thứ hiện ra **ở đúng vị trí của người mặc**, trong khi các lớp áo vẫn nguyên.
+
+## Ví dụ nhỏ
+
+```text
 app/
-  page.tsx                 -> /
-  layout.tsx               -> khung bao mọi trang
-  bai-viet/
-    page.tsx               -> /bai-viet
-    [slug]/
-      page.tsx             -> /bai-viet/bat-ky
-  (marketing)/             -> nhóm route: KHÔNG xuất hiện trên URL
-    gioi-thieu/page.tsx    -> /gioi-thieu
+├─ layout.tsx          → khung của MỌI trang
+├─ page.tsx            → /
+├─ blog/
+│  ├─ layout.tsx       → khung riêng cho mọi trang trong /blog
+│  ├─ page.tsx         → /blog
+│  └─ [slug]/
+│     └─ page.tsx      → /blog/bat-ky
+└─ api/
+   └─ ping/route.ts    → /api/ping
 ```
 
-Chỉ file tên đặc biệt mới tạo ra route. Đặt component, test, helper ngay cạnh `page.tsx` là an toàn — chúng không thành URL.
+## Code chạy thế nào
 
-## Các file đặc biệt
+Mở `/blog/hello`, Next dựng cây theo thứ tự từ ngoài vào trong:
 
-| File | Nhiệm vụ | Ghi chú |
-|---|---|---|
-| `page.tsx` | Nội dung một URL | Bắt buộc để route truy cập được |
-| `layout.tsx` | Khung bao, **giữ nguyên** khi điều hướng trong nhánh | State bên trong không mất |
-| `template.tsx` | Như layout nhưng tạo mới mỗi lần điều hướng | Dùng khi cần reset/animation |
-| `loading.tsx` | Giao diện chờ, tự bọc Suspense | Hiện ngay khi đang tải |
-| `error.tsx` | Bắt lỗi trong nhánh đó | Phải là Client Component |
-| `not-found.tsx` | Khi gọi `notFound()` | |
-| `route.ts` | API endpoint | Không dùng chung thư mục với `page.tsx` |
+```text
+app/layout.tsx                      ← lớp ngoài cùng, luôn có
+  └─ app/blog/layout.tsx            ← lớp của khu blog
+       └─ app/blog/[slug]/page.tsx  ← nội dung
 
-Điểm hay bị bỏ sót: `error.tsx` **không** bắt được lỗi ném từ `layout.tsx` cùng cấp — lỗi đó đi lên layout cha. Lỗi ở root layout chỉ có `global-error.tsx` bắt được.
+Nếu page đang chờ dữ liệu:
+app/layout → app/blog/layout → app/blog/[slug]/loading.tsx   ← hiện tạm ở ĐÚNG chỗ page
 
-## Route động
-
-```
-app/bai-viet/[slug]/page.tsx        -> /bai-viet/abc
-app/cua-hang/[...duong]/page.tsx    -> /cua-hang/a/b/c  (catch-all)
-app/cua-hang/[[...duong]]/page.tsx  -> /cua-hang và /cua-hang/a/b (tuỳ chọn)
+Nếu page ném lỗi:
+app/layout → app/blog/layout → app/blog/[slug]/error.tsx     ← layout vẫn còn nguyên
 ```
 
-Trong Next 15, `params` và `searchParams` là **Promise** — phải `await`:
+Điểm quan trọng: `error.tsx` **không** thay thế layout của nó — nên khi một trang hỏng, người dùng vẫn còn menu để đi chỗ khác thay vì thấy trang trắng.
+
+## Cú pháp
+
+Các file đặc biệt, mỗi cái một nhiệm vụ:
+
+```text
+page.tsx        → nội dung, TẠO RA một URL
+layout.tsx      → khung bao, giữ nguyên khi điều hướng bên trong
+template.tsx    → như layout nhưng DỰNG LẠI mỗi lần điều hướng
+loading.tsx     → Suspense fallback tự động cho page cùng cấp
+error.tsx       → Error Boundary ('use client' bắt buộc)
+not-found.tsx   → hiện khi gọi notFound()
+route.ts        → API endpoint (không đi cùng page.tsx trong một thư mục)
+```
+
+Route động và cách đọc tham số:
 
 ```tsx
+// app/blog/[slug]/page.tsx
 export default async function Trang({
-  params,
-  searchParams,
+  params, searchParams,
 }: {
-  params: Promise<{ slug: string }>
-  searchParams: Promise<{ tag?: string }>
+  params: Promise<{ slug: string }>          // ← Promise từ Next 15
+  searchParams: Promise<{ [k: string]: string | string[] | undefined }>
 }) {
   const { slug } = await params
-  const { tag } = await searchParams
-  ...
+  const { q } = await searchParams
 }
 ```
 
-Đây là thay đổi phá vỡ so với Next 14; code cũ đọc thẳng `params.slug` sẽ không chạy.
-
-## Layout lồng nhau
-
-```
-app/layout.tsx              <- luôn bao ngoài cùng (phải có <html> và <body>)
-app/quan-tri/layout.tsx     <- bao mọi trang trong /quan-tri
-app/quan-tri/nguoi-dung/page.tsx
+```text
+[slug]        → khớp một đoạn:      /blog/a
+[...slug]     → khớp nhiều đoạn:    /docs/a/b/c
+[[...slug]]   → như trên, kể cả rỗng: /docs
+(nhom)        → nhóm để chia layout, KHÔNG xuất hiện trong URL
+_thumuc       → thư mục riêng tư, Next bỏ qua hoàn toàn
 ```
 
-Điều hướng từ `/quan-tri/nguoi-dung` sang `/quan-tri/cai-dat` **không** render lại `app/quan-tri/layout.tsx`. Đó là lý do sidebar giữ nguyên vị trí cuộn và trạng thái mở/gập khi bạn chuyển trang.
+Cặp `(nhom)` và `_thumuc` là hai thứ tiết kiệm nhiều công nhất: nhóm route cho phép hai khu vực có layout khác nhau mà URL vẫn sạch, còn `_components` cho bạn để component ngay cạnh trang dùng nó mà không tạo ra URL.
 
-## Nhóm route và route song song
+## Tại sao cần nó
 
-```
-app/(marketing)/layout.tsx    -> layout riêng cho trang giới thiệu
-app/(app)/layout.tsx          -> layout riêng cho phần đăng nhập
-```
+Vì mô hình này giải quyết ba thứ mà Pages Router cũ làm vụng:
 
-Ngoặc đơn chỉ để **tổ chức** — không ảnh hưởng URL. Rất hữu ích khi hai phần của site cần layout hoàn toàn khác nhau.
+**Layout không dựng lại khi điều hướng.** Menu, sidebar, trạng thái cuộn đều giữ nguyên — không phải "tự làm cho giống SPA" nữa.
 
-## Điều hướng
+**Mỗi khu vực có màn hình chờ và lưới an toàn riêng.** Trang sản phẩm chậm thì chỉ vùng đó hiện `loading`, phần còn lại đã dùng được.
+
+**Điều hướng có tải trước.** `<Link>` tự tải trước route khi nó lọt vào tầm nhìn, nên bấm vào thấy gần như tức thì:
 
 ```tsx
 import Link from 'next/link'
-<Link href="/bai-viet/abc" prefetch>Xem</Link>       // prefetch khi vào viewport
-
-// Client Component
-'use client'
-import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-const router = useRouter()
-router.push('/dich')
-router.refresh()      // tải lại dữ liệu server, GIỮ state client
-
-// Server Component / Server Action
-import { redirect } from 'next/navigation'
-redirect('/dang-nhap')
+<Link href="/blog">Blog</Link>          {/* ✅ dùng cái này */}
+<a href="/blog">Blog</a>                {/* ❌ tải lại toàn trang, mất hết layout */}
 ```
 
-Chú ý: `redirect()` và `notFound()` hoạt động bằng cách **ném** một exception đặc biệt. Đặt chúng trong `try/catch` sẽ nuốt mất — đừng bọc chúng.
+Điều hướng từ code:
 
-Luôn dùng `<Link>` thay cho `<a>` cho link nội bộ: `<a>` tải lại toàn trang, mất hết state client.
+```tsx
+'use client'
+const router = useRouter()
+router.push('/blog')      // thêm vào lịch sử
+router.replace('/blog')   // thay thế, không thêm nút Back
+router.refresh()          // lấy lại dữ liệu server, giữ nguyên state client
+```
 
-## Lỗi hay gặp
+## So sánh
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Đọc `params.slug` không `await` | Lỗi runtime ở Next 15 | `const { slug } = await params` |
-| `<a href="/noi-bo">` | Tải lại cả trang | `<Link>` |
-| `redirect()` trong `try/catch` | Không chuyển trang | Đặt ngoài try |
-| `route.ts` cùng thư mục `page.tsx` | Xung đột route | Tách thư mục |
-| Trông chờ `error.tsx` bắt lỗi layout cùng cấp | Trang vẫn trắng | `global-error.tsx` cho root |
+| Cần gì | File |
+|---|---|
+| Một URL mới | `page.tsx` |
+| Khung chung, giữ state khi điều hướng | `layout.tsx` |
+| Khung chung nhưng **phải** dựng lại mỗi lần | `template.tsx` |
+| Màn hình chờ | `loading.tsx` |
+| Bắt lỗi cho một vùng | `error.tsx` |
+| API trả JSON | `route.ts` |
 
-## Ghi nhớ
+`template` khác `layout` ở đúng một điểm và ít khi cần: dùng nó khi bạn muốn hiệu ứng chuyển trang chạy lại, hoặc muốn state trong khung **bị xoá** mỗi lần đổi trang.
 
-- Thư mục = URL; ngoặc đơn `(nhom)` không tính vào URL.
-- `layout` giữ nguyên khi điều hướng trong nhánh, `template` thì không.
-- Next 15: `params`/`searchParams` là Promise.
-- `redirect()`/`notFound()` ném exception — không bọc try/catch.
+## Dễ nhầm
 
-## Tự kiểm tra
+**1. Dùng `<a>` thay vì `<Link>`.** Tải lại toàn bộ trang, mất mọi lợi thế của App Router.
 
-1. Vẽ cây thư mục cho: trang chủ, `/blog`, `/blog/[slug]`, và khu `/admin` có layout riêng.
-2. Vì sao sidebar không mất trạng thái khi chuyển giữa hai trang cùng nhánh?
-3. Lỗi ném từ root layout thì file nào bắt?
+**2. Quên `await params`.** Từ Next 15, `params` và `searchParams` là Promise. Quên `await` thì bạn nhận về một Promise và mọi thứ `undefined`.
+
+**3. Đặt `page.tsx` và `route.ts` trong cùng thư mục.** Hai file cùng nhận một URL ⇒ xung đột.
+
+**4. Quên `'use client'` trong `error.tsx`.** File này bắt buộc là Client Component — nó cần state để hiện lại và cần `onClick` cho nút thử lại.
+
+**5. Nghĩ `(nhom)` xuất hiện trong URL.** Không. `app/(marketing)/gia/page.tsx` cho ra `/gia`, không phải `/marketing/gia`.
+
+**6. Đặt file dùng chung vào `app/` mà không có tiền tố `_`.** Mọi thư mục trong `app/` đều có thể thành route. `app/utils/` là an toàn (không có `page.tsx`), nhưng `_utils` nói rõ ý định hơn và tránh nhầm lẫn.
+
+## Mẹo nhớ
+
+> **Thư mục là URL. Tên file là vai trò.**
+>
+> **Layout là lớp áo — điều hướng bên trong không cởi áo ngoài.**
+>
+> **`(nhom)` chia layout mà không hiện trong URL.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. `app/blog/[slug]/page.tsx` tạo ra URL nào?
+2. Điều gì xảy ra với layout khi bạn điều hướng từ `/blog/a` sang `/blog/b`?
+3. `loading.tsx` hiện ra ở **vị trí nào** trên màn hình, và vì sao?
+4. `layout` và `template` khác nhau ở đâu?
+5. `(nhom)` và `_thumuc` khác nhau thế nào về ảnh hưởng tới URL?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, vẽ cây thư mục cho yêu cầu sau:
+
+```text
+- Trang chủ /
+- /san-pham và /san-pham/<id>
+- Khu quản trị /admin, /admin/don-hang — có sidebar riêng, KHÔNG dùng header của trang chính
+- API /api/webhook
+- Trang sản phẩm cần màn hình chờ riêng và lưới bắt lỗi riêng
+```
+
+Tự kiểm: bạn dùng nhóm route ở đâu, và vì sao khu admin không thể chỉ là một thư mục thường?
+
+## Thử sức
+
+Bạn đặt `loading.tsx` ở `app/loading.tsx`. Người dùng đang ở `/blog/a` bấm sang `/blog/b`, và **toàn bộ trang** — kể cả sidebar — bị thay bằng màn hình chờ.
+
+Giải thích vì sao, rồi sửa để chỉ vùng nội dung hiện màn hình chờ. Câu hỏi tiếp: nếu `/blog/b` tải rất nhanh, người dùng có nhìn thấy `loading` không, và điều đó ảnh hưởng trải nghiệm thế nào?

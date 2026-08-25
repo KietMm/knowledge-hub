@@ -1,117 +1,210 @@
 ---
 title: Server Component và Client Component
 slug: server-component-va-client-component
-summary: Mặc định là server; 'use client' là ranh giới, không phải công tắc — và cách để ranh giới đó nằm càng thấp càng tốt.
+summary: "Mặc định là server; 'use client' là ranh giới, không phải công tắc — và cách để ranh giới đó nằm càng thấp càng tốt."
 level: co-ban
 tags: [nextjs, react, server-component]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** biết chính xác khi nào cần `'use client'`, và vì sao đặt nó ở đầu cây làm bundle phình to.
+> **Sau bài này bạn sẽ:** biết chính xác `'use client'` làm gì (và **không** làm gì), và đặt được ranh giới đó ở chỗ khiến bundle nhỏ nhất.
 
-## Hai môi trường, hai khả năng
+## Ý tưởng chính
 
-| | Server Component (mặc định) | Client Component (`'use client'`) |
-|---|---|---|
-| Chạy ở | Server | Server (HTML đầu) rồi trình duyệt |
-| Truy cập DB, filesystem, biến bí mật | Có | **Không** |
-| `useState`, `useEffect`, `onClick` | Không | Có |
-| Gửi JS xuống trình duyệt | Không | Có |
-| `async/await` trong component | Có | Không (dùng hook) |
+Trong App Router, **mọi component mặc định chạy ở server**. Chúng chạy một lần, sinh ra HTML, và **không gửi JavaScript nào xuống trình duyệt**.
 
-Server Component không gửi mã nguồn của nó xuống trình duyệt. Một trang toàn Server Component có thể gần như không có JavaScript nào.
+`'use client'` không phải công tắc bật/tắt cho một file. Nó là **ranh giới**: từ file đó trở xuống, mọi thứ được import đều thành client.
 
-## `'use client'` đánh dấu ranh giới
+## Mental model
 
-Chỉ thị này **không** biến mỗi file thành client — nó đánh dấu **điểm vào** của phần client. Mọi thứ được import từ file đó trở xuống đều thành Client Component:
+Hãy nghĩ tới **một ngôi nhà có cửa ra sân**.
+
+> Trong nhà (server) có bếp, tủ lạnh, két sắt — bạn dùng thoải mái, nhưng **không mang ra sân được**.
+>
+> Ngoài sân (client) có nắng, gió, khách khứa — nơi duy nhất có tương tác: click, gõ phím, cuộn.
+>
+> `'use client'` là **cái cửa**. Mọi thứ bạn mang qua cửa đó phải **đóng gói được** (serialize) — không mang được một cái tủ lạnh, và tuyệt đối không mang két sắt.
+
+Điểm quan trọng nhất: **cửa càng đặt xa vào trong nhà thì càng nhiều thứ phải mang ra sân.** Đặt `'use client'` ở gốc cây là mang cả nhà ra sân.
+
+## Ví dụ nhỏ
 
 ```tsx
-// app/page.tsx — Server Component
-import { NutThich } from './NutThich'          // client
-import { DanhSach } from './DanhSach'          // vẫn là server
+// app/page.tsx — Server Component (mặc định)
+import { db } from '@/lib/db'
 
 export default async function Trang() {
-  const baiViet = await db.baiViet.findMany()   // chạy ở server
-  return <><DanhSach items={baiViet} /><NutThich id={baiViet[0].id} /></>
+  const ds = await db.san_pham.findMany()      // ✅ chạm thẳng cơ sở dữ liệu
+  return <DanhSach ds={ds} />
 }
 ```
 
 ```tsx
-// app/NutThich.tsx
-'use client'
+'use client'                                    // ← cái cửa
 import { useState } from 'react'
-export function NutThich({ id }: { id: string }) {
-  const [thich, setThich] = useState(false)
+
+export function NutThich() {
+  const [thich, setThich] = useState(false)     // ✅ chỉ client mới có state
   return <button onClick={() => setThich(!thich)}>{thich ? '♥' : '♡'}</button>
 }
 ```
 
-**Đẩy ranh giới xuống thấp nhất có thể.** Đặt `'use client'` ở layout gốc nghĩa là toàn bộ ứng dụng thành client, và bạn mất hết lợi ích.
+## Code chạy thế nào
 
-## Server Component có thể là con của Client Component
+Vì sao vị trí cái cửa quyết định kích thước bundle:
 
-Nghe mâu thuẫn nhưng làm được — qua `children` (hoặc bất kỳ prop nào nhận JSX):
+```text
+❌ Cửa đặt ở gốc
+   app/page.tsx  'use client'
+     ├─ Header          → client
+     ├─ BangDuLieu      → client   (kéo theo thư viện bảng 80KB)
+     ├─ BieuDo          → client   (kéo theo thư viện biểu đồ 120KB)
+     └─ NutThich        → client
+   ⇒ toàn bộ + mọi thư viện chúng import đều gửi xuống trình duyệt
 
-```tsx
-// Trang (server)
-<KhungClient>
-  <ThanhPhanServer />       {/* vẫn render ở server */}
-</KhungClient>
+✅ Cửa đặt ở lá
+   app/page.tsx                    → server, 0 KB JS
+     ├─ Header                     → server, 0 KB
+     ├─ BangDuLieu                 → server, 0 KB  (thư viện bảng chạy ở server!)
+     ├─ BieuDo         'use client'→ client, 120KB (thật sự cần tương tác)
+     └─ NutThich       'use client'→ client, ~1KB
+   ⇒ chỉ 2 component nhỏ được gửi xuống
 ```
 
-Lý do: `<ThanhPhanServer />` được **render ở server rồi truyền xuống dưới dạng kết quả**, không phải dạng mã nguồn. `KhungClient` chỉ đặt nó vào đúng chỗ.
-
-Đây là mẫu quan trọng nhất để giữ phần client nhỏ — dùng nó cho sidebar gập/mở, modal, tab: phần tương tác là client, phần nội dung vẫn là server.
-
-## Props phải serialize được
-
-Dữ liệu từ Server sang Client Component đi qua mạng, nên phải chuyển thành JSON được:
+Và một điều nhiều người không biết: **Server Component có thể là con của Client Component** — miễn là truyền qua `children`:
 
 ```tsx
-// Được: string, number, boolean, null, mảng, object thuần, Date, Map, Set, Promise
-<Client data={{ ten: 'An', ngay: new Date() }} />
-
-// Không được: hàm, class instance, Symbol
-<Client onLuu={() => {}} />       // lỗi — trừ khi đó là Server Action
+'use client'
+export function Tab({ children }) {            // children đã được dựng ở SERVER
+  const [mo, setMo] = useState(false)
+  return <div>{mo && children}</div>
+}
 ```
 
-Server Action là ngoại lệ có chủ đích: nó truyền xuống dưới dạng một tham chiếu, không phải mã nguồn hàm.
+```tsx
+// Ở Server Component
+<Tab><BangNang /></Tab>       // ✅ BangNang vẫn chạy ở server
+```
 
-## Khi nào cần `'use client'`
+Mẫu này rất mạnh: nó cho bạn giữ phần tương tác ở client mà không kéo theo phần nặng.
 
-Cần khi dùng: `useState`/`useReducer`/`useEffect`/`useRef`, trình xử lý sự kiện (`onClick`, `onChange`), API trình duyệt (`window`, `localStorage`, `IntersectionObserver`), hook từ thư viện UI tương tác, hoặc Context Provider.
+## Cú pháp
 
-Không cần khi chỉ: đọc dữ liệu, render markup, gọi `async/await`, đọc biến môi trường server.
+Khi nào **bắt buộc** `'use client'`:
 
-## Bí mật không bao giờ rò rỉ
+```text
+useState, useReducer, useEffect, useRef, useContext
+onClick, onChange, onSubmit… (mọi event handler)
+window, document, localStorage
+thư viện chỉ chạy ở trình duyệt (chart, map, editor)
+```
+
+Còn lại — kể cả `async/await`, đọc cơ sở dữ liệu, đọc file, gọi API nội bộ — **để ở server**.
+
+Props truyền qua cửa phải đóng gói được:
 
 ```tsx
-// Server Component — an toàn, mã này không xuống trình duyệt
+<Con ten="a" so={1} ds={[1,2]} ngay={new Date()} />   // ✅
+<Con onClick={() => {}} />                             // ❌ hàm không serialize được
+<Con instance={new MyClass()} />                       // ❌
+```
+
+Ngoại lệ duy nhất: **Server Action** truyền được, vì nó không phải hàm thật mà là một tham chiếu tới endpoint — xem [[server-actions]].
+
+## Tại sao cần nó
+
+Ba thứ Server Component mua cho bạn, và không cái nào là chuyện nhỏ:
+
+**① JavaScript gửi xuống bằng 0 cho phần lớn giao diện.** Trang blog, trang sản phẩm, dashboard chỉ để đọc — không cần một byte JS nào.
+
+**② Chạm dữ liệu trực tiếp, không cần API.** Không phải viết endpoint chỉ để component tự gọi lại chính server của mình.
+
+**③ Bí mật không bao giờ rò rỉ.**
+
+```tsx
+// Server Component — an toàn
 const key = process.env.STRIPE_SECRET_KEY
 ```
 
-Nhưng nếu bạn vô tình truyền `key` làm prop xuống Client Component, nó **sẽ** xuất hiện trong HTML gửi về trình duyệt. Quy tắc: chỉ truyền xuống client đúng những gì giao diện cần hiển thị.
+```tsx
+'use client'
+const key = process.env.STRIPE_SECRET_KEY     // ❌ undefined (và nếu đặt NEXT_PUBLIC_ thì LỘ)
+```
 
-Biến môi trường có tiền tố `NEXT_PUBLIC_` được nhúng thẳng vào bundle client — đừng bao giờ đặt bí mật ở đó.
+Next chỉ gửi biến môi trường có tiền tố `NEXT_PUBLIC_` xuống client. Quy tắc: **đừng bao giờ đặt tiền tố đó cho thứ gì là bí mật** — nó nằm nguyên văn trong bundle mà ai cũng đọc được.
 
-## Lỗi hay gặp
+## So sánh
 
-| Lỗi | Hậu quả | Sửa thế nào |
+| | Server Component | Client Component |
 |---|---|---|
-| `'use client'` ở root layout | Cả app thành client, mất SSR | Đặt ở component lá |
-| Truyền hàm làm prop sang client | Lỗi "Functions cannot be passed" | Dùng Server Action hoặc định nghĩa trong client |
-| Dùng `useState` trong Server Component | Lỗi biên dịch | Thêm `'use client'` cho đúng file đó |
-| Truyền secret xuống client | Lộ trong HTML | Chỉ truyền dữ liệu hiển thị |
-| Bọc mọi thứ trong Client Component | Bundle to, mất streaming | Truyền `children` |
+| Chạy ở | Máy chủ, một lần | Trình duyệt (và một lần ở server để SSR) |
+| JS gửi xuống | **0 KB** | Có |
+| `useState`, `useEffect` | ❌ | ✅ |
+| Event handler | ❌ | ✅ |
+| `async/await` trong component | ✅ | ❌ |
+| Đọc cơ sở dữ liệu, biến bí mật | ✅ | ❌ |
+| Truy cập `window`, `localStorage` | ❌ | ✅ |
 
-## Ghi nhớ
+## Dễ nhầm
 
-- Mặc định là Server Component; chỉ thêm `'use client'` khi thật sự cần tương tác.
-- `'use client'` là ranh giới, mọi import bên dưới đều thành client.
-- Server Component làm con của Client Component được, qua `children`.
-- Props qua ranh giới phải serialize được.
+**1. Đặt `'use client'` ở đầu mọi file "cho chắc".** Bạn vừa vứt bỏ toàn bộ lợi ích của App Router. Chỉ đặt ở lá — nơi thật sự có tương tác.
 
-## Tự kiểm tra
+**2. Tưởng Client Component không chạy ở server.** Nó **có** chạy một lần ở server để sinh HTML ban đầu. Vì vậy `window.x` ở cấp cao nhất của file sẽ nổ:
 
-1. Trang có danh sách bài viết và một nút "Thích". Chia component thế nào để JS gửi xuống là ít nhất?
-2. Vì sao `<ClientBao><ServerCon /></ClientBao>` không biến `ServerCon` thành client?
-3. Ba thứ chỉ Server Component làm được, ba thứ chỉ Client Component làm được?
+```tsx
+'use client'
+const rong = window.innerWidth              // ❌ nổ lúc SSR
+useEffect(() => { setRong(window.innerWidth) }, [])   // ✅
+```
+
+**3. Truyền hàm làm props qua cửa.** Không serialize được. Cần callback thì hoặc dùng Server Action, hoặc đảo cấu trúc để hàm được tạo ở phía client.
+
+**4. Gọi `fetch` tới chính API của mình từ Server Component.** Nó đã ở server rồi — gọi thẳng hàm hoặc truy vấn thẳng cơ sở dữ liệu, đừng đi vòng qua HTTP.
+
+**5. Bọc cả cây bằng một Client Component ở layout.** Cùng lỗi với ①, nhưng khó thấy hơn vì nó nằm ở `layout.tsx`.
+
+## Mẹo nhớ
+
+> **Trong nhà (server) có két sắt; ngoài sân (client) có tương tác.**
+>
+> **`'use client'` là CỬA, không phải công tắc — đặt càng gần lá càng tốt.**
+>
+> **Qua cửa thì props phải đóng gói được.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. `'use client'` ảnh hưởng tới file đó và những file nào khác?
+2. Vì sao đặt `'use client'` ở gốc cây làm bundle phình to?
+3. Server Component có thể nằm bên trong Client Component không? Bằng cách nào?
+4. Vì sao `const x = window.innerWidth` ở đầu một Client Component lại nổ?
+5. Biến môi trường nào bị gửi xuống trình duyệt, và hệ quả bảo mật là gì?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, sửa lại cấu trúc này để bundle nhỏ nhất có thể:
+
+```tsx
+'use client'
+import { BieuDoNang } from './BieuDo'
+import { BangTinh } from './Bang'
+
+export default function Dashboard({ duLieu }) {
+  const [tab, setTab] = useState('bieu-do')
+  return (
+    <>
+      <nav><button onClick={() => setTab('bieu-do')}>Biểu đồ</button></nav>
+      {tab === 'bieu-do' ? <BieuDoNang d={duLieu} /> : <BangTinh d={duLieu} />}
+    </>
+  )
+}
+```
+
+Tự kiểm: `BangTinh` — thứ chỉ hiển thị, không tương tác — có còn phải gửi xuống trình duyệt không?
+
+## Thử sức
+
+Đồng nghiệp báo: *"tôi đặt `NEXT_PUBLIC_API_KEY` để Client Component gọi API bên thứ ba, chạy ngon"*.
+
+Mô tả chính xác **ai có thể lấy được key đó và bằng cách nào**. Rồi đề xuất cách làm đúng — và nói rõ nó đánh đổi cái gì so với cách hiện tại.

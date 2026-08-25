@@ -4,134 +4,186 @@ slug: tai-du-lieu-va-streaming
 summary: Fetch ngay trong component, chạy song song thay vì thác nước, và gửi từng phần trang về sớm.
 level: trung-cap
 tags: [nextjs, suspense, streaming, data-fetching]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** nhận ra "thác nước request" trong code của mình và sửa nó, đồng thời dùng Suspense để trang hiện ra ngay thay vì chờ phần chậm nhất.
+> **Sau bài này bạn sẽ:** nhận ra ngay khi mình đang tạo ra thác nước request, và biết dùng Suspense để trang hiện ra sớm thay vì chờ phần chậm nhất.
 
-## Fetch ngay trong component
+## Ý tưởng chính
 
-Server Component gọi dữ liệu trực tiếp, không cần `getServerSideProps` hay `useEffect`:
+Trong App Router, bạn **lấy dữ liệu ngay trong component** bằng `async/await` — không `useEffect`, không trạng thái loading tự quản, không điều kiện đua.
+
+Đổi lại, bạn phải để ý hai thứ mà trước đây framework lo hộ: **thứ tự các request** (song song hay nối tiếp), và **phần nào của trang được gửi về trước**.
+
+## Mental model
+
+Hãy nghĩ tới **phục vụ món ăn ở nhà hàng**.
+
+> **Thác nước request** là bếp làm xong món một mới bắt đầu món hai. Khách chờ tổng thời gian của cả ba món.
+>
+> **Song song** là ba bếp làm cùng lúc. Khách chờ đúng bằng món lâu nhất.
+>
+> **Streaming** là **bưng món nào xong trước ra trước**. Khách có đồ ăn ngay, món hầm lâu nhất tới sau — thay vì ngồi nhìn bàn trống 20 phút.
+
+Ba hình ảnh đó là toàn bộ bài này. Và chú ý: streaming không làm gì **nhanh hơn** — nó chỉ làm phần nhanh **tới sớm hơn**.
+
+## Ví dụ nhỏ
 
 ```tsx
-async function DanhSachBaiViet() {
-  const baiViet = await db.baiViet.findMany({ take: 20 })
-  return <ul>{baiViet.map((b) => <li key={b.id}>{b.tieuDe}</li>)}</ul>
+export default async function Trang() {
+  const ds = await fetch('https://api.x/san-pham').then((r) => r.json())
+  return <ul>{ds.map((s) => <li key={s.id}>{s.ten}</li>)}</ul>
 }
 ```
 
-Dữ liệu ở ngay cạnh nơi dùng — không phải truyền qua ba tầng props.
+Không hook, không state, không `loading`. Component là `async`, và Next chờ nó xong rồi mới gửi HTML.
 
-## Thác nước request
+## Code chạy thế nào
 
-Đây là vấn đề hiệu năng số một của App Router:
+**Thác nước** — lỗi hiệu năng phổ biến nhất trong App Router:
 
-```tsx
-// Chậm: 3 lượt chờ nối tiếp
-const nguoiDung = await layNguoiDung(id)
-const donHang = await layDonHang(id)      // không cần đợi nguoiDung!
-const goiY = await layGoiY(id)
+```text
+❌ Nối tiếp: mỗi await chặn cái sau
+   const u   = await layNguoiDung(id)      [====== 300ms ======]
+   const don = await layDonHang(id)                            [====== 300ms ======]
+   const tb  = await layThongBao(id)                                                [====== 300ms ======]
+   ⇒ tổng 900ms
 
-// Nhanh: cùng khởi động
-const [nguoiDung, donHang, goiY] = await Promise.all([
-  layNguoiDung(id),
-  layDonHang(id),
-  layGoiY(id),
-])
+✅ Song song: khởi động cả ba rồi mới chờ
+   const [u, don, tb] = await Promise.all([...])
+   [====== 300ms ======]   ⇒ tổng 300ms
 ```
 
-Thác nước còn xảy ra **giữa các component**: component cha `await` xong mới render con, con lại `await` tiếp. Cách chữa là khởi động fetch ở cha (không `await`) rồi truyền Promise xuống con để con `await`:
+Cách phân biệt vẫn là câu hỏi cũ: **việc sau có cần kết quả việc trước không?** Cần thì buộc phải nối tiếp, và đó là đúng.
 
-```tsx
-export default function Trang() {
-  const donHangPromise = layDonHang(id)     // khởi động, không chờ
-  return (
-    <Suspense fallback={<Skeleton />}>
-      <BangDonHang duLieu={donHangPromise} />
-    </Suspense>
-  )
-}
+Thác nước còn có một dạng **ẩn** và khó thấy hơn nhiều:
+
+```text
+Trang (await layNguoiDung)
+  └─ DanhSachDon (await layDon)      ← chỉ bắt đầu SAU KHI Trang xong
 ```
 
-## Suspense và streaming
+Component cha `await` xong mới render con, nên con mới bắt đầu fetch. Cách chữa là dùng Suspense — cho phép cha render ngay và con tự chờ.
 
-Suspense cho phép server gửi HTML **theo từng phần**: khung trang về ngay, phần chậm được thay vào khi xong.
+## Cú pháp
 
 ```tsx
+import { Suspense } from 'react'
+
 export default function Trang() {
   return (
     <>
-      <Header />                              {/* về ngay */}
-      <Suspense fallback={<TinTucSkeleton />}>
-        <TinTuc />                            {/* chậm — về sau */}
+      <Header />                                    {/* gửi về NGAY */}
+      <Suspense fallback={<Khung />}>
+        <DanhSachDon />                             {/* chờ ở đây, không chặn Header */}
       </Suspense>
-      <Suspense fallback={<GoiYSkeleton />}>
-        <GoiY />                              {/* chậm — về sau, độc lập */}
+      <Suspense fallback={<Khung />}>
+        <GoiY />                                    {/* chờ độc lập với DanhSachDon */}
       </Suspense>
     </>
   )
 }
 ```
 
-Người dùng thấy nội dung ở mốc **thời gian của phần nhanh nhất**, thay vì phải chờ phần chậm nhất. Đặt mỗi vùng chậm trong một Suspense riêng để chúng không chờ nhau.
+Hai `Suspense` riêng biệt nghĩa là hai vùng **chờ độc lập**: đơn hàng về trước thì hiện trước, không phải đợi gợi ý.
 
-`loading.tsx` chính là cách viết tắt: Next tự bọc `page.tsx` trong một Suspense với fallback đó.
-
-### Skeleton phải giống bố cục thật
-
-Fallback nên có cùng kích thước và hình dạng với nội dung thật. Nếu không, nội dung về sẽ làm trang nhảy (Cumulative Layout Shift) — khó chịu hơn cả việc chờ.
-
-## Dedupe và cache trong một request
-
-Next tự **gộp** các lần `fetch()` trùng nhau (cùng URL, cùng options) trong một lần render. Nghĩa là ba component cùng gọi `fetch('/api/me')` chỉ tạo một request thật.
-
-Với hàm không phải `fetch` (truy vấn DB chẳng hạn), dùng `cache()` của React:
-
-```ts
-import { cache } from 'react'
-export const layNguoiDung = cache(async (id: string) => db.user.findUnique({ where: { id } }))
+```tsx
+// Điều khiển cache của fetch
+fetch(url)                                  // mặc định: không cache (Next 15)
+fetch(url, { cache: 'force-cache' })        // cache mãi
+fetch(url, { next: { revalidate: 60 } })    // làm mới sau 60 giây
+fetch(url, { next: { tags: ['san-pham'] } })// gắn thẻ để xoá cache có chủ đích
 ```
 
-Giờ layout và page cùng gọi `layNguoiDung('1')` chỉ chạy một truy vấn.
+## Tại sao cần nó
 
-## `generateStaticParams` cho trang tĩnh
+Vì ba thứ dưới đây thay đổi hẳn trải nghiệm người dùng:
+
+**Streaming làm trang "có vẻ" nhanh hơn nhiều.** Người dùng thấy header, menu, khung nội dung ngay lập tức; phần chậm lấp vào sau. Chỉ số cảm nhận được cải thiện dù tổng thời gian không đổi.
+
+**Dedupe tự động.** Trong cùng một lần render, `fetch` cùng một URL nhiều lần chỉ **thật sự gọi một lần**:
+
+```tsx
+// Ba component cùng gọi layNguoiDung(id) → chỉ MỘT request
+const layNguoiDung = cache(async (id) => db.user.find(id))   // cho hàm không phải fetch
+```
+
+Nhờ vậy bạn không cần "nâng dữ liệu lên cha rồi truyền xuống" chỉ để tránh gọi trùng — cứ để mỗi component tự lấy thứ nó cần.
+
+**Trang tĩnh sinh sẵn lúc build:**
 
 ```tsx
 export async function generateStaticParams() {
-  const baiViet = await db.baiViet.findMany({ select: { slug: true } })
-  return baiViet.map((b) => ({ slug: b.slug }))
+  const ds = await layTatCaSlug()
+  return ds.map((slug) => ({ slug }))          // dựng sẵn HTML cho từng slug
 }
 ```
 
-Next dựng sẵn HTML cho các slug này lúc build. Slug không có trong danh sách sẽ được render lúc chạy rồi cache lại (nếu `dynamicParams` không bị tắt).
+## So sánh
 
-## Xử lý lỗi và trạng thái rỗng
+| Cách lấy dữ liệu | Khi nào |
+|---|---|
+| `await` trong Server Component | Mặc định — gần như luôn đúng |
+| `Promise.all` | Nhiều nguồn độc lập |
+| `Suspense` bọc component con | Có phần chậm không nên chặn cả trang |
+| `useEffect` + fetch ở client | Dữ liệu phụ thuộc tương tác người dùng, hoặc cần cập nhật liên tục |
+| Thư viện cache client (React Query) | Dữ liệu client cần đồng bộ, thử lại, cập nhật lạc quan |
+
+Dòng thứ tư và năm vẫn có chỗ đứng — chỉ là chúng không còn là **mặc định** nữa.
+
+## Dễ nhầm
+
+**1. `await` tuần tự những việc độc lập.** Đã nói ở trên; đây là lỗi số một.
+
+**2. Không bọc Suspense quanh phần chậm.** Một truy vấn 2 giây làm **toàn bộ** trang trắng 2 giây, dù 90% nội dung đã sẵn sàng.
+
+**3. Đặt `fallback` quá khác với nội dung thật.** Khung xương nên có **cùng kích thước** với nội dung sẽ thay thế nó; khác kích thước thì trang nhảy giật khi dữ liệu về (điểm CLS xấu) — xem [[toi-uu-anh-font-va-metadata]].
+
+**4. Gọi API của chính mình từ Server Component.**
 
 ```tsx
-const baiViet = await db.baiViet.findUnique({ where: { slug } })
-if (baiViet === null) notFound()          // -> not-found.tsx
+await fetch('https://app-cua-toi.com/api/san-pham')   // ❌ đi vòng qua mạng
+const ds = await db.san_pham.findMany()                // ✅ gọi thẳng
 ```
 
-Danh sách rỗng thì hiện trạng thái rỗng **có hướng dẫn** ("Chưa có bài nào — viết bài đầu tiên"), đừng để một vùng trắng.
+**5. Quên xử lý danh sách rỗng và lỗi.** `loading.tsx` và `error.tsx` lo hai đầu, nhưng "có dữ liệu nhưng rỗng" là trạng thái thứ ba mà bạn phải tự xử lý — và người dùng gặp nó nhiều hơn bạn tưởng.
 
-## Lỗi hay gặp
+**6. Tưởng streaming làm mọi thứ nhanh hơn.** Nó chỉ đổi **thứ tự** nội dung tới. Truy vấn chậm vẫn chậm — nếu vấn đề là ở cơ sở dữ liệu thì phải sửa ở đó, xem [[index-va-hieu-nang-truy-van]].
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| `await` nối tiếp các fetch độc lập | Thời gian cộng dồn | `Promise.all` |
-| Một Suspense bọc cả trang | Chờ phần chậm nhất mới thấy gì | Nhiều Suspense nhỏ |
-| Skeleton khác kích thước thật | Trang nhảy khi dữ liệu về | Skeleton đúng bố cục |
-| `useEffect` để fetch trong Server Component | Không chạy được | `await` trực tiếp |
-| Gọi cùng truy vấn ở nhiều component | N lần truy vấn | Bọc bằng `cache()` |
+## Mẹo nhớ
 
-## Ghi nhớ
+> **Ba bếp làm cùng lúc, và bưng món nào xong trước ra trước.**
+>
+> **Streaming không làm nhanh hơn — nó làm phần nhanh TỚI SỚM hơn.**
 
-- Fetch ngay tại component cần dữ liệu.
-- Việc độc lập ⇒ `Promise.all`; đừng để thác nước.
-- Mỗi vùng chậm một Suspense riêng.
-- `fetch` được dedupe sẵn; hàm khác thì bọc `cache()`.
+## Tự nhớ
 
-## Tự kiểm tra
+Không nhìn lên, trả lời bằng lời của bạn:
 
-1. Chỉ ra thác nước trong: `const a = await x(); const b = await y(a.id); const c = await z()`.
-2. Vì sao chia thành nhiều Suspense lại làm trang "nhanh hơn" dù tổng thời gian không đổi?
-3. Layout và page cùng cần thông tin người dùng. Làm sao chỉ truy vấn một lần?
+1. Làm sao biết hai `await` liên tiếp có gộp được thành `Promise.all` không?
+2. "Thác nước ẩn" giữa component cha và con xảy ra thế nào?
+3. `Suspense` giải quyết vấn đề gì mà `Promise.all` không giải được?
+4. Vì sao `fallback` nên có cùng kích thước với nội dung thật?
+5. Vì sao không nên `fetch` tới API của chính mình từ Server Component?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, tối ưu trang này — hiện tại mất 1,5 giây mới thấy gì:
+
+```tsx
+export default async function Trang({ params }) {
+  const { id } = await params
+  const u = await layNguoiDung(id)        // 200ms
+  const don = await layDonHang(id)        // 300ms
+  const goiY = await layGoiY(id)          // 1000ms
+  return <><HoSo u={u} /><Don d={don} /><GoiY g={goiY} /></>
+}
+```
+
+Tự kiểm: sau khi sửa, người dùng thấy phần đầu tiên sau bao nhiêu mili giây? Và bạn cần **mấy** ranh giới Suspense?
+
+## Thử sức
+
+Trang của bạn có 6 component, mỗi cái tự gọi `layNguoiDung(id)`. Bạn lo lắng về 6 request.
+
+Giải thích vì sao **có thể** chỉ có một request, và điều kiện để chuyện đó xảy ra. Rồi câu khó hơn: nếu `layNguoiDung` là truy vấn Prisma chứ không phải `fetch`, cơ chế dedupe còn hoạt động không — và bạn phải làm gì?
