@@ -62,8 +62,12 @@ describe('khung dạy học v2', () => {
 
       it('không đặt đáp án ngay dưới câu hỏi tự nhớ', () => {
         // Đáp án nằm trong bài thì mắt tự trượt xuống đọc, và việc nhớ lại không xảy ra.
+        //
+        // Bắt theo DẤU HIỆU ĐƯA đáp án, không bắt theo từ "đáp án": nhiều bài hỏi thẳng
+        // "ghi nhận đáp án ở đâu?" — đó là câu hỏi hợp lệ, và một bộ lọc thô sẽ cấm nhầm.
         const phan = note.content.split('\n## Tự nhớ\n')[1]?.split('\n## ')[0] ?? ''
-        expect(/đáp án|Đáp án/.test(phan), `${note.slug}: có vẻ đang đưa đáp án`).toBe(false)
+        const dauHieu = /^\s*(\*\*)?(Đáp án|Trả lời|Giải)\b|đáp án:|trả lời:/im
+        expect(dauHieu.test(phan), `${note.slug}: có vẻ đang đưa đáp án`).toBe(false)
       })
     })
   }

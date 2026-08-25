@@ -4,65 +4,80 @@ slug: cach-tiep-can-mot-bai-thuat-toan
 summary: Quy trình sáu bước từ lúc đọc đề tới lúc code chạy đúng, và vì sao viết cách chậm trước lại tiết kiệm thời gian.
 level: co-ban
 tags: [thuat-toan, tu-duy, phong-van]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** có một quy trình để bám vào khi nhìn đề bài mà chưa nghĩ ra gì, thay vì ngồi im chờ ý tưởng loé lên.
+> **Sau bài này bạn sẽ:** có một quy trình để bám vào khi nhìn đề mà chưa nghĩ ra gì, thay vì ngồi im chờ ý tưởng loé lên.
 
-## Vấn đề thật không phải là thuật toán
+## Ý tưởng chính
 
-Người mới giải bài thuật toán hay thất bại ở chỗ không ai ngờ: **họ bắt đầu gõ code quá sớm**. Đọc đề xong, thấy quen quen, gõ luôn. Được nửa chừng thì phát hiện hiểu sai đề, xoá đi làm lại. Lần thứ ba mới xong, và code cuối cùng chằng chịt những mảnh vá.
+Người mới thất bại ở chỗ không ai ngờ: **họ bắt đầu gõ code quá sớm**. Đọc đề, thấy quen quen, gõ luôn. Được nửa chừng phát hiện hiểu sai đề, xoá đi làm lại.
 
-Người giải nhiều thì làm ngược lại: họ dành phần lớn thời gian **trước** khi gõ dòng đầu tiên.
+Người giải nhiều làm ngược lại: họ dành phần lớn thời gian **trước** khi gõ dòng đầu tiên. Và điều họ làm trong lúc đó không phải "nghĩ ra thuật toán" — mà là một quy trình rất cụ thể.
 
-## Sáu bước
+## Mental model
 
-**1. Đọc đề hai lần, lần hai tìm cái bẫy.** Câu hỏi cần trả lời được trước khi làm gì khác: đầu vào có thể rỗng không? Có số âm không? Có phần tử trùng nhau không? Dữ liệu đã sắp xếp chưa? Có bảo đảm luôn tồn tại đáp án không? Đáp án có duy nhất không?
+Hãy nghĩ tới cách một thợ sửa xe làm việc.
 
-Mỗi câu trả lời "có" ở trên là một ca test bạn sẽ phải qua. Người viết đề luôn nhét ít nhất một trong số đó vào bộ test.
+> Anh ta không mở nắp máy rồi vặn thử từng con ốc. Anh ta **hỏi xe kêu lúc nào**, **chạy thử một đoạn**, rồi mới khoanh vùng và mở đúng chỗ.
+>
+> Người mới thì mở nắp máy ngay — vì đó là phần trông giống "đang sửa xe" nhất.
 
-**2. Làm tay một ví dụ nhỏ.** Lấy giấy, chạy ví dụ trong đề bằng tay. Nghe thừa, nhưng đây là bước tách người hiểu đề khỏi người tưởng là mình hiểu. Nếu bạn không tự làm tay được với `n = 4`, bạn không viết nổi vòng lặp cho `n = 10⁵`.
+Gõ code là mở nắp máy. Đọc kỹ đề và làm tay một ví dụ là chạy thử một đoạn. Cái thứ hai trông như chưa làm gì, nhưng nó quyết định bạn mở đúng chỗ hay sai chỗ.
 
-Trong lúc làm tay, để ý xem **bạn** đang làm gì — thường thuật toán nằm ngay ở đó. Bạn ngó lại phần tử phía sau? Đó là hai con trỏ. Bạn ghi nhớ những gì đã gặp? Đó là bảng băm.
+## Ví dụ nhỏ
 
-**3. Viết cách chậm nhất trước.** Cách vét cạn, `O(n²)` hay `O(n³)` cũng được. Đừng bỏ qua bước này.
+Đề: *"cho mảng, tìm hai số có tổng bằng target, trả về chỉ số"*.
 
-Nó cho bạn ba thứ: một lời giải **đúng** để đối chiếu, một hiểu biết cụ thể về cấu trúc bài toán, và một điểm khởi đầu để tối ưu. Nhảy thẳng vào lời giải tối ưu khi chưa hiểu bài là cách nhanh nhất để viết ra một đoạn code sai mà trông rất thông minh.
+Làm tay với `nums = [2, 7, 11]`, `target = 9`:
 
-Ví dụ cụ thể với bài "có cặp nào cộng lại bằng target không". Cách chậm viết trong 30 giây:
-
-```js
-// O(n²) — đúng, chậm, và là mốc để đối chiếu mọi lời giải sau
-function coCapTong(nums, target) {
-  for (let i = 0; i < nums.length; i += 1) {
-    for (let j = i + 1; j < nums.length; j += 1) {
-      if (nums[i] + nums[j] === target) return true
-    }
-  }
-  return false
-}
+```text
+đứng ở 2  → tôi cần thêm 7. Đã gặp 7 chưa? chưa → nhớ là "đã gặp 2"
+đứng ở 7  → tôi cần thêm 2. Đã gặp 2 chưa? RỒI → xong
 ```
 
-Có nó rồi, câu hỏi tối ưu trở nên cụ thể: *vòng trong đang làm gì?* Nó quét lại mảng để hỏi "có phần tử nào bằng `target - nums[i]` không". Câu hỏi đó là một phép tra cứu — và tra cứu thì có `Set`.
+Để ý câu bạn vừa tự hỏi: *"đã gặp X chưa?"* Đó **chính là** thuật toán — và nó nói thẳng rằng bạn cần một cấu trúc trả lời nhanh câu hỏi đó, tức bảng băm. Bạn không "nghĩ ra" bảng băm; bạn phát hiện ra mình đang cần nó.
 
-**4. Tìm phần việc bị làm đi làm lại.** Mọi tối ưu về cơ bản chỉ là một câu: *"chỗ nào tôi đang tính lại cái vừa tính?"*
+## Tại sao cần nó
 
-| Bạn thấy | Cách bỏ đi phần lặp |
+Vì không có quy trình, bạn chỉ có hai trạng thái: *"biết làm ngay"* hoặc *"bí hoàn toàn"*. Quy trình lấp khoảng giữa.
+
+**Sáu bước:**
+
+**1. Đọc đề hai lần, lần hai tìm cái bẫy.** Đầu vào có thể rỗng không? Có số âm không? Có phần tử trùng không? Dữ liệu đã sắp xếp chưa? Đáp án có duy nhất không? Mỗi câu trả lời "có" là một ca test bạn sẽ phải qua — và người ra đề luôn nhét ít nhất một cái vào.
+
+**2. Làm tay một ví dụ nhỏ.** Như trên. Cách bạn làm tay chính là thuật toán.
+
+**3. Viết cách chậm nhất trước.** `O(n²)` cũng được:
+
+```ts
+// Đúng, chậm, và là MỐC để đối chiếu mọi lời giải sau
+for (let i = 0; i < nums.length; i++)
+  for (let j = i + 1; j < nums.length; j++)
+    if (nums[i] + nums[j] === target) return [i, j]
+```
+
+Bước này cho bạn ba thứ: một lời giải **đúng** để so, hiểu biết cụ thể về cấu trúc bài, và điểm khởi đầu để tối ưu. Nhảy thẳng vào lời giải tối ưu khi chưa hiểu bài là cách nhanh nhất để viết ra một đoạn sai mà trông rất thông minh.
+
+**4. Tìm phần việc bị làm đi làm lại.** Mọi tối ưu đều trả lời một câu: *"chỗ nào tôi đang tính lại cái vừa tính?"*
+
+| Bạn thấy | Cách bỏ phần lặp |
 |---|---|
-| Vòng trong quét lại để tìm một giá trị | Bảng băm (nhớ những gì đã gặp) |
-| Vòng trong tính lại tổng của một đoạn | Cửa sổ trượt, hoặc mảng cộng dồn |
-| So sánh mọi cặp trên dữ liệu đã sắp xếp | Hai con trỏ |
-| Gọi đệ quy lặp lại cùng tham số | Ghi nhớ / quy hoạch động |
-| Tìm kiếm tuần tự trên dữ liệu đã sắp xếp | Tìm kiếm nhị phân |
+| Vòng trong quét lại để tìm một giá trị | Bảng băm — [[dem-va-bang-bam-trong-giai-bai]] |
+| Vòng trong tính lại tổng một đoạn | Cửa sổ trượt, mảng cộng dồn — [[cua-so-truot]] |
+| So mọi cặp trên dữ liệu đã sắp xếp | Hai con trỏ — [[hai-con-tro]] |
+| Gọi đệ quy lặp lại cùng tham số | Ghi nhớ / quy hoạch động — [[quy-hoach-dong]] |
+| Tìm tuần tự trên dữ liệu đã sắp xếp | Tìm kiếm nhị phân — [[sap-xep-va-tim-kiem-nhi-phan]] |
 
-Bảng này phủ phần lớn bài tập phỏng vấn. Nó không phải mẹo — nó là danh sách những chỗ mà "tính lại" hay xảy ra.
+Bảng này phủ phần lớn bài phỏng vấn. Nó không phải mẹo — nó là danh sách những chỗ "tính lại" hay xảy ra.
 
-**5. Code, và đặt tên biến tử tế.** `l`, `r`, `tmp`, `arr2` làm bạn tự tạo lỗi cho chính mình khi bài dài quá 20 dòng. `trai`, `phai`, `daGap` thì đọc lại hiểu ngay.
+**5. Code, và đặt tên tử tế.** `l`, `r`, `tmp` làm bạn tự tạo lỗi khi bài dài quá 20 dòng.
 
-**6. Chạy lại các ca biên.** Rỗng, một phần tử, hai phần tử, tất cả bằng nhau, đã sắp xếp sẵn, sắp xếp ngược. Đây là nơi lỗi nằm — không phải ở ca ví dụ trong đề.
+**6. Chạy lại các ca biên.** Rỗng, một phần tử, hai phần tử, tất cả bằng nhau, đã sắp sẵn, sắp ngược. Lỗi nằm ở đây, không nằm ở ca ví dụ trong đề.
 
-## Đọc được cái giá trước khi chạy
+## So sánh
 
-Ước lượng thô, đủ dùng cho mọi bài phỏng vấn: máy tính hiện đại chạy khoảng **10⁸ phép tính mỗi giây**.
+Ràng buộc `n` trong đề **nói thẳng cho bạn biết lời giải phải nhanh cỡ nào**. Máy chạy khoảng `10⁸` phép tính mỗi giây:
 
 | `n` | Độ phức tạp chịu được |
 |---|---|
@@ -72,29 +87,48 @@ Bảng này phủ phần lớn bài tập phỏng vấn. Nó không phải mẹo
 | ≤ 10⁶ | `O(n log n)` |
 | ≤ 10⁸ | `O(n)` |
 
-Bảng này dùng ngược lại mới là chỗ hay: **ràng buộc trong đề cho bạn biết đáp án cần có dạng gì.** Đề nói `n ≤ 10⁵` nghĩa là `O(n²)` sẽ quá hạn — nên đừng phí thời gian tối ưu vòng lặp lồng nhau, hãy đi tìm lời giải `O(n log n)` hoặc `O(n)`. Chi tiết về cách đọc độ phức tạp ở [[big-o-doc-va-uoc-luong]].
+Dùng ngược lại mới là chỗ hay: thấy `n ≤ 10⁵` là biết `O(n²)` sẽ quá hạn ⇒ đừng phí thời gian tối ưu vòng lặp lồng nhau, hãy đi tìm `O(n log n)` hoặc `O(n)`. Cách đọc các ký hiệu ở [[big-o-doc-va-uoc-luong]].
 
-## Khi bí thật sự
+## Dễ nhầm
 
-Sau 10 phút không ra hướng nào, thử lần lượt:
+**1. Bỏ qua bước viết cách chậm.** Đây là bước bị bỏ nhiều nhất và tốn kém nhất. Không có mốc đúng để đối chiếu, bạn không biết lời giải "tối ưu" của mình sai ở đâu.
 
-- **Sắp xếp đầu vào thử xem.** Rất nhiều bài trở thành hiển nhiên sau khi sắp xếp.
-- **Nghĩ ngược từ đáp án.** Nếu tôi đã có đáp án, làm sao kiểm tra nó đúng? Cách kiểm tra đó thường gợi ra cách xây.
-- **Giải bài nhỏ hơn.** Giải được cho `n = 2` chưa? Từ `n = k` sang `n = k+1` thì thêm gì? Đó là đường vào của đệ quy và quy hoạch động.
-- **Đổi cấu trúc dữ liệu.** Mảng đổi thành bảng băm, thành tập hợp, thành hàng đợi ưu tiên — xem [[chon-sai-cau-truc-du-lieu-la-dat]].
+**2. Đọc đề một lần rồi code.** Phần lớn thời gian mất đi không phải vì thuật toán khó, mà vì hiểu sai một chi tiết ở dòng thứ ba của đề.
 
-Và một điều thực tế: nếu 25 phút vẫn chưa ra, hãy xem lời giải rồi **tự viết lại từ đầu không nhìn**. Ngồi bí thêm một tiếng ít giá trị hơn hiểu một kỹ thuật mới rồi luyện nó ba lần.
+**3. Tối ưu trước khi có lời giải đúng.** Đúng trước, nhanh sau — thứ tự này không đảo được.
 
-## Ghi nhớ
+**4. Ngồi bí quá lâu.** Sau 25 phút không ra, xem lời giải rồi **tự viết lại từ đầu không nhìn**. Ngồi thêm một tiếng ít giá trị hơn hiểu một kỹ thuật mới rồi luyện nó ba lần.
 
-- Thời gian nghĩ trước khi gõ tiết kiệm nhiều hơn thời gian nó tốn.
-- Làm tay một ví dụ nhỏ: cách bạn làm tay thường chính là thuật toán.
-- Viết cách chậm trước — nó là mốc đúng để đối chiếu và là điểm khởi đầu để tối ưu.
-- Mọi tối ưu đều trả lời một câu hỏi: chỗ nào đang tính lại cái vừa tính?
-- Ràng buộc `n` trong đề nói cho bạn biết đáp án phải nhanh cỡ nào.
+**5. Quên rằng chọn cấu trúc dữ liệu là một phần của lời giải.** Rất nhiều bài "khó" trở thành dễ ngay khi đổi chỗ chứa — xem [[chon-sai-cau-truc-du-lieu-la-dat]].
 
-## Tự kiểm tra
+## Mẹo nhớ
 
-1. Đề nói `n ≤ 200.000`. Lời giải `O(n²)` có chạy kịp không? Bạn cần độ phức tạp nào?
-2. Bạn phát hiện vòng lặp trong đang quét lại để tìm một giá trị. Đổi sang cấu trúc nào?
-3. Ba ca biên bạn luôn phải thử, dù đề không nhắc tới?
+> **Cách bạn làm tay chính là thuật toán.**
+>
+> **Mọi tối ưu trả lời một câu: chỗ nào đang tính lại cái vừa tính?**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Vì sao viết cách chậm trước lại **tiết kiệm** thời gian?
+2. Bước "làm tay một ví dụ" cho bạn thứ gì mà đọc đề không cho?
+3. Đề nói `n ≤ 200.000` — lời giải `O(n²)` có kịp không? Bạn cần độ phức tạp nào?
+4. Bạn thấy vòng trong đang `includes()` để tìm một giá trị. Đổi sang kỹ thuật nào?
+5. Ba ca biên bạn luôn phải thử dù đề không nhắc?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, áp sáu bước vào đề sau — **chỉ viết ra bước 1 đến 4**, chưa cần code:
+
+> *"Cho một chuỗi, trả về ký tự đầu tiên không lặp lại. Không có thì trả về null."*
+
+Tự kiểm: bước 4 của bạn chỉ ra phần việc nào đang bị làm đi làm lại?
+
+## Thử sức
+
+Bạn được 20 phút cho đề này trong phỏng vấn:
+
+> *"Cho mảng đã sắp xếp và một số target, tìm hai số có tổng bằng target."*
+
+Trước khi nghĩ tới lời giải, hãy liệt kê **mọi câu hỏi làm rõ đề** bạn sẽ hỏi người phỏng vấn. Gợi ý: có ít nhất năm câu, và một trong số đó thay đổi hoàn toàn lời giải.
