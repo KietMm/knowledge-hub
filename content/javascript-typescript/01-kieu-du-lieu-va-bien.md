@@ -4,142 +4,224 @@ slug: kieu-du-lieu-va-bien
 summary: Bảy kiểu nguyên thuỷ, sự khác nhau giữa var/let/const, và vì sao so sánh bằng == lại gây lỗi.
 level: co-ban
 tags: [javascript, co-ban, kieu-du-lieu]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** đọc được một đoạn JavaScript bất kỳ mà không phải đoán biến ở đâu ra, và biết vì sao `0 == '0'` là `true` còn `0 === '0'` là `false`.
+> **Sau bài này bạn sẽ:** tự suy được vì sao `0 == '0'` là `true` còn `0 === '0'` là `false`, và biết chọn `let` hay `const` mà không phải nghĩ lâu.
 
-## Bảy kiểu nguyên thuỷ
+## Ý tưởng chính
 
-JavaScript có đúng bảy kiểu **nguyên thuỷ** (primitive) — giá trị bất biến, so sánh theo giá trị:
+Mọi giá trị trong JavaScript rơi vào đúng hai nhóm, và **hai nhóm đó hành xử khác nhau khi bạn sao chép hoặc so sánh chúng**. Gần như mọi lỗi khó hiểu của người mới đều bắt nguồn từ việc không phân biệt được hai nhóm này.
 
-| Kiểu | Ví dụ | Ghi chú |
-|---|---|---|
-| `string` | `'xin chào'` | Không có kiểu ký tự riêng |
-| `number` | `42`, `3.14` | Số thực 64-bit, không phân biệt int/float |
-| `boolean` | `true` | |
-| `undefined` | `undefined` | Biến đã khai báo nhưng chưa gán |
-| `null` | `null` | Chủ động gán "không có gì" |
-| `symbol` | `Symbol('id')` | Khoá duy nhất, hiếm dùng |
-| `bigint` | `9007199254740993n` | Số nguyên vượt giới hạn `number` |
+Nhóm một là **nguyên thuỷ**: số, chuỗi, `true/false`, `undefined`, `null`, và hai kiểu hiếm gặp (`symbol`, `bigint`). Nhóm hai là **object**: mảng, object, hàm, `Date`, `Map` — tất cả những thứ còn lại.
 
-Mọi thứ còn lại — mảng, object, hàm, `Date`, `Map` — đều là **object**, so sánh theo tham chiếu:
+## Mental model
+
+Hãy nghĩ về hai cách trao đổi thông tin:
+
+> **Nguyên thuỷ giống như đọc số điện thoại cho ai đó chép lại.** Họ có bản chép riêng. Bạn đổi số của mình, bản chép của họ không đổi theo.
+>
+> **Object giống như đưa cho ai đó địa chỉ nhà bạn.** Cả hai cùng cầm một địa chỉ, nhưng nhà thì chỉ có một. Họ sơn lại tường, bạn về nhà thấy tường đã đổi màu.
+
+Nguyên thuỷ chép **giá trị**. Object chép **địa chỉ**. Cả bài này chỉ là hệ quả của một câu đó.
+
+## Ví dụ nhỏ
 
 ```js
-'abc' === 'abc'        // true  — hai chuỗi cùng giá trị
-[1, 2] === [1, 2]      // false — hai mảng khác nhau trong bộ nhớ
+let a = 1
+let b = a
+b = 2
+console.log(a)   // 1 — chép số điện thoại
 
-const a = [1, 2]
-const b = a
-b.push(3)
-console.log(a)         // [1, 2, 3] — a và b là cùng một mảng
+const x = [1]
+const y = x
+y.push(2)
+console.log(x)   // [1, 2] — cùng một cái nhà
 ```
 
-### `number` chỉ chính xác tới 2^53
+Bốn dòng đầu và bốn dòng sau trông giống hệt nhau về hình thức. Kết quả ngược nhau.
 
-```js
-0.1 + 0.2                    // 0.30000000000000004
-9007199254740992 + 1         // 9007199254740992 — cộng thêm 1 mà không đổi
+## Code chạy thế nào
+
+Lần theo từng dòng của nửa dưới:
+
+```text
+const x = [1]     → tạo một mảng ở đâu đó trong bộ nhớ, gọi là NHÀ-A
+                    x giữ địa chỉ NHÀ-A
+
+const y = x       → chép ĐỊA CHỈ sang y
+                    giờ x và y cùng chỉ tới NHÀ-A
+
+y.push(2)         → đi tới NHÀ-A, thêm số 2 vào trong
+                    không ai tạo ra nhà mới cả
+
+console.log(x)    → đi tới NHÀ-A, thấy [1, 2]
 ```
 
-Vì vậy **không bao giờ dùng `number` để lưu tiền**. Lưu số nguyên đơn vị nhỏ nhất (đồng, xu) hoặc dùng `bigint` / thư viện decimal.
+Câu hỏi tự hỏi mỗi khi bối rối: **dòng này đang đổi cái nhà, hay đang đổi địa chỉ ghi trên tờ giấy?** `y.push(2)` đổi cái nhà. `y = [9]` đổi tờ giấy.
 
-## var, let, const
+## Cú pháp
 
 ```js
-function demo() {
-  if (true) {
-    var x = 1     // phạm vi: cả hàm
-    let y = 2     // phạm vi: chỉ trong khối { }
-  }
-  console.log(x)  // 1
-  console.log(y)  // ReferenceError: y is not defined
+const TEN = 'Kiệt'    // không cho gán lại TỜ GIẤY
+let tuoi = 30         // cho gán lại
+var cu = 1            // cách cũ — đừng dùng, xem phần Dễ nhầm
+
+const ds = [1, 2]
+ds.push(3)            // ✅ hợp lệ — vẫn đúng cái nhà đó
+ds = [9]              // ❌ TypeError — đang đổi tờ giấy
+```
+
+Đừng học thuộc bảng `var/let/const`. Nhớ theo pattern:
+
+```text
+const  →  tờ giấy dán chặt, ruột nhà vẫn sửa được
+let    →  tờ giấy thay được
+var    →  di sản, tránh
+```
+
+Quy tắc thực dụng cho mọi dòng bạn sẽ viết: **mặc định `const`, đổi sang `let` chỉ khi trình biên dịch bắt bạn đổi.** Không phải vì "an toàn hơn" một cách trừu tượng, mà vì khi đọc lại code, `const` nói ngay rằng biến này không bị gán lại ở đâu đó phía dưới — bớt được một thứ phải theo dõi trong đầu.
+
+## Tại sao cần nó
+
+Không phân biệt hai nhóm thì bạn viết ra những đoạn như thế này và không hiểu vì sao sai:
+
+```js
+function themThue(donHang) {
+  donHang.tong = donHang.tong * 1.1
+  return donHang
 }
+
+const goc = { tong: 100 }
+const moi = themThue(goc)
+console.log(goc.tong)   // 110 — đơn hàng GỐC đã bị sửa!
 ```
 
-- `var` — phạm vi **hàm**, bị "kéo lên" (hoisting) và khởi tạo bằng `undefined`. Đừng dùng nữa.
-- `let` — phạm vi **khối**, gán lại được.
-- `const` — phạm vi **khối**, không gán lại được.
+Bạn tưởng mình tạo ra một đơn hàng mới; thật ra bạn vừa sơn lại tường nhà người ta. Loại lỗi này không ném exception, không có dòng đỏ nào — nó chỉ làm số liệu sai ở một chỗ khác, muộn hơn nhiều.
 
-`const` khoá **liên kết**, không khoá **nội dung**:
+Cách sửa cũng chính là mental model: muốn có nhà mới thì phải **xây nhà mới**.
 
 ```js
-const user = { name: 'An' }
-user.name = 'Bình'    // hợp lệ — vẫn là cùng một object
-user = { name: 'C' }  // TypeError: Assignment to constant variable
+return { ...donHang, tong: donHang.tong * 1.1 }   // object mới, giữ nguyên bản gốc
 ```
 
-Muốn khoá cả nội dung thì `Object.freeze(user)` (chỉ một tầng).
+## So sánh
 
-**Quy tắc thực dụng:** mặc định dùng `const`. Chỉ đổi sang `let` khi trình soạn thảo báo bạn thật sự cần gán lại. Không dùng `var`.
+Hai toán tử so sánh, và lý do chỉ nên dùng một:
 
-## Vùng chết tạm thời (TDZ)
-
-`let`/`const` cũng được hoisting, nhưng chưa khởi tạo — chạm vào trước dòng khai báo là lỗi ngay, thay vì âm thầm ra `undefined`:
+| | `==` | `===` |
+|---|---|---|
+| Cách làm | Ép hai bên về cùng kiểu **rồi** so | So thẳng, khác kiểu là `false` |
+| `0 == '0'` | `true` | `false` |
+| `'' == 0` | `true` | `false` |
+| `null == undefined` | `true` | `false` |
+| Đoán được kết quả không? | Phải nhớ bảng quy tắc ép kiểu | Đọc là biết |
 
 ```js
-console.log(a)   // undefined — var, khó phát hiện sai
+0 == '0'      // true  — '0' bị ép thành số 0
+0 === '0'     // false — number khác string, hết chuyện
+```
+
+`==` không sai về mặt kỹ thuật; nó chỉ buộc bạn phải nhớ một bảng quy tắc ép kiểu để đoán được kết quả. **Luôn dùng `===`.** Ngoại lệ duy nhất đáng biết là `x == null` — bắt gọn cả `null` lẫn `undefined`, và đây là cách viết được dùng có chủ đích.
+
+## Dễ nhầm
+
+**1. `null` và `undefined` không giống nhau.**
+
+```text
+undefined  →  chưa từng gán (máy tự đặt)
+null       →  chủ động gán "không có gì" (người viết đặt)
+```
+
+Thấy `undefined` là dấu hiệu *"tôi quên gán"*; thấy `null` là *"tôi cố ý để trống"*.
+
+**2. `const` không có nghĩa là "không đổi được".** Nó chỉ khoá **tờ giấy**, không khoá **cái nhà**:
+
+```js
+const ds = [1, 2]
+ds.push(3)     // ✅ chạy được — người mới rất hay bất ngờ chỗ này
+```
+
+Muốn khoá cả ruột thì cần `Object.freeze`, và đó là chuyện khác.
+
+**3. Giá trị "giả" nhiều hơn bạn tưởng.** Sáu thứ này bị coi là `false` trong `if`:
+
+```text
+false    0    ''    null    undefined    NaN
+```
+
+Bẫy thật nằm ở số `0` và chuỗi rỗng:
+
+```js
+const soLuong = 0
+if (soLuong) { }              // ❌ không chạy — nhưng 0 là giá trị HỢP LỆ
+if (soLuong !== undefined) { } // ✅ hỏi đúng câu cần hỏi
+```
+
+**4. `var` bị "kéo lên đầu" (hoisting).**
+
+```js
+console.log(a)   // undefined — không lỗi, và đó mới là vấn đề
 var a = 1
 
-console.log(b)   // ReferenceError — let, sai là báo ngay
+console.log(b)   // ❌ ReferenceError: Cannot access 'b' before initialization
 let b = 1
 ```
 
-Đây là lý do `let`/`const` an toàn hơn: lỗi hiện ra ở đúng chỗ gây ra nó.
+`let` và `const` cũng được kéo lên, nhưng nằm trong **vùng chết tạm thời**: chạm vào trước dòng khai báo là lỗi ngay. `var` thì trả về `undefined` và để chương trình đi tiếp với dữ liệu sai. Lỗi ồn ào luôn tốt hơn lỗi im lặng — đó là toàn bộ lý do `var` bị thay thế.
 
-## So sánh: dùng `===`, không dùng `==`
-
-`==` ép kiểu trước khi so sánh, theo một bảng quy tắc dài và không trực giác:
+**5. `number` không chính xác như bạn nghĩ.**
 
 ```js
-0 == '0'          // true
-0 == ''           // true
-'' == '0'         // false  — mất tính bắc cầu!
-null == undefined // true
-null == 0         // false
-NaN == NaN        // false
+0.1 + 0.2                // 0.30000000000000004
+9007199254740992 + 1     // 9007199254740992 — cộng 1 mà không đổi
 ```
 
-`===` không ép kiểu, kết quả luôn đoán được. Ngoại lệ duy nhất đáng dùng `==` là `x == null` — bắt gọn cả `null` lẫn `undefined`.
+Nên **không bao giờ dùng `number` để lưu tiền**. Lưu số nguyên theo đơn vị nhỏ nhất (đồng, xu), hoặc dùng `bigint`. Cùng vấn đề đó ở phía cơ sở dữ liệu nằm ở [[chon-kieu-du-lieu]].
 
-Kiểm tra `NaN` phải dùng `Number.isNaN(x)`; `x === NaN` luôn `false` theo chuẩn IEEE 754.
+## Mẹo nhớ
 
-## Giá trị "giả" (falsy)
+> **Nguyên thuỷ chép giá trị, object chép địa chỉ.**
+>
+> **`const` khoá tờ giấy, không khoá cái nhà.**
 
-Chỉ tám giá trị là falsy: `false`, `0`, `-0`, `0n`, `''`, `null`, `undefined`, `NaN`. Mọi thứ khác — kể cả `[]` và `{}` — đều truthy.
+Hai câu đó suy ra được: vì sao `[1,2] === [1,2]` là `false`, vì sao `const ds` vẫn `push` được, và vì sao sửa tham số trong hàm lại ảnh hưởng ra ngoài.
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Hai nhóm giá trị của JavaScript khác nhau ở điểm nào khi bạn gán chúng cho một biến mới?
+2. Vì sao `const ds = [1]` rồi `ds.push(2)` lại hợp lệ?
+3. `0 == '0'` cho `true`, còn `0 === '0'` cho `false` — chuyện gì xảy ra bên trong?
+4. Khi nào bạn nên dùng `let` thay vì `const`?
+5. Vì sao `if (soLuong)` là cách kiểm tra sai khi `soLuong` có thể bằng 0?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết hàm `tangGia(sp, phanTram)` trả về một sản phẩm **mới** với giá đã tăng, và **không được sửa** sản phẩm gốc:
 
 ```js
-if ([]) console.log('chạy')       // có chạy: mảng rỗng vẫn truthy
-if ([].length) console.log('không') // không chạy
+const sp = { ten: 'Áo', gia: 100 }
+const moi = tangGia(sp, 10)
+// moi.gia phải là 110, và sp.gia vẫn phải là 100
 ```
 
-Bẫy hay gặp nhất là dùng `||` để đặt giá trị mặc định:
+Trước khi chạy, tự trả lời: dòng nào trong hàm của bạn là "xây nhà mới"?
+
+## Thử sức
+
+Đoạn code này in ra gì, và vì sao?
 
 ```js
-function taoTrang(soLuong) {
-  const n = soLuong || 10   // truyền 0 -> ra 10, sai!
-  const m = soLuong ?? 10   // ?? chỉ thay khi null/undefined -> đúng
-}
+const a = { x: 1 }
+const b = { ...a }
+const ds = [a, b]
+const ds2 = [...ds]
+
+ds2[0].x = 99
+
+console.log(a.x, b.x)
 ```
 
-## Lỗi hay gặp
-
-| Lỗi | Vì sao sai | Sửa thế nào |
-|---|---|---|
-| `if (x == 1)` | Ép kiểu ngầm, `'1'` cũng lọt | Dùng `===` |
-| `const total = price * 0.1` cho tiền | Số thực nhị phân làm tròn sai | Tính bằng số nguyên đơn vị nhỏ nhất |
-| `const opts = options \|\| {}` | `0`, `''`, `false` bị nuốt mất | Dùng `??` |
-| `arr === []` để kiểm tra rỗng | So sánh tham chiếu, luôn `false` | `arr.length === 0` |
-| Dùng `var` trong vòng lặp có callback | Mọi callback thấy cùng một biến | Dùng `let` |
-
-## Ghi nhớ
-
-- Bảy nguyên thuỷ so sánh theo giá trị; mọi thứ khác so sánh theo tham chiếu.
-- `const` mặc định, `let` khi cần, không bao giờ `var`.
-- Luôn `===`; ngoại lệ duy nhất là `== null`.
-- `??` cho giá trị mặc định, `||` chỉ khi bạn thật sự muốn nuốt mọi falsy.
-
-## Tự kiểm tra
-
-1. `const a = [1]; const b = [1]; a === b` cho ra gì? Vì sao?
-2. Vì sao `'' == '0'` là `false` trong khi cả hai đều `== 0`?
-3. Hàm nhận `soTrang` và cần mặc định là `1`. Viết bằng `??` và giải thích vì sao `||` sai.
+Gợi ý để tự lần ra: `...` sao chép **một tầng**. Sau `[...ds]`, mảng là mới — nhưng hai phần tử bên trong là địa chỉ hay là nhà mới?

@@ -57,6 +57,12 @@ export const NoteSchema = z.object({
    */
   order: z.number().int().nonnegative('Thứ tự phải là số không âm').default(0),
   level: NoteLevelSchema.default('co-ban'),
+  /**
+   * Bài đã viết theo khung dạy học mới (docs/khung-day-hoc.md). Là cờ tường minh chứ
+   * không suy từ nội dung: nó vừa đánh dấu tiến độ chuyển đổi, vừa là điều kiện để test
+   * cấu trúc biết bài nào phải kiểm — bài chưa chuyển thì không bắt theo khung mới.
+   */
+  khung: z.literal('v2').optional(),
   starred: z.boolean().default(false),
   createdAt: IsoDateSchema,
   updatedAt: IsoDateSchema,

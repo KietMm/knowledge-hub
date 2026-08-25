@@ -61,6 +61,7 @@ const LessonFrontmatterSchema = z.object({
   summary: z.string().trim().min(1, 'Bài học phải có tóm tắt — nó hiện trên thẻ và trong ⌘K'),
   level: NoteLevelSchema,
   tags: z.array(z.string().trim().min(1)).min(1),
+  khung: z.literal('v2').optional(),
 })
 
 const ExerciseFrontmatterSchema = z.object({
@@ -218,6 +219,7 @@ function build(): { categories: Category[]; topics: Topic[]; notes: Note[]; exer
           tags: parsed.data.tags,
           order: Number(orderPrefix),
           level: parsed.data.level,
+          ...(parsed.data.khung === undefined ? {} : { khung: parsed.data.khung }),
           starred: false,
           createdAt: stamp,
           updatedAt: stamp,
