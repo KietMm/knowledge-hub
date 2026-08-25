@@ -4,149 +4,152 @@ slug: chon-sai-cau-truc-du-lieu-la-dat
 summary: Cùng một logic, đổi chỗ chứa dữ liệu thì từ 40 giây xuống 8 mili-giây. Chọn chỗ chứa theo câu hỏi bạn sẽ hỏi nó nhiều nhất.
 level: co-ban
 tags: [nen-tang, cau-truc-du-lieu, hieu-nang]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** biết vì sao lựa chọn cấu trúc dữ liệu quyết định hiệu năng hơn hẳn việc tối ưu từng dòng, và có một câu hỏi để chọn đúng ngay từ đầu.
+> **Sau bài này bạn sẽ:** nhìn một đoạn code và đoán được nó sẽ chết ở mốc dữ liệu nào, chỉ bằng cách xem nó đang hỏi dữ liệu câu gì.
 
-## Một ví dụ thật, chênh nhau 5000 lần
+## Ý tưởng chính
 
-Bài toán: có 20.000 đơn hàng và 20.000 khách. Với mỗi đơn, tìm tên khách.
+Cấu trúc dữ liệu không phải là "chỗ để cất dữ liệu". Nó là **cách sắp xếp dữ liệu, và mỗi cách sắp xếp làm một số câu hỏi trở nên rẻ và một số câu hỏi trở nên đắt.**
+
+Nên câu hỏi khi chọn không bao giờ là "cái nào tốt nhất", mà là: **"tôi sẽ hỏi dữ liệu này câu gì nhiều nhất?"**
+
+## Mental model
+
+Hãy nghĩ tới cách bạn xếp đồ trong nhà.
+
+> **Xếp giày thành hàng ở cửa** — lấy đôi thứ ba rất nhanh, nhưng tìm "đôi màu nâu" thì phải nhìn từng đôi.
+>
+> **Cất thuốc theo ngăn có dán nhãn tên bệnh** — hỏi "thuốc đau đầu ở đâu" là mở đúng ngăn, nhưng hỏi "ngăn thứ tư là gì" thì vô nghĩa.
+
+Không cách nào sai. Chúng chỉ trả lời **hai câu hỏi khác nhau**. Xếp giày theo nhãn màu thì tìm màu nhanh nhưng đi ra cửa vơ đại một đôi lại chậm.
+
+Chọn cấu trúc dữ liệu là chọn **cách xếp đồ theo câu hỏi bạn hỏi hằng ngày** — không phải theo cái nghe sang.
+
+## Ví dụ nhỏ
+
+Bài toán: có `donHang` và `khachHang`, cần gắn tên khách vào mỗi đơn.
 
 ```ts
-// ❌ Danh sách: mỗi đơn phải quét cả danh sách khách
-function gan(dons: Don[], khachs: Khach[]) {
-  return dons.map((d) => ({
-    ...d,
-    tenKhach: khachs.find((k) => k.id === d.khachId)?.ten,   // ← quét
-  }))
+// Cách 1: với mỗi đơn, đi tìm khách trong mảng
+for (const d of donHang) {
+  d.tenKhach = khachHang.find((k) => k.id === d.khachId).ten
 }
 ```
 
 ```ts
-// ✅ Bảng băm: dựng chỉ mục một lần, tra tức thì
-function gan(dons: Don[], khachs: Khach[]) {
-  const theoId = new Map(khachs.map((k) => [k.id, k]))        // dựng 1 lần
-  return dons.map((d) => ({ ...d, tenKhach: theoId.get(d.khachId)?.ten }))
+// Cách 2: xếp khách vào bảng tra trước
+const theoId = new Map(khachHang.map((k) => [k.id, k]))
+for (const d of donHang) {
+  d.tenKhach = theoId.get(d.khachId).ten
 }
 ```
 
-```python
-# ❌ chậm                                    # ✅ nhanh
-[next(k for k in khachs if k.id == d.khach_id)  theo_id = {k.id: k for k in khachs}
- for d in dons]                                 [theo_id.get(d.khach_id) for d in dons]
+Cùng kết quả. Với 10.000 đơn và 10.000 khách: cách 1 khoảng **40 giây**, cách 2 khoảng **8 mili-giây**. Chênh 5000 lần, và không dòng nào "tối ưu" hơn dòng nào về mặt cú pháp.
+
+## Code chạy thế nào
+
+Đếm số phép so sánh, đó là chỗ toàn bộ khác biệt nằm:
+
+```text
+Cách 1 — find() quét mảng từ đầu mỗi lần
+  đơn 1:  so tối đa 10.000 lần
+  đơn 2:  so tối đa 10.000 lần
+  ...
+  đơn 10.000: so tối đa 10.000 lần
+  ─────────────────────────────────
+  tổng:   10.000 × 10.000 = 100 triệu phép so
+
+Cách 2 — dựng bảng một lần, rồi tra thẳng
+  dựng Map:  10.000 bước
+  đơn 1:     1 bước  (tính ra ngăn, xem luôn)
+  ...
+  đơn 10.000: 1 bước
+  ─────────────────────────────────
+  tổng:      20.000 bước
 ```
 
-| Cách | Số phép so sánh | Thời gian thực đo |
+100 triệu so với 20 nghìn. Không phải vì `Map` "nhanh hơn mảng" — mà vì cách 1 **hỏi mảng một câu mà mảng không được xếp để trả lời**: *"phần tử nào có id bằng X?"* Mảng chỉ xếp theo vị trí, nên nó buộc phải xem từng cái.
+
+## Tại sao cần nó
+
+Vì loại lỗi này **không hiện ra lúc bạn viết**. Với 50 bản ghi khi dev, cả hai cách đều chạy tức thì. Nó chỉ hiện ra ở production, dưới dạng "trang này dạo này chậm" — và lúc đó rất khó lần ra vì code trông hoàn toàn bình thường.
+
+Đây cũng là lý do việc chọn cấu trúc dữ liệu quan trọng hơn hầu hết các "mẹo tối ưu": bạn không thể vá một lựa chọn sai bằng cách viết vòng lặp khéo hơn. Cùng vấn đề đó ở tầng cơ sở dữ liệu chính là index — xem [[index-va-hieu-nang-truy-van]].
+
+## So sánh
+
+Bốn chỗ chứa hay dùng nhất, xếp theo **câu hỏi chúng trả lời rẻ**:
+
+| Chỗ chứa | Rẻ | Đắt |
 |---|---|---|
-| `find` trong vòng lặp | 20.000 × 20.000 = **400 triệu** | ~40 giây |
-| Dựng `Map` rồi tra | 20.000 + 20.000 = **40 nghìn** | ~8 mili-giây |
+| Mảng / list | Lấy theo **vị trí**, duyệt hết, thêm cuối | Tìm theo giá trị, chèn/xoá giữa |
+| Bảng băm / dict | Tra theo **khoá**, thêm, xoá | Hỏi "nhỏ nhất", giữ thứ tự |
+| Tập hợp / set | Hỏi **đã có chưa**, bỏ trùng | Lấy phần tử thứ k |
+| Mảng đã sắp xếp | Tìm nhị phân, hỏi min/max, khoảng | Chèn thêm (phải giữ thứ tự) |
 
-Logic nghiệp vụ **y hệt**. Không tối ưu dòng nào, không đổi ngôn ngữ, không thêm cache, không thêm máy chủ. Chỉ đổi **chỗ chứa dữ liệu**.
+Ba câu hỏi để tự chọn, theo đúng thứ tự:
 
-Đây là lý do câu hỏi "dùng cấu trúc nào" quan trọng hơn hẳn mọi mẹo vi tối ưu. Không có mẹo nào bù được 5000 lần.
+1. **Tôi hỏi nó câu gì nhiều nhất?** Tra theo id → bảng băm. Duyệt theo thứ tự → mảng. Hỏi "đã gặp chưa" → tập hợp.
+2. **Bao nhiêu phần tử?** Dưới ~100 thì gần như mọi lựa chọn đều ổn; đừng tốn công.
+3. **Ghi nhiều hay đọc nhiều?** Đọc nhiều thì bỏ công sắp xếp trước là đáng.
 
-## Cấu trúc dữ liệu là gì
+## Dễ nhầm
 
-Không phải "kiểu dữ liệu". Cấu trúc dữ liệu là **cách sắp xếp dữ liệu trong bộ nhớ, và bộ phép toán mà cách sắp xếp đó làm cho rẻ**.
-
-Mỗi cấu trúc là một **đánh đổi**: làm một số việc rất nhanh, đổi lại một số việc khác chậm đi.
-
-| Cấu trúc | Rẻ | Đắt |
-|---|---|---|
-| Mảng | Lấy theo vị trí, duyệt tuần tự | Tìm theo giá trị, chèn vào giữa |
-| Bảng băm (Map/dict) | Tra theo khoá, thêm, xoá | Giữ thứ tự sắp xếp, tìm theo khoảng |
-| Tập hợp (Set) | Hỏi "đã có chưa", khử trùng | Lấy theo vị trí |
-| Danh sách liên kết | Chèn/xoá ở chỗ đã biết | Lấy phần tử thứ n |
-| Cây có thứ tự | Tìm theo khoảng, giữ sắp xếp | Phức tạp hơn, hằng số lớn hơn |
-| Hàng đợi / ngăn xếp | Thêm-lấy ở đầu hoặc cuối | Truy cập chỗ giữa |
-
-Không có cấu trúc nào rẻ mọi thứ. Nếu có thì đã chẳng cần bài học này.
-
-## Câu hỏi để chọn đúng
-
-Đừng bắt đầu từ "dùng cấu trúc nào". Bắt đầu từ:
-
-> **Trong đoạn code này, câu hỏi nào tôi sẽ hỏi dữ liệu nhiều lần nhất?**
-
-Rồi tra ngược:
-
-| Câu hỏi bạn hỏi nhiều nhất | Chỗ chứa đúng |
-|---|---|
-| "Phần tử thứ i là gì?" | Mảng |
-| "Bản ghi có id = X đâu?" | Bảng băm khoá theo `id` |
-| "X có trong tập này không?" | Tập hợp |
-| "Cho tôi tất cả theo thứ tự bảng chữ cái" | Mảng đã sắp, hoặc cây |
-| "Cho tôi những cái trong khoảng 10–20" | Cây / mảng đã sắp |
-| "Ai vào trước ra trước?" | Hàng đợi |
-| "Cái gần đây nhất là gì?" | Ngăn xếp |
-| "Cái nào ưu tiên cao nhất?" | Hàng đợi ưu tiên (heap) |
-
-Trong ví dụ đầu bài, câu hỏi hỏi 20.000 lần là *"khách có id = X đâu?"* — nên chỗ chứa đúng là bảng băm khoá theo `id`. Câu trả lời hiện ra ngay khi bạn hỏi đúng câu.
-
-## Vòng lặp trong vòng lặp là dấu hiệu
-
-Mẫu hình đáng nghi nhất, nhận ra được mà không cần đo:
+**1. Tưởng vòng lặp lồng nhau nào cũng tệ.** Không — vấn đề chỉ xảy ra khi **vòng trong đi tìm**:
 
 ```ts
-for (const a of dsA) {
-  for (const b of dsB) {        // ← hoặc .find, .includes, .some, .filter
-    if (a.id === b.aId) { ... }
-  }
-}
+// ❌ Vòng trong TÌM → mỗi phần tử ngoài phải quét lại toàn bộ trong
+for (const a of A) for (const b of B) if (b.id === a.bId) { }
+
+// ✅ Vòng trong chỉ duyệt dữ liệu nhỏ, cố định
+for (const don of donHang) for (const dong of don.dong) { }
 ```
 
-Cứ thấy một phép **tìm kiếm** nằm bên trong một vòng lặp, hãy dừng lại và hỏi: *dựng chỉ mục trước có được không?* Câu trả lời gần như luôn là được, và luôn là ba dòng:
+Dấu hiệu cần cảnh giác: `.find()`, `.includes()`, `.indexOf()`, hoặc một vòng `for` nữa **nằm bên trong một vòng lặp**. Thấy nó thì hỏi: *"tôi đang hỏi một câu mà chỗ chứa này không được xếp để trả lời?"*
+
+**2. Đổi cấu trúc khi dữ liệu còn nhỏ.** Dựng `Map` cho 20 phần tử là thêm code, thêm chỗ sai, mà không nhanh hơn được mili-giây nào. Việc đo trước khi tối ưu nằm ở [[uoc-luong-va-tim-diem-nghen]].
+
+**3. Quên rằng dựng bảng tra cũng tốn tiền.** `new Map(...)` phải duyệt hết một lượt. Nếu bạn chỉ tra **một lần**, dựng bảng còn chậm hơn `find`. Bảng tra chỉ có lãi khi bạn tra **nhiều lần** trên cùng bộ dữ liệu.
+
+**4. Chọn theo tên nghe sang.** Cây, heap, trie đều tuyệt vời — cho đúng bài của chúng. Với 90% việc hằng ngày, mảng và bảng băm là đủ, và chúng đơn giản hơn nên ít lỗi hơn.
+
+## Mẹo nhớ
+
+> **Chọn chỗ chứa theo câu hỏi bạn hỏi nhiều nhất, không theo dữ liệu trông như thế nào.**
+>
+> **Vòng trong đi TÌM là dấu hiệu chọn sai.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Vì sao "cái nào tốt nhất" là câu hỏi sai khi chọn cấu trúc dữ liệu?
+2. Trong ví dụ ghép đơn–khách, chính xác thì cách 1 tốn 100 triệu bước ở đâu?
+3. Vòng lặp lồng nhau nào đáng lo, vòng nào không?
+4. Khi nào dựng `Map` **chậm hơn** dùng `find` thẳng?
+5. Vì sao loại lỗi này thường chỉ lộ ra ở production?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, sửa đoạn này để nó không còn quét lại mảng ở mỗi vòng:
 
 ```ts
-const chiMuc = new Map<string, B[]>()
-for (const b of dsB) {
-  const cu = chiMuc.get(b.aId) ?? []
-  cu.push(b)
-  chiMuc.set(b.aId, cu)
-}
-for (const a of dsA) {
-  const khop = chiMuc.get(a.id) ?? []   // tra thẳng, không quét
-}
+const idDaCam = ['u3', 'u9', 'u21', /* ...5000 id */]
+
+const conLai = nguoiDung.filter((u) => !idDaCam.includes(u.id))
 ```
 
-```python
-from collections import defaultdict
-chi_muc = defaultdict(list)
-for b in ds_b: chi_muc[b.a_id].append(b)
-for a in ds_a: khop = chi_muc[a.id]
+Tự kiểm trước khi chạy: bạn đổi `idDaCam` thành cấu trúc gì, và câu hỏi bạn đang hỏi nó là câu gì?
+
+## Thử sức
+
+Bạn có 1 triệu bản ghi log và cần trả lời **cả hai** câu hỏi này, mỗi giây vài nghìn lần:
+
+```text
+a) "log của user X gồm những gì?"
+b) "log gần đây nhất theo thời gian là những cái nào?"
 ```
 
-Đây đúng là việc mà **index của database** làm cho bạn ở tầng dưới — cùng một ý tưởng, khác chỗ đặt. Xem [[index-va-hieu-nang-truy-van]].
-
-## Khi nào chuyện này **không** đáng quan tâm
-
-Thành thật: với 20 phần tử, mọi cấu trúc đều nhanh như nhau, và `find` trong vòng lặp còn dễ đọc hơn. Đừng dựng `Map` cho một danh sách 10 mục.
-
-Ngưỡng thực dụng: **hai vòng lặp lồng nhau trên dữ liệu có thể lớn dần**. Chữ "lớn dần" mới là chỗ nguy hiểm — 50 khách lúc ra mắt, 50.000 sau hai năm, và code không đổi dòng nào. Nó chạy tốt suốt mười tám tháng rồi đột ngột chết, đúng lúc không ai nhớ đoạn đó nữa.
-
-Câu hỏi cần hỏi: *"dữ liệu này có thể lớn tới đâu trong hai năm nữa?"* Cách ước lượng đó là nội dung của [[uoc-luong-va-tim-diem-nghen]].
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| `.find()` / `.includes()` bên trong vòng lặp | Chậm theo bình phương, chết khi dữ liệu lớn | Dựng `Map`/`Set` làm chỉ mục trước |
-| Dùng mảng để hỏi "đã có chưa" | `includes` quét toàn mảng mỗi lần | Dùng `Set` |
-| Dựng lại `Map` bên **trong** vòng lặp | Mất sạch lợi ích, còn tệ hơn | Dựng một lần ở ngoài |
-| Chọn cấu trúc theo thói quen (cái gì cũng mảng) | Đúng nhưng chậm | Hỏi "tôi hỏi dữ liệu câu gì nhiều nhất" |
-| Tối ưu vi mô trước khi sửa cấu trúc | Được 5%, bỏ lỡ 5000 lần | Sửa cấu trúc trước |
-| Tối ưu cho 20 phần tử | Code phức tạp vô ích | Dưới ngưỡng thì ưu tiên dễ đọc |
-
-## Ghi nhớ
-
-- Đổi cấu trúc dữ liệu thắng mọi mẹo vi tối ưu — 5000 lần so với vài phần trăm.
-- Mỗi cấu trúc là một đánh đổi: rẻ ở vài việc, đắt ở vài việc khác.
-- Chọn bằng cách hỏi: **câu hỏi nào tôi hỏi dữ liệu nhiều lần nhất?**
-- Tìm kiếm nằm trong vòng lặp = dấu hiệu cần dựng chỉ mục.
-- Với dữ liệu nhỏ và không lớn dần, dễ đọc quan trọng hơn.
-
-## Tự kiểm tra
-
-1. Vì sao đổi từ `find` sang `Map` lại nhanh hơn 5000 lần dù logic y hệt?
-2. Câu hỏi nào cần hỏi để chọn cấu trúc dữ liệu, thay vì hỏi "dùng cái nào"?
-3. Vì sao "dữ liệu có thể lớn dần" nguy hiểm hơn "dữ liệu đang lớn"?
+Một chỗ chứa duy nhất có phục vụ tốt cả hai câu không? Nếu không, bạn làm gì — và cái giá phải trả cho cách đó là gì?

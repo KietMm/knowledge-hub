@@ -4,160 +4,181 @@ slug: big-o-doc-va-uoc-luong
 summary: Không phải để phỏng vấn. Là để nhìn một vòng lặp lồng nhau và biết trước nó sẽ chết ở mốc dữ liệu nào.
 level: trung-cap
 tags: [nen-tang, do-phuc-tap, big-o, hieu-nang]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** đọc được độ phức tạp của một đoạn code trong vài giây, ước lượng được nó chịu được bao nhiêu dữ liệu, và biết Big-O nói dối ở đâu.
+> **Sau bài này bạn sẽ:** nhìn một đoạn code và nói ngay nó thuộc mức nào, rồi từ ràng buộc dữ liệu suy ra được nó có kịp hay không.
 
-## Big-O trả lời đúng một câu hỏi
+## Ý tưởng chính
+
+Big-O không nói code của bạn chạy mất bao nhiêu giây. Nó trả lời đúng một câu:
 
 > **Dữ liệu tăng gấp 10, thời gian chạy tăng gấp mấy?**
 
-Chỉ vậy. Nó **không** nói code chạy bao nhiêu mili-giây — chuyện đó phụ thuộc máy, ngôn ngữ, bộ nhớ đệm. Nó nói về **hình dạng của đường cong** khi dữ liệu lớn dần.
+Đó là câu hỏi quan trọng hơn "mất mấy giây", vì số giây phụ thuộc máy, còn **hình dạng tăng trưởng** thì không. Một đoạn `O(n²)` chạy 0,1 giây trên 1.000 bản ghi sẽ mất **10 giây** trên 10.000 — dù bạn đổi sang máy nhanh gấp đôi thì vẫn 5 giây.
 
-Vì sao câu hỏi đó đáng giá: phần lớn sự cố hiệu năng không phải "chậm từ đầu", mà là **chạy tốt hai năm rồi đột ngột chết**. Big-O là công cụ duy nhất dự đoán được thời điểm đó mà không cần đợi nó xảy ra.
+## Mental model
 
-## Sáu mức cần thuộc
+Hãy nghĩ tới việc **tìm một cái tên trong danh bạ điện thoại giấy**.
 
-| Ký hiệu | Tên | Dữ liệu ×10 → thời gian | Ví dụ |
-|---|---|---|---|
-| `O(1)` | Hằng | **×1** | `map.get()`, `ds[5]`, `ds.push()` |
-| `O(log n)` | Lô-ga-rít | **+1 bước** | Tìm nhị phân, tra B-tree |
-| `O(n)` | Tuyến tính | ×10 | Duyệt một lần, `filter`, `includes` |
-| `O(n log n)` | Tuyến-lô | ~×13 | Sắp xếp (`sort`) |
-| `O(n²)` | Bình phương | **×100** | Hai vòng lặp lồng nhau |
-| `O(2ⁿ)` | Hàm mũ | không tưởng nổi | Đệ quy không nhớ kết quả |
+> **`O(n)` — lật từng trang từ đầu.** Danh bạ dày gấp đôi thì mất thời gian gấp đôi.
+>
+> **`O(log n)` — mở giữa, thấy tên cần tìm nằm nửa trước hay nửa sau, bỏ hẳn một nửa, lặp lại.** Danh bạ dày gấp đôi thì chỉ mất **thêm đúng một lần lật**.
+>
+> **`O(n²)` — với mỗi tên trong danh bạ, lại lật cả danh bạ để tìm người trùng họ.** Danh bạ dày gấp đôi thì mất gấp **bốn**.
+>
+> **`O(1)` — hỏi tổng đài.** Danh bạ dày bao nhiêu cũng vậy.
 
-Con số cụ thể để thấy sự khác biệt là thật — giả sử mỗi phép mất 1 nano-giây:
+Khi đọc code, hãy hỏi: *"đoạn này giống cách nào trong bốn cách trên?"*
 
-| n | `O(n)` | `O(n log n)` | `O(n²)` | `O(2ⁿ)` |
-|---|---|---|---|---|
-| 100 | 0,0001 ms | 0,0007 ms | 0,01 ms | vũ trụ chưa đủ tuổi |
-| 10.000 | 0,01 ms | 0,13 ms | **100 ms** | — |
-| 1.000.000 | 1 ms | 20 ms | **11,5 ngày** | — |
-
-Dòng cuối là lý do `O(n²)` không phải chuyện học thuật. Một triệu bản ghi không phải con số lớn với database, nhưng đủ để giết một vòng lặp lồng nhau.
-
-## Đọc Big-O trong ba bước
-
-**Bước 1 — Đếm vòng lặp lồng nhau.**
+## Ví dụ nhỏ
 
 ```ts
-for (const a of ds) { }                    // O(n)
+// O(1) — số bước không phụ thuộc n
+ds[0]
 
-for (const a of ds) { for (const b of ds) { } }   // O(n²)
+// O(n) — chạm mỗi phần tử một lần
+for (const x of ds) tong += x
 
-for (const a of ds) { }
-for (const b of ds) { }                    // O(n) — nối tiếp thì CỘNG, không nhân
+// O(n²) — với mỗi phần tử, lại duyệt cả mảng
+for (const a of ds) for (const b of ds) if (a + b === 10) { }
+
+// O(log n) — mỗi bước bỏ đi một nửa
+while (trai < phai) { const giua = ...; if (...) trai = giua + 1; else phai = giua }
 ```
 
-Lồng nhau thì **nhân**, nối tiếp thì **cộng**. Và vì Big-O chỉ quan tâm số hạng lớn nhất, `O(n + n)` viết gọn thành `O(n)`.
+## Code chạy thế nào
 
-**Bước 2 — Nhìn cả những phép trông như một dòng.**
+Đọc Big-O bằng ba bước máy móc, không cần trực giác:
 
-Đây là chỗ hay sót nhất:
+**Bước 1 — đếm số vòng lặp lồng nhau chạy trên dữ liệu.**
+
+```text
+một vòng      → O(n)
+hai vòng lồng → O(n²)
+ba vòng lồng  → O(n³)
+```
+
+**Bước 2 — tìm những chỗ "chia đôi mỗi bước".** Chúng cho `log n`: tìm nhị phân, cây cân bằng, `while (n > 0) n = Math.floor(n / 2)`.
+
+**Bước 3 — bỏ hằng số và số hạng nhỏ.**
+
+```text
+O(3n)        →  O(n)        hằng số không đổi hình dạng
+O(n + n²)    →  O(n²)       n lớn thì n² át hẳn n
+O(n + m)     →  O(n + m)    HAI dữ liệu khác nhau: giữ nguyên cả hai
+```
+
+Bước 3 hay bị làm sai theo chiều ngược: gộp `O(n + m)` thành `O(n)` khi `n` và `m` là hai tập dữ liệu khác nhau. Nếu `m` là số dòng của một file người dùng tải lên, nó có thể lớn hơn `n` rất nhiều.
+
+**Chỗ nhiều người bỏ sót:** lời gọi hàm cũng có giá.
 
 ```ts
-for (const d of dons) {
-  const k = khachs.find((x) => x.id === d.khachId)   // ← .find là O(n) ẩn trong đó!
+for (const x of ds) {            // n vòng
+  if (danhSachCam.includes(x)) { } // ← includes là O(m) BÊN TRONG vòng lặp
 }
+// ⇒ O(n × m), không phải O(n)
 ```
 
-Một vòng `for` nhưng độ phức tạp là `O(n × m)`. Bảng cần thuộc:
+`includes`, `indexOf`, `find`, `filter`, `sort` đều có giá riêng. Nhìn thấy chúng **bên trong** vòng lặp là dấu hiệu nhân độ phức tạp lên.
 
-| Phép | Chi phí | |
-|---|---|---|
-| `arr.find` / `includes` / `indexOf` / `some` | `O(n)` | ⚠️ ẩn |
-| `arr.filter` / `map` / `reduce` | `O(n)` | ⚠️ ẩn |
-| `arr.sort` | `O(n log n)` | ⚠️ ẩn |
-| `arr.unshift` / `splice` / Python `insert(0,…)` | `O(n)` | ⚠️ ẩn |
-| `map.get` / `set` / `has`, `set.has` | `O(1)` | ✅ |
-| `arr[i]`, `arr.push` | `O(1)` | ✅ |
-| `'a' + b` trong vòng lặp | `O(n)` mỗi lần | ⚠️ ẩn |
+## Tại sao cần nó
 
-**Bước 3 — Bỏ hằng số và số hạng nhỏ.**
+Vì nó cho bạn **đoán trước** thay vì phát hiện sau. Máy tính hiện đại chạy khoảng `10⁸` phép tính mỗi giây; từ đó suy ra bảng dùng được ngay:
 
-`O(3n² + 500n + 9)` → `O(n²)`. Với n đủ lớn, chỉ số hạng lớn nhất còn quan trọng.
-
-## Vì sao `O(log n)` đáng kinh ngạc
-
-Tìm nhị phân trên dữ liệu đã sắp: mỗi bước loại **một nửa**.
-
-```ts
-function tim(ds: number[], x: number): number {
-  let l = 0, r = ds.length - 1
-  while (l <= r) {
-    const g = Math.floor((l + r) / 2)
-    if (ds[g] === x) return g
-    if (ds[g] < x) l = g + 1
-    else r = g - 1
-  }
-  return -1
-}
-```
-
-| Số phần tử | Số bước tối đa |
+| `n` | Độ phức tạp chịu được |
 |---|---|
-| 1.000 | 10 |
-| 1.000.000 | 20 |
-| 1.000.000.000 | **30** |
+| ≤ 10 | `O(n!)`, `O(2ⁿ)` |
+| ≤ 100 | `O(n³)` |
+| ≤ 1.000 | `O(n²)` |
+| ≤ 10⁶ | `O(n log n)` |
+| ≤ 10⁸ | `O(n)` |
 
-Một tỉ phần tử, ba mươi bước. Đây chính là lý do database dựng B-tree cho index: tra một bảng một tỉ dòng chỉ tốn vài lần đọc đĩa. Xem [[index-va-hieu-nang-truy-van]].
+Dùng ngược lại mới là chỗ hay: **ràng buộc trong đề (hoặc quy mô dữ liệu thật) cho bạn biết lời giải phải có dạng gì.** Biết `n` cỡ 10⁵ thì `O(n²)` là 10 tỉ phép — chắc chắn không kịp, nên đừng phí thời gian tối ưu vòng lặp lồng nhau mà hãy đi tìm cách `O(n log n)`.
 
-Đổi lại, tìm nhị phân đòi hỏi dữ liệu **đã sắp xếp** — và sắp tốn `O(n log n)`. Nên sắp một lần rồi tìm nhiều lần thì lời to; sắp lại mỗi lần tìm thì lỗ.
+Và để thấy `O(log n)` đáng kinh ngạc thế nào:
 
-## Big-O nói dối ở đâu
-
-Đây là phần bị bỏ qua nhiều nhất, và là phần khiến người ta tối ưu sai chỗ:
-
-**① Hằng số bị giấu đi có thể rất lớn.** `O(n)` với hằng số 1000 chậm hơn `O(n²)` với hằng số 1 cho tới khi n vượt 1000. Với dữ liệu nhỏ, thuật toán "tệ hơn" thường nhanh hơn — đó là lý do thư viện sắp xếp thật chuyển sang sắp chèn `O(n²)` cho mảng dưới ~10 phần tử.
-
-**② Nó đếm phép, không đếm giá của phép.** Một lần đọc đĩa đắt gấp cả trăm nghìn lần một phép so sánh trong bộ nhớ đệm. `O(n)` với n lần gọi mạng thua xa `O(n²)` trong RAM. Đây cũng là lý do mảng thắng danh sách liên kết trong thực tế — xem [[mang-va-danh-sach-lien-ket]].
-
-**③ Nó nói về xu hướng khi n lớn.** Với n = 20 thì mọi thứ đều nhanh, và code dễ đọc đáng giá hơn.
-
-Kết luận thực dụng: **dùng Big-O để loại bỏ lựa chọn thảm hoạ, dùng máy đo để chọn giữa các lựa chọn còn lại.** Đừng bao giờ tối ưu dựa trên Big-O mà không đo — cách đo là nội dung của [[hieu-nang-va-do-luong]].
-
-## Độ phức tạp bộ nhớ
-
-Cùng một cách ký hiệu, áp cho **bộ nhớ tốn thêm**:
-
-```ts
-function tong(ds: number[]) {          // O(1) bộ nhớ — chỉ một biến
-  let s = 0
-  for (const n of ds) s += n
-  return s
-}
-
-function nhanDoi(ds: number[]) {       // O(n) bộ nhớ — tạo mảng mới cùng cỡ
-  return ds.map((n) => n * 2)
-}
+```text
+n = 1.000.000.000    (một tỉ)
+O(n)        → một tỉ bước
+O(log n)    → khoảng 30 bước
 ```
 
-Chuyện này thành vấn đề thật khi xử lý file lớn: đọc cả file 4 GB vào bộ nhớ là `O(n)`, còn đọc theo luồng từng dòng là `O(1)`. Cùng kết quả, khác chỗ một bên chạy được và một bên hết RAM.
+Đó là lý do index cơ sở dữ liệu đáng giá đến vậy — xem [[index-va-hieu-nang-truy-van]].
 
-## Lỗi hay gặp
+## So sánh
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Không thấy `.find`/`.includes` là `O(n)` | Tưởng `O(n)` nhưng thật ra `O(n²)` | Đếm cả phép ẩn trong hàm dựng sẵn |
-| Tưởng Big-O nói về mili-giây | Tối ưu sai chỗ | Nó nói về **hình dạng đường cong** |
-| Tối ưu `O(n)` → `O(log n)` cho n = 50 | Code phức tạp, không nhanh hơn | Dưới ngưỡng thì ưu tiên dễ đọc |
-| Bỏ qua độ phức tạp bộ nhớ | Hết RAM trên file lớn | Xử lý theo luồng |
-| Nối chuỗi trong vòng lặp | `O(n²)` âm thầm | Gom vào mảng rồi `join` |
-| `sort` bên trong vòng lặp | `O(n² log n)` | Sắp một lần ở ngoài |
-| Tin Big-O mà không đo | Tối ưu thứ không phải điểm nghẽn | Đo trước, xem [[hieu-nang-va-do-luong]] |
+Sáu mức cần thuộc, xếp từ tốt tới tệ:
 
-## Ghi nhớ
+| Ký hiệu | Tên | n tăng gấp đôi thì | Gặp ở đâu |
+|---|---|---|---|
+| `O(1)` | hằng | không đổi | Tra bảng băm, `ds[i]` |
+| `O(log n)` | logarit | +1 bước | Tìm nhị phân, index B-tree |
+| `O(n)` | tuyến tính | gấp đôi | Duyệt một lượt |
+| `O(n log n)` | | hơn gấp đôi chút | Sắp xếp |
+| `O(n²)` | bậc hai | gấp **bốn** | Hai vòng lồng nhau |
+| `O(2ⁿ)` | mũ | **bình phương** | Vét cạn mọi tập con |
 
-- Big-O trả lời: **dữ liệu ×10 thì thời gian ×mấy**. Không phải mili-giây.
-- Lồng nhau thì nhân, nối tiếp thì cộng; giữ số hạng lớn nhất.
-- `.find`, `.includes`, `.sort`, `unshift` đều có chi phí ẩn — đừng đếm sót.
-- `O(n²)` chết ở khoảng vài chục nghìn phần tử. Đó là mốc thật, không phải lý thuyết.
-- Big-O đếm số phép, không đếm **giá** của phép — một lần gọi mạng đắt hơn triệu phép so sánh.
-- Dùng Big-O để loại thảm hoạ, dùng máy đo để chọn phần còn lại.
+Ranh giới thực tế nằm giữa `O(n log n)` và `O(n²)`: bên trên nó, code sống được với dữ liệu lớn; bên dưới, nó chỉ sống được khi `n` nhỏ.
 
-## Tự kiểm tra
+## Dễ nhầm
 
-1. Hai vòng lặp nối tiếp và hai vòng lặp lồng nhau — độ phức tạp khác nhau thế nào?
-2. Vì sao `for` một tầng có `.find` bên trong lại là `O(n²)`?
-3. Nêu hai trường hợp Big-O dẫn bạn tới kết luận sai trong thực tế.
+**1. Tưởng Big-O là thời gian chạy.** Nó là **hình dạng tăng trưởng**. `O(n)` với hằng số lớn có thể chậm hơn `O(n²)` với hằng số nhỏ — ở `n` nhỏ. Big-O chỉ nói chuyện gì xảy ra khi `n` lớn dần.
+
+**2. Bỏ qua hằng số khi nó thật sự quan trọng.** `O(n)` quét bộ nhớ liền nhau và `O(n)` nhảy lung tung trong RAM cùng một ký hiệu nhưng chênh nhau hàng chục lần. Big-O không thấy bộ nhớ đệm, không thấy chi phí I/O, không thấy việc gọi mạng.
+
+**3. Quên độ phức tạp bộ nhớ.** Nó cũng có Big-O riêng, và cũng làm chết chương trình:
+
+```ts
+const tatCa = await db.layTatCa()   // O(n) bộ nhớ — 10 triệu bản ghi là hết RAM
+for (const x of tatCa) { }
+```
+
+Cách chữa là xử lý theo luồng: đọc từng lô, giữ `O(1)` bộ nhớ. Đây cũng là mặt kia của đánh đổi ở [[danh-doi-bo-nho-va-thoi-gian]].
+
+**4. Chỉ nhìn trường hợp trung bình.** Bảng băm là `O(1)` trung bình nhưng `O(n)` khi mọi khoá đâm vào một ngăn; `sort` nhanh trung bình nhưng có thuật toán tệ ở trường hợp xấu nhất. Với hệ thống chịu tải, **trường hợp xấu nhất mới là cái quyết định**, vì kẻ tấn công sẽ chủ động tạo ra nó.
+
+**5. Tối ưu khi chưa đo.** Big-O giúp bạn **tránh** lựa chọn tệ ngay từ đầu; nó không thay được việc đo khi hệ thống đã chạy chậm — xem [[hieu-nang-va-do-luong]].
+
+## Mẹo nhớ
+
+> **Big-O trả lời: "gấp 10 lần dữ liệu thì gấp mấy lần thời gian?"**
+>
+> **Vòng lồng vòng → nhân. Chia đôi mỗi bước → log.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Big-O trả lời câu hỏi gì, và **không** trả lời câu hỏi gì?
+2. `O(3n + 5)` rút gọn thành gì, và vì sao được phép rút gọn?
+3. Vì sao `O(n + m)` **không** được rút thành `O(n)`?
+4. Với `n = 10⁵`, lời giải `O(n²)` có kịp không? Ước lượng số phép tính.
+5. Nêu hai thứ quan trọng mà Big-O hoàn toàn không nhìn thấy.
+
+## Tự viết lại
+
+Không nhìn lại phần trên, xác định độ phức tạp của từng đoạn và giải thích bằng một câu:
+
+```ts
+// a
+for (let i = 0; i < n; i++) for (let j = i; j < n; j++) { }
+
+// b
+for (const x of a) if (b.includes(x)) { }
+
+// c
+while (n > 1) n = Math.floor(n / 2)
+
+// d
+ds.sort((x, y) => x - y)
+for (const x of ds) { }
+```
+
+Câu (a) là chỗ dễ sai nhất — vòng trong không chạy đủ `n` lần, vậy nó là `O(n²)` hay thấp hơn?
+
+## Thử sức
+
+Một API đang mất 2 giây với 1.000 bản ghi. Sếp nói tháng sau dữ liệu lên 50.000.
+
+Nếu code là `O(n)` thì lúc đó mất bao lâu? Nếu là `O(n²)` thì mất bao lâu? Và câu hỏi thật sự: **bạn cần biết gì để xác định nó đang là loại nào**, mà không phải chờ tới tháng sau?

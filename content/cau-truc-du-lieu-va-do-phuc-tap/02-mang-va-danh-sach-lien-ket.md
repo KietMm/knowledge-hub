@@ -4,146 +4,143 @@ slug: mang-va-danh-sach-lien-ket
 summary: Hai cách xếp dãy phần tử, hai bộ đánh đổi ngược nhau. Và vì sao trong thực tế mảng thường thắng dù lý thuyết nói khác.
 level: co-ban
 tags: [nen-tang, cau-truc-du-lieu, mang, danh-sach-lien-ket]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** hiểu vì sao lấy phần tử thứ n của mảng là tức thì còn chèn vào giữa thì đắt, và biết khi nào lý thuyết về danh sách liên kết không đúng với máy thật.
+> **Sau bài này bạn sẽ:** giải thích được vì sao lấy phần tử thứ 500 của mảng là tức thì còn của danh sách liên kết thì không, và vì sao lý thuyết nói danh sách liên kết nhanh hơn mà thực tế lại hiếm khi vậy.
 
-## Mảng: các ô nằm liền nhau
+## Ý tưởng chính
 
-Mảng là một dải bộ nhớ **liên tục**, mỗi ô cùng kích thước.
+Cùng một việc — giữ một dãy phần tử theo thứ tự — có hai cách xếp hoàn toàn khác nhau trong bộ nhớ, và hai bộ đánh đổi **ngược nhau**.
 
+**Mảng** xếp các phần tử **nằm liền nhau**. **Danh sách liên kết** để chúng nằm rải rác, mỗi phần tử giữ thêm **đường đi tới phần tử sau**.
+
+## Mental model
+
+Hãy tưởng tượng hai cách tổ chức một đoàn người:
+
+> **Mảng là một dãy ghế đánh số trong rạp chiếu phim.** Muốn tới ghế số 7? Bạn đi thẳng tới đó — vì bạn *tính* được nó nằm ở đâu. Nhưng muốn chèn thêm một người vào giữa hàng thì **tất cả những người phía sau phải đứng dậy dịch sang một ghế**.
+>
+> **Danh sách liên kết là một chuỗi người nắm tay nhau.** Không ai có số ghế. Muốn tới người thứ 7? Bạn phải đi từ đầu chuỗi và đếm. Nhưng chèn thêm một người vào giữa thì chỉ cần **hai người buông tay ra rồi nắm sang người mới** — không ai khác phải nhúc nhích.
+
+Toàn bộ bài này là hệ quả của hai hình ảnh đó: *tính ra chỗ nhưng phải dịch cả hàng*, so với *phải đếm nhưng chỉ đổi hai cái nắm tay*.
+
+## Ví dụ nhỏ
+
+```text
+Mảng [10, 20, 30] trong bộ nhớ:
+
+địa chỉ:  1000   1004   1008
+giá trị:  [ 10 ] [ 20 ] [ 30 ]      ← liền nhau, nên tính được chỗ
 ```
-địa chỉ:  1000   1008   1016   1024   1032
-giá trị: [ 'a' ][ 'b' ][ 'c' ][ 'd' ][ 'e' ]
-chỉ số:     0      1      2      3      4
+
+```text
+Danh sách liên kết cùng dữ liệu:
+
+  [10 | →] ─────► [20 | →] ─────► [30 | ✗]
+  ở 1000          ở 7320          ở 2088     ← nằm đâu cũng được
 ```
 
-Máy tìm `ds[3]` bằng **một phép nhân cộng**: `1000 + 3 × 8 = 1024`. Không quét, không so sánh — nên lấy phần tử thứ 3 và phần tử thứ 3 triệu tốn thời gian **y hệt nhau**.
+## Code chạy thế nào
 
-Cái giá của tính liền nhau đó lộ ra khi bạn chèn:
+**Lấy phần tử thứ 2** — chỗ mảng thắng tuyệt đối:
 
+```text
+Mảng:  địa chỉ = 1000 + 2 × 4 = 1008 → đọc luôn      (1 bước, dù mảng dài 1 triệu)
+
+Liên kết:  tới ô đầu (1000) → theo đường tới 7320
+           → theo đường tới 2088 → đọc                (3 bước; phần tử thứ n cần n bước)
 ```
-chèn 'x' vào vị trí 1:
-[ a ][ b ][ c ][ d ][ e ]
-     ↓ phải dịch b,c,d,e sang phải một ô
-[ a ][ x ][ b ][ c ][ d ][ e ]
+
+**Chèn vào đầu** — chỗ danh sách liên kết thắng tuyệt đối:
+
+```text
+Mảng:  phải dịch TOÀN BỘ sang phải một ô rồi mới ghi
+       [_, 10, 20, 30] → ghi 5 vào ô đầu              (n bước)
+
+Liên kết:  tạo ô mới [5|→], trỏ nó vào ô cũ đầu tiên,
+           đổi "đầu danh sách" sang ô mới              (2 bước, bất kể dài bao nhiêu)
 ```
 
-Chèn đầu mảng 1 triệu phần tử = dịch 1 triệu phần tử. Xoá cũng vậy.
+Hai bảng trên **là** toàn bộ nội dung lý thuyết của bài. Phần còn lại là chuyện thực tế phá vỡ lý thuyết đó ra sao.
+
+## Tại sao cần nó
+
+Vì đây là ví dụ sạch nhất của một sự thật lớn hơn: **không có cấu trúc dữ liệu nào nhanh hơn cấu trúc khác — chỉ có nhanh hơn ở một số câu hỏi và chậm hơn ở những câu còn lại.**
+
+| Thao tác | Mảng | Danh sách liên kết |
+|---|---|---|
+| Lấy phần tử thứ i | `O(1)` ⚡ | `O(n)` |
+| Chèn/xoá ở đầu | `O(n)` | `O(1)` ⚡ |
+| Chèn/xoá ở cuối | `O(1)`* | `O(1)` nếu giữ đuôi |
+| Chèn/xoá ở giữa (đã đứng ở đó) | `O(n)` | `O(1)` ⚡ |
+| Tìm theo giá trị | `O(n)` | `O(n)` |
+| Bộ nhớ mỗi phần tử | chỉ dữ liệu | dữ liệu **+ con trỏ** |
+
+\* Mảng động thỉnh thoảng phải cấp phát vùng mới gấp đôi rồi chép sang — lần đó tốn `O(n)`, nhưng vì gấp đôi nên nó hiếm dần, tính trung bình vẫn là `O(1)`. Cách đọc các ký hiệu này ở [[big-o-doc-va-uoc-luong]].
+
+## So sánh
+
+Bảng trên nói danh sách liên kết thắng ở chèn/xoá. **Thực tế thì mảng thường vẫn thắng**, và lý do không nằm trong lý thuyết:
+
+**1. Bộ nhớ đệm CPU.** CPU không đọc từng byte — nó kéo về cả một khối 64 byte quanh chỗ bạn vừa chạm. Mảng nằm liền nhau nên một lần kéo là có sẵn 16 phần tử tiếp theo. Danh sách liên kết nằm rải rác nên mỗi bước nhảy là một lần chờ bộ nhớ chính — **chậm hơn khoảng 100 lần** so với đọc từ đệm. Chủ đề này ở [[cache-nhieu-tang]].
+
+**2. `O(1)` của chèn giữa là có điều kiện.** Nó chỉ đúng khi bạn **đã đứng sẵn ở chỗ cần chèn**. Nếu phải đi tìm chỗ đó trước, bạn tốn `O(n)` cho việc đi — và mất luôn lợi thế.
+
+**3. Mảng động đã đủ tốt cho hầu hết việc.** `push`/`pop` ở cuối là `O(1)` trung bình, và đó là thao tác bạn dùng nhiều nhất.
+
+Kết luận thực dụng: **mặc định dùng mảng.** Chuyển sang danh sách liên kết khi bạn có lý do cụ thể — thường là hàng đợi cần thêm đầu này lấy đầu kia rất nhiều, hoặc bạn đang tự dựng một cấu trúc khác trên nền nó.
+
+## Dễ nhầm
+
+**1. Tưởng `shift()` rẻ như `pop()`.** Đây là bẫy hay gặp nhất khi dùng mảng làm hàng đợi:
 
 ```ts
-const ds = ['a', 'b', 'c']
-ds[1]              // tức thì, không phụ thuộc độ dài
-ds.push('d')       // rẻ (thường)
-ds.unshift('x')    // ĐẮT — dịch toàn bộ
-ds.splice(1, 0, 'y')  // ĐẮT — dịch từ vị trí 1 trở đi
+const q = [1, 2, 3]
+q.pop()     // ✅ O(1) — lấy cuối, không ai phải dịch
+q.shift()   // ❌ O(n) — lấy đầu, TOÀN BỘ phần còn lại dịch sang trái
 ```
 
-```python
-ds = ['a', 'b', 'c']
-ds[1]              # tức thì
-ds.append('d')     # rẻ
-ds.insert(0, 'x')  # ĐẮT — dịch toàn bộ
-```
+Vòng lặp `while (q.length) q.shift()` biến một việc `O(n)` thành `O(n²)`. Cách chữa: dùng một chỉ số đầu thay vì thật sự lấy ra, như trong phần BFS ở [[duyet-do-thi-bfs-va-dfs]].
 
-Vì sao `push` chỉ "rẻ **thường**": mảng động cấp phát dư chỗ. Khi hết chỗ, nó xin vùng nhớ lớn gấp đôi rồi chép hết sang. Lần đó đắt, nhưng vì tăng gấp đôi nên chuyện đó hiếm dần — **chia đều ra thì vẫn rẻ**. Đây là "chi phí khấu hao", và nó giải thích vì sao `push` một triệu lần vẫn nhanh.
+**2. Tưởng mảng trong JavaScript giống mảng trong C.** Mảng JS là object có khoá số, và engine chỉ tối ưu nó thành mảng liền nhau **khi các phần tử cùng kiểu và không có lỗ**. Trộn kiểu hoặc tạo lỗ (`ds[1000] = 1` trên mảng 3 phần tử) làm nó rơi về dạng chậm hơn nhiều.
 
-## Danh sách liên kết: mỗi ô giữ đường tới ô sau
+**3. Tưởng danh sách liên kết tiết kiệm bộ nhớ.** Ngược lại: mỗi phần tử phải mang thêm ít nhất một con trỏ (8 byte trên máy 64-bit). Với dãy số nguyên, danh sách liên kết có thể tốn **gấp ba** mảng.
 
-```
-[ 'a' | → ] → [ 'b' | → ] → [ 'c' | ∅ ]
- 1000          3480          2120        ← nằm rải rác, không cần liền nhau
-```
+**4. Dùng danh sách liên kết vì nó "học thuật".** Trong phần lớn ngôn ngữ hiện đại, bạn thậm chí không tự viết nó — `Array`/`list` và các cấu trúc dựng sẵn đã phủ hết nhu cầu. Giá trị của bài này là **hiểu đánh đổi**, không phải để đi cài lại danh sách liên kết.
 
-Mỗi nút giữ giá trị và **đường tới** nút kế tiếp.
+## Mẹo nhớ
+
+> **Mảng = ghế đánh số: tính ra chỗ ngay, nhưng chèn giữa thì cả hàng dịch.**
+>
+> **Liên kết = chuỗi nắm tay: phải đếm mới tới, nhưng chèn chỉ đổi hai cái nắm tay.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Vì sao mảng lấy được phần tử thứ i trong đúng một bước?
+2. Vì sao chèn vào đầu mảng lại tốn `O(n)`?
+3. Danh sách liên kết chèn giữa là `O(1)` — với điều kiện gì?
+4. Nêu hai lý do thực tế khiến mảng thường thắng dù lý thuyết nói khác.
+5. `q.shift()` trong vòng lặp gây hậu quả gì, và bạn thay bằng cách nào?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết một hàng đợi dùng mảng nhưng **không dùng `shift()`**:
 
 ```ts
-type Nut<T> = { giaTri: T; sau: Nut<T> | null }
-
-function chenSau<T>(nut: Nut<T>, giaTri: T): void {
-  nut.sau = { giaTri, sau: nut.sau }   // chỉ đổi hai đường trỏ, không dịch gì cả
-}
+const q = new HangDoi()
+q.them(1); q.them(2)
+q.lay()   // → 1
+q.lay()   // → 2
+q.lay()   // → undefined
 ```
 
-```python
-@dataclass
-class Nut:
-    gia_tri: object
-    sau: 'Nut | None' = None
+Tự kiểm: mỗi thao tác của bạn tốn bao nhiêu bước, và mảng bên trong có bao giờ phải dịch phần tử không?
 
-def chen_sau(nut: Nut, gia_tri) -> None:
-    nut.sau = Nut(gia_tri, nut.sau)
-```
+## Thử sức
 
-Đánh đổi lật ngược hoàn toàn so với mảng:
+Bạn cần giữ 10 triệu số nguyên và **chỉ làm hai việc**: duyệt hết chúng theo thứ tự, và thỉnh thoảng thêm vào cuối.
 
-| Phép | Mảng | Danh sách liên kết |
-|---|---|---|
-| Lấy phần tử thứ n | **tức thì** | phải đi từ đầu, n bước |
-| Chèn/xoá ở **chỗ đã cầm được** | dịch cả đuôi | **chỉ đổi con trỏ** |
-| Chèn/xoá ở vị trí thứ n | dịch cả đuôi | đi n bước rồi đổi con trỏ |
-| Bộ nhớ mỗi phần tử | chỉ giá trị | giá trị **+ một con trỏ** |
-| Duyệt tuần tự | rất nhanh | chậm hơn nhiều (xem dưới) |
-
-Chú ý dòng thứ ba: người ta hay nói "danh sách liên kết chèn nhanh", nhưng đó chỉ đúng khi bạn **đã cầm sẵn nút đó**. Nếu phải tìm nó trước thì vẫn phải đi từ đầu, và lợi thế bốc hơi.
-
-## Vì sao thực tế mảng thường thắng
-
-Đây là phần lý thuyết trong sách hay bỏ qua: **bộ nhớ đệm của CPU (cache)**.
-
-CPU không đọc bộ nhớ từng byte. Nó đọc từng **khối** (thường 64 byte). Khi bạn chạm `ds[0]` của một mảng, CPU kéo luôn `ds[1]`, `ds[2]`, ... vào bộ nhớ đệm — sẵn sàng cho vòng lặp tiếp theo.
-
-Danh sách liên kết thì các nút **nằm rải rác** khắp bộ nhớ. Mỗi bước là một lần nhảy tới địa chỉ xa lạ, và bộ nhớ đệm trượt. Một lần trượt tốn cỡ **100 chu kỳ CPU**, trong khi đọc trúng đệm chỉ vài chu kỳ.
-
-Hệ quả có thật, đo được: duyệt một mảng 1 triệu số thường nhanh hơn duyệt danh sách liên kết cùng kích thước **hàng chục lần** — dù cả hai đều "cùng độ phức tạp tuyến tính". Đây là bài học lớn hơn về Big-O: nó đếm số phép, **không đếm giá của từng phép**. Chi tiết ở [[big-o-doc-va-uoc-luong]].
-
-Nên trong ứng dụng thường ngày: **mặc định dùng mảng**. Chỉ nghĩ tới danh sách liên kết khi có lý do cụ thể.
-
-## Vậy khi nào danh sách liên kết đúng
-
-- Bạn liên tục chèn/xoá ở **giữa** và đã cầm sẵn vị trí (ví dụ: danh sách bài đang phát, hàng đợi tác vụ có huỷ giữa chừng)
-- Cần **ghép hai danh sách** thành một mà không chép gì (nối đuôi = một phép gán)
-- Không được phép có một khối bộ nhớ liên tục lớn
-- Làm nền cho cấu trúc khác — bộ nhớ đệm LRU thường là bảng băm + danh sách liên kết hai chiều
-
-Điểm cuối là ứng dụng hay gặp nhất trong thực tế, và nó giải thích cách [[cache-nhieu-tang]] hoạt động ở tầng dưới cùng.
-
-Chú ý về JavaScript và Python: **cả hai đều không có danh sách liên kết dựng sẵn**. `Array` của JS và `list` của Python đều là mảng động. Điều đó tự nó đã là một câu trả lời về mức độ cần thiết của nó trong ứng dụng thường ngày.
-
-## Chọn nhanh
-
-```
-Cần lấy theo chỉ số? ───────────────► Mảng
-Chủ yếu duyệt từ đầu tới cuối? ─────► Mảng (bộ nhớ đệm)
-Thêm/bớt ở cuối? ───────────────────► Mảng
-Thêm/bớt ở đầu, rất nhiều lần? ─────► Hàng đợi hai đầu (deque)
-Chèn giữa liên tục, đã cầm vị trí? ─► Danh sách liên kết
-Không chắc? ────────────────────────► Mảng
-```
-
-Dòng "thêm/bớt ở đầu" đáng nhớ: Python có `collections.deque` cho đúng việc đó, còn JS thì `Array.shift()` là bẫy hiệu năng kinh điển trong vòng lặp lớn.
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| `unshift` / `insert(0, ...)` trong vòng lặp | Chậm theo bình phương | Thêm vào cuối rồi đảo, hoặc dùng `deque` |
-| `shift()` để làm hàng đợi | Mỗi lần dịch cả mảng | `deque` (Python), chỉ số đầu (JS) |
-| Dùng danh sách liên kết vì "lý thuyết nói chèn nhanh" | Chậm hơn mảng vì trượt bộ nhớ đệm | Đo trước, mặc định mảng |
-| Tưởng chèn vào danh sách liên kết luôn rẻ | Phải tìm vị trí trước thì vẫn đi từ đầu | Chỉ rẻ khi đã cầm sẵn nút |
-| `splice` để xoá trong vòng lặp | Dịch mảng mỗi lần lặp | `filter` tạo mảng mới một lần |
-| Quên danh sách liên kết tốn thêm bộ nhớ con trỏ | Gấp 2–3 lần bộ nhớ cho số nhỏ | Tính cả chi phí này |
-
-## Ghi nhớ
-
-- Mảng nằm liền nhau → lấy theo chỉ số tức thì, chèn giữa thì phải dịch.
-- Danh sách liên kết rải rác → chèn ở chỗ **đã cầm** rẻ, nhưng lấy phần tử thứ n thì đắt.
-- Bộ nhớ đệm CPU làm mảng thắng trong thực tế, kể cả khi lý thuyết nói hoà.
-- `push` rẻ nhờ tăng gấp đôi và chi phí khấu hao; `unshift`/`shift` thì không.
-- JS và Python đều không có danh sách liên kết dựng sẵn — mặc định dùng mảng.
-
-## Tự kiểm tra
-
-1. Vì sao `ds[3]` và `ds[3_000_000]` tốn thời gian như nhau?
-2. Bộ nhớ đệm CPU khiến kết luận lý thuyết về danh sách liên kết sai ở chỗ nào?
-3. `push` được gọi là "rẻ khấu hao" — nghĩa là gì?
+Mảng hay danh sách liên kết? Trả lời rồi giải thích bằng **bộ nhớ đệm CPU**, không phải bằng bảng độ phức tạp — vì bảng đó nói hai bên hoà nhau.

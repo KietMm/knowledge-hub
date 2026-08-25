@@ -4,137 +4,162 @@ slug: danh-doi-bo-nho-va-thoi-gian
 summary: Gần như mọi cách tăng tốc đều là một hình thức trả bộ nhớ để mua thời gian. Nhận ra khuôn mẫu đó rồi thì bạn áp được ở mọi tầng.
 level: nang-cao
 tags: [nen-tang, do-phuc-tap, hieu-nang, danh-doi]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** nhận ra một khuôn mẫu duy nhất đằng sau chỉ mục, bộ nhớ đệm, ghi nhớ kết quả và bảng tra sẵn — và biết khi nào đánh đổi đó **không** đáng.
+> **Sau bài này bạn sẽ:** nhận ra cùng một khuôn mẫu đằng sau cache, index, bảng băm và bảng quy hoạch động — và biết ba câu phải hỏi trước khi áp dụng nó.
 
-## Một khuôn mẫu, rất nhiều tên gọi
+## Ý tưởng chính
 
-Nhìn lại những gì đã học, chúng là **cùng một ý tưởng** ở các quy mô khác nhau:
+Gần như mọi cách tăng tốc trong lập trình đều là **một hình thức của cùng một việc**: nhớ sẵn kết quả để khỏi tính lại.
 
-| Tên gọi | Trả gì | Mua gì | Quy mô |
-|---|---|---|---|
-| Dựng `Map` làm chỉ mục | Một bảng băm trong RAM | Tra `O(1)` thay vì `O(n)` | Trong hàm |
-| Ghi nhớ kết quả đệ quy | Một `Map` các kết quả | Hàm mũ → tuyến tính | Trong hàm |
-| Index của database | Dung lượng đĩa + ghi chậm hơn | Đọc nhanh gấp nghìn lần | Trong database |
-| Bộ nhớ đệm ứng dụng | RAM + rủi ro dữ liệu cũ | Không phải tính lại | Trong tiến trình |
-| Redis / CDN | Máy chủ thêm + tiền | Không phải gọi tầng dưới | Trong hệ thống |
-| Phi chuẩn hoá bảng | Dữ liệu lặp + rủi ro lệch | Bỏ được `JOIN` | Trong lược đồ |
+Bạn trả bằng **bộ nhớ** và mua về **thời gian**. Nhận ra khuôn mẫu này rồi thì bạn thấy nó ở mọi tầng — và quan trọng hơn, bạn biết nó **luôn kèm hoá đơn**.
 
-Câu chung của cả sáu dòng: **cất sẵn kết quả để khỏi tính lại.** Nhận ra được khuôn mẫu này thì bạn không phải học sáu thứ, chỉ học một thứ và sáu chỗ đặt nó.
+## Mental model
 
-## Ba câu hỏi trước khi đánh đổi
+Hãy nghĩ tới **cuốn sổ tay của một người bán hàng**.
 
-Đánh đổi này **không miễn phí**, và cái giá thường không phải bộ nhớ — mà là **tính đúng đắn**.
+> Khách hỏi giá một món. Người bán có hai lựa chọn: **lật bảng giá tính lại từ đầu** (chậm, nhưng luôn đúng), hoặc **nhìn cuốn sổ đã ghi sẵn giá hôm qua** (nhanh, nhưng có thể đã cũ).
+>
+> Cuốn sổ càng dày thì tra càng nhanh — và càng dễ có trang ghi sai sự thật.
 
-**① Dữ liệu cất sẵn có thể sai lệch không, và sai thì hậu quả gì?**
+Toàn bộ chuyện cache, index, bảng băm đều nằm trong hình ảnh đó. Và hai vấn đề muôn thuở của nó cũng vậy: **cuốn sổ chiếm chỗ**, và **cuốn sổ có thể lệch với sự thật**.
+
+## Ví dụ nhỏ
 
 ```ts
-const dem = new Map<string, number>()
-function soDon(khachId: string) {
-  if (!dem.has(khachId)) dem.set(khachId, db.demDon(khachId))   // cất sẵn
-  return dem.get(khachId)!
+// Trả bằng thời gian: tính lại mỗi lần, luôn đúng, không tốn bộ nhớ
+function fib(n) {
+  if (n <= 1) return n
+  return fib(n - 1) + fib(n - 2)
 }
+fib(40)   // ~1 giây, khoảng 300 triệu lời gọi
 ```
 
-Đoạn này nhanh hơn thật. Nó cũng **sai vĩnh viễn** ngay khi khách đặt thêm một đơn. Không có gì xoá mục cũ đi.
-
-> Trong hai việc khó của khoa học máy tính, việc khó nhất là **làm mất hiệu lực bộ nhớ đệm**. Câu đùa đó tồn tại lâu vì nó đúng.
-
-**② Bộ nhớ có bị chặn trên không?**
-
-`Map` không giới hạn kích thước = rò rỉ bộ nhớ chờ sẵn. Máy chủ chạy lâu ngày sẽ chết vì hết RAM, và nó chết vào lúc bạn không có mặt.
-
 ```ts
-// ✅ Có chặn trên: xoá mục cũ nhất khi đầy (LRU đơn giản)
-class Nho<K, V> {
-  private m = new Map<K, V>()
-  constructor(private toiDa = 1000) {}
-  get(k: K): V | undefined {
-    const v = this.m.get(k)
-    if (v !== undefined) { this.m.delete(k); this.m.set(k, v) }  // đánh dấu vừa dùng
-    return v
-  }
-  set(k: K, v: V) {
-    if (this.m.size >= this.toiDa) this.m.delete(this.m.keys().next().value!)
-    this.m.set(k, v)
-  }
+// Trả bằng bộ nhớ: ghi sổ, tra lại, tức thì
+const so = new Map()
+function fib(n) {
+  if (n <= 1) return n
+  if (so.has(n)) return so.get(n)
+  const kq = fib(n - 1) + fib(n - 2)
+  so.set(n, kq)
+  return kq
 }
+fib(40)   // ~0,0001 giây, 40 mục trong sổ
 ```
 
-Mẹo dùng được ở đây: `Map` của JS **giữ đúng thứ tự chèn**, nên khoá đầu tiên chính là khoá cũ nhất — không cần thêm danh sách liên kết. Python có sẵn `functools.lru_cache(maxsize=...)` làm đúng việc này.
+## Code chạy thế nào
 
-**③ Có thật là điểm nghẽn không?**
+Cuốn sổ tiết kiệm được gì, nhìn cho cụ thể:
 
-Đây là câu hay bị bỏ qua nhất. Thêm bộ nhớ đệm cho một hàm chiếm 2% thời gian chạy thì bạn vừa mua 2% và trả bằng một loại lỗi mới — dữ liệu cũ. Đo trước, xem [[hieu-nang-va-do-luong]].
+```text
+KHÔNG ghi sổ — fib(5) gọi lại cùng một thứ rất nhiều lần
+                  fib(5)
+              /          \
+         fib(4)          fib(3)      ← fib(3) tính LẦN 1
+        /     \          /     \
+    fib(3)  fib(2)   fib(2)  fib(1)  ← fib(3) tính LẦN 2, fib(2) ba lần
+    ...
 
-## Ba chiến lược làm hết hiệu lực
-
-Khi đã quyết cất sẵn, phải chọn cách bỏ đi:
-
-| Cách | Làm sao | Hợp với | Rủi ro |
-|---|---|---|---|
-| **Hết hạn theo thời gian** | Cất kèm thời điểm, quá X giây thì bỏ | Dữ liệu chịu được cũ vài giây | Cũ trong khoảng thời gian đó |
-| **Xoá khi ghi** | Sửa dữ liệu thì xoá mục tương ứng | Dữ liệu phải chính xác | Quên một đường ghi là sai vĩnh viễn |
-| **Khoá theo phiên bản** | Nhét mã phiên bản vào khoá | Nội dung tĩnh, tài nguyên | Tốn bộ nhớ cho bản cũ |
-
-Cách thứ ba đáng chú ý vì nó **né** hẳn bài toán: không xoá gì cả, chỉ đổi khoá. Đó chính là lý do file tĩnh được đặt tên kèm mã băm (`app-5c57db86.js`) — bản mới có tên mới nên không bao giờ đụng bản cũ. Xem [[cache-nhieu-tang]].
-
-Nguyên tắc chọn: **dữ liệu chịu được cũ thì dùng thời gian; dữ liệu không chịu được cũ thì dùng xoá-khi-ghi và phải chắc chắn liệt kê đủ mọi đường ghi.**
-
-## Hướng ngược lại: trả thời gian để mua bộ nhớ
-
-Đánh đổi này chạy được cả hai chiều, và chiều ngược ít được nhắc:
-
-```ts
-// ❌ O(n) bộ nhớ — file 4 GB thì hết RAM
-const dong = fs.readFileSync('log.txt', 'utf8').split('\n')
-for (const d of dong) xuLy(d)
-
-// ✅ O(1) bộ nhớ — chậm hơn chút, nhưng chạy được với file cỡ nào cũng xong
-for await (const d of docTungDong('log.txt')) xuLy(d)
+CÓ ghi sổ — mỗi giá trị tính đúng một lần
+    fib(5) → cần fib(4), fib(3)
+    fib(4) → cần fib(3), fib(2)
+    fib(3) → tính, GHI SỔ
+    fib(3) lần sau → tra sổ, xong ngay
 ```
 
-```python
-# ❌ nạp hết          # ✅ đọc theo luồng
-open(f).readlines()   for dong in open(f): xu_ly(dong)
-```
+Số lời gọi rơi từ ~300 triệu xuống 40. Cái giá: một `Map` 40 mục. Đây là món hời — nhưng không phải lúc nào cũng vậy, và phần dưới nói về lúc nào thì không.
 
-Cùng một dạng quyết định: chấp nhận chậm hơn để đổi lấy **chạy được**. Nén dữ liệu cũng vậy (tốn CPU, tiết kiệm băng thông và đĩa), và tính lại thay vì lưu cũng vậy.
+## Tại sao cần nó
 
-## Khi nào **đừng** đánh đổi
+Vì khi bạn thấy được khuôn mẫu, bạn **học một lần, dùng ở mọi tầng**:
 
-- Chưa đo, chưa biết điểm nghẽn ở đâu
-- Dữ liệu đòi hỏi chính xác tuyệt đối (số dư tài khoản, tồn kho)
-- Chỗ ghi vào dữ liệu đó nằm rải rác nhiều nơi, không liệt kê hết được
-- Bộ nhớ tiết kiệm được nhỏ hơn chi phí phức tạp thêm
-- Đã có tầng dưới lo hộ rồi — database có bộ nhớ đệm riêng, hệ điều hành có bộ đệm trang; thêm một tầng nữa có khi chỉ thêm một chỗ sai
-
-Điểm cuối đáng nhớ: **mỗi tầng đệm thêm vào là một nguồn dữ liệu cũ mới**. Ba tầng đệm nghĩa là ba chỗ có thể lệch nhau, và khi người dùng báo "tôi thấy dữ liệu cũ" bạn phải lần cả ba.
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
+| Tên gọi | Nhớ sẵn cái gì | Trả bằng |
 |---|---|---|
-| `Map` làm bộ nhớ đệm không giới hạn | Rò rỉ bộ nhớ, máy chủ chết sau nhiều ngày | Chặn kích thước, xoá mục cũ nhất |
-| Cất sẵn mà không có cách làm hết hiệu lực | Dữ liệu sai vĩnh viễn | Chọn một trong ba chiến lược |
-| Xoá-khi-ghi nhưng sót một đường ghi | Sai ở đúng đường bị sót, rất khó lần | Liệt kê mọi đường ghi, hoặc dùng hết hạn theo thời gian |
-| Thêm đệm trước khi đo | Mua 2%, trả bằng một loại lỗi mới | Đo trước |
-| Đệm dữ liệu đòi chính xác tuyệt đối | Sai số dư, sai tồn kho | Đừng đệm loại dữ liệu này |
-| Chồng nhiều tầng đệm | Ba chỗ lệch nhau, không lần ra | Ít tầng nhất có thể |
-| Nạp cả file lớn vào RAM | Hết bộ nhớ | Đọc theo luồng |
+| Ghi nhớ / quy hoạch động | Kết quả hàm theo tham số | RAM |
+| Bảng băm | Vị trí của phần tử theo khoá | RAM |
+| Index cơ sở dữ liệu | Vị trí dòng theo giá trị cột | Đĩa + ghi chậm hơn |
+| Cache HTTP / CDN | Nội dung phản hồi | Đĩa + nguy cơ dữ liệu cũ |
+| Bảng tính sẵn (materialized view) | Kết quả truy vấn nặng | Đĩa + phải làm mới |
+| Chỉ mục tìm kiếm | Tài liệu nào chứa từ nào | Đĩa + ghi chậm hơn |
 
-## Ghi nhớ
+Sáu dòng, một khuôn mẫu. Ai học riêng lẻ sáu thứ này sẽ thấy chúng là sáu chủ đề; ai thấy khuôn mẫu chỉ cần nhớ **một** câu và ba câu hỏi ở dưới. Tầng cache trong hệ thống thật nằm ở [[cache-nhieu-tang]].
 
-- Gần như mọi cách tăng tốc đều là **trả bộ nhớ để mua thời gian** — một khuôn mẫu, nhiều tên gọi.
-- Cái giá thật thường không phải RAM, mà là **dữ liệu cũ**.
-- Ba câu hỏi: có sai lệch được không, bộ nhớ có chặn trên không, có thật là điểm nghẽn không.
-- Ba chiến lược: hết hạn theo thời gian, xoá khi ghi, khoá theo phiên bản.
-- Đánh đổi chạy cả hai chiều — đọc theo luồng là trả thời gian để mua bộ nhớ.
-- Mỗi tầng đệm là một nguồn sai lệch mới. Ít tầng nhất có thể.
+## So sánh
 
-## Tự kiểm tra
+Ba câu hỏi bắt buộc trước khi đánh đổi, theo đúng thứ tự:
 
-1. Index của database, `@cache`, và CDN giống nhau ở điểm cốt lõi nào?
-2. Ba chiến lược làm hết hiệu lực, và mỗi cái hợp với loại dữ liệu nào?
-3. Vì sao đặt tên file tĩnh kèm mã băm lại **né** được bài toán làm hết hiệu lực?
+**1. Kết quả có ổn định không?** Nhớ sẵn chỉ đúng khi cùng đầu vào cho cùng đầu ra — tức là bạn đang nhớ kết quả của một **hàm thuần** ([[ham-dau-vao-dau-ra-va-tac-dung-phu]]). Nhớ kết quả của một hàm phụ thuộc thời gian hay dữ liệu đang đổi là tự tạo ra lỗi khó tái hiện.
+
+**2. Cuốn sổ lớn tới đâu?** Có trần không? `fib` chỉ cần 40 mục. Nhớ kết quả theo mọi tổ hợp tham số có thể phình vô hạn, và bạn đổi một chương trình chậm lấy một chương trình **hết RAM** — tệ hơn hẳn.
+
+**3. Sổ lệch với sự thật thì sao?** Đây là câu khó nhất, và là lý do câu nói kinh điển: *"hai bài toán khó nhất là đặt tên và làm mất hiệu lực cache"*. Trả lời trước ba tình huống: dữ liệu gốc đổi thì sao, sổ đầy thì bỏ mục nào, và hiển thị dữ liệu cũ vài giây có chấp nhận được không.
+
+Ba chiến lược làm mất hiệu lực, không cái nào hoàn hảo:
+
+```text
+Theo thời gian (TTL)   → đơn giản nhất; chấp nhận cũ tối đa N giây
+Theo sự kiện           → chính xác; nhưng phải nhớ xoá ở MỌI chỗ ghi
+Ghi thì xoá luôn       → an toàn; mất lợi ích nếu ghi nhiều hơn đọc
+```
+
+## Dễ nhầm
+
+**1. Đánh đổi khi chưa đo.** Ghi nhớ một hàm vốn chỉ chạy 2ms và gọi 10 lần mỗi ngày là thêm code, thêm chỗ sai, không được gì. Đo trước — cách đo ở [[hieu-nang-va-do-luong]].
+
+**2. Quên chiều ngược lại.** Đôi khi bạn trả **thời gian** để mua **bộ nhớ**, và đó cũng là lựa chọn đúng:
+
+```ts
+// Tốn RAM: nạp cả file 5GB
+const tatCa = JSON.parse(await fs.readFile('lich-su.json'))
+
+// Tốn thời gian hơn, nhưng chạy được với RAM 1GB
+for await (const dong of docTungDong('lich-su.json')) { }
+```
+
+Nén dữ liệu, xử lý theo luồng, tính lại thay vì lưu — đều là chiều ngược lại. Khi bộ nhớ là thứ khan hiếm, chiều này mới đúng.
+
+**3. Nhớ sẵn thứ phụ thuộc quyền xem.** Đây là lỗi bảo mật, không phải lỗi hiệu năng:
+
+```ts
+cache.set(`don-${id}`, don)   // ❌ ai tra khoá này cũng lấy được, kể cả người không có quyền
+```
+
+Khoá cache phải mang theo **danh tính người xem** khi dữ liệu khác nhau theo người.
+
+**4. Tưởng cache luôn làm mọi thứ nhanh hơn.** Cache tra hụt (miss) tốn thêm một lần tra vô ích rồi mới tính. Với dữ liệu gần như không lặp lại — mỗi khoá chỉ được hỏi một lần — cache **luôn** chậm hơn không cache.
+
+**5. Không đặt trần cho cuốn sổ.** Mọi bộ nhớ đệm trong tiến trình phải có giới hạn kích thước và chính sách loại bỏ. Không có nó, cache là một chỗ rò bộ nhớ mọc chậm — chạy tốt vài tuần rồi sập.
+
+## Mẹo nhớ
+
+> **Mọi cách tăng tốc đều là "ghi sổ để khỏi tính lại".**
+>
+> **Cuốn sổ nào cũng có hai hoá đơn: chỗ chứa, và nguy cơ ghi sai sự thật.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Index cơ sở dữ liệu và ghi nhớ hàm giống nhau ở điểm nào?
+2. Ba câu hỏi phải trả lời trước khi thêm một lớp nhớ sẵn?
+3. Vì sao chỉ nên nhớ sẵn kết quả của hàm thuần?
+4. Cho một tình huống mà cache làm chương trình **chậm hơn**.
+5. Khi nào bạn đi theo chiều ngược lại — trả thời gian để mua bộ nhớ?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, thêm ghi nhớ cho hàm này **kèm trần 100 mục**:
+
+```ts
+function doiTien(soTien, tuTienTe, sangTienTe) { /* gọi API, ~200ms */ }
+```
+
+Ba câu tự kiểm: khoá của bạn gồm những gì, sổ đầy thì bạn bỏ mục nào, và tỉ giá đổi sau 5 phút thì chuyện gì xảy ra?
+
+## Thử sức
+
+Trang chủ hiển thị "10 sản phẩm bán chạy nhất", tính từ một truy vấn nặng mất 3 giây. Trang được xem 10.000 lần mỗi phút.
+
+Rõ ràng là phải nhớ sẵn. Câu hỏi thật sự: **nhớ ở tầng nào** — trong tiến trình ứng dụng, trong Redis, hay ở CDN? Mỗi lựa chọn hỏng theo một kiểu khác nhau khi bạn chạy 5 instance ứng dụng — kiểu gì?
