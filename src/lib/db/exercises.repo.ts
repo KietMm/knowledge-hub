@@ -29,6 +29,34 @@ export async function findBySlug(slug: string): Promise<Exercise | null> {
  * `bai_hoc`, còn bài học không biết gì về bài tập — nhờ vậy không có gì để lệch khi
  * thêm bài tập mới.
  */
+export type ExerciseNeighbors = {
+  prev: Exercise | null
+  next: Exercise | null
+  /** Vị trí trong kho, -1 nếu không tìm thấy. */
+  index: number
+  total: number
+}
+
+/**
+ * Bài tập trước/sau trong kho.
+ *
+ * Thứ tự lấy đúng thứ tự của `listAll()` — tức thứ tự người học thấy ở trang /bt. Nếu ở
+ * đây dùng thứ tự khác (theo chủ đề chẳng hạn), "bài tiếp theo" sẽ nhảy tới một bài không
+ * đứng cạnh nó trong danh sách, và người học mất dấu mình đang đi tới đâu.
+ */
+export async function findNeighbors(slug: string): Promise<ExerciseNeighbors> {
+  const tatCa = await listAll()
+  const index = tatCa.findIndex((bt) => bt.slug === slug)
+  if (index === -1) return { prev: null, next: null, index: -1, total: tatCa.length }
+
+  return {
+    prev: index > 0 ? (tatCa[index - 1] ?? null) : null,
+    next: tatCa[index + 1] ?? null,
+    index,
+    total: tatCa.length,
+  }
+}
+
 export async function listByBaiHoc(noteSlug: string): Promise<Exercise[]> {
   return (await listAll()).filter((bt) => bt.baiHoc === noteSlug)
 }

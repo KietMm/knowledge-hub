@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { BaiTapLienQuan } from '@/components/exercise/BaiTapLienQuan'
-import { LessonNav } from '@/components/notes/LessonNav'
+import { PrevNextNav } from '@/components/layout/PrevNextNav'
 import { LevelBadge } from '@/components/notes/LevelBadge'
 import { NoteActions } from '@/components/notes/NoteActions'
 import { NoteContent } from '@/components/notes/NoteContent'
@@ -103,11 +103,13 @@ export default async function NotePage({ params }: { params: Promise<{ note: str
 
           <BaiTapLienQuan baiTap={baiTap} />
 
-          <LessonNav
+          <PrevNextNav
             prev={neighbors.prev}
             next={neighbors.next}
             index={neighbors.index}
             total={neighbors.total}
+            tienTo="/n"
+            nhanAria="Điều hướng bài học"
           />
         </article>
 

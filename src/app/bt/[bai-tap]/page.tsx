@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { DoKhoBadge } from '@/components/exercise/DoKhoBadge'
+import { PrevNextNav } from '@/components/layout/PrevNextNav'
 import { KhuLamBai } from '@/components/exercise/KhuLamBai'
 import { NoteContent } from '@/components/notes/NoteContent'
 import * as exercisesRepo from '@/lib/db/exercises.repo'
@@ -35,7 +36,7 @@ export default async function ExercisePage({ params }: { params: Params }) {
   const bt = await exercisesRepo.findBySlug(slug)
   if (bt === null) notFound()
 
-  const dich = await buildDichLink()
+  const [dich, hangXom] = await Promise.all([buildDichLink(), exercisesRepo.findNeighbors(slug)])
   const [de, loiGiai, maJs, maPy] = await Promise.all([
     renderMarkdown(bt.deBai, dich),
     bt.loiGiai === '' ? Promise.resolve(null) : renderMarkdown(bt.loiGiai, dich),
@@ -84,6 +85,17 @@ export default async function ExercisePage({ params }: { params: Params }) {
         maLoiGiai={maLoiGiai}
         phanTichHtml={loiGiai?.html ?? null}
       />
+
+      <div className="max-w-[78ch]">
+        <PrevNextNav
+          prev={hangXom.prev}
+          next={hangXom.next}
+          index={hangXom.index}
+          total={hangXom.total}
+          tienTo="/bt"
+          nhanAria="Điều hướng bài tập"
+        />
+      </div>
     </article>
   )
 }
