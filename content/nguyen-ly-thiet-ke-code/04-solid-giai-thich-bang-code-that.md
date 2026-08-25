@@ -4,196 +4,161 @@ slug: solid-giai-thich-bang-code-that
 summary: Năm chữ cái, mỗi chữ một lỗi cụ thể nó ngăn được. Bỏ định nghĩa sách vở, xem code trước và sau.
 level: trung-cap
 tags: [nen-tang, thiet-ke, solid, nguyen-ly]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** nhận ra từng nguyên lý SOLID qua **triệu chứng trong code** thay vì qua định nghĩa, và biết chúng đều quy về [[ket-dinh-cao-lien-ket-long]].
+> **Sau bài này bạn sẽ:** nhớ được năm nguyên lý qua **lỗi mà mỗi cái ngăn được**, thay vì qua định nghĩa — và biết khi nào áp dụng chúng là quá tay.
 
-## Đọc SOLID thế nào cho đúng
+## Ý tưởng chính
 
-SOLID không phải năm luật phải tuân thủ. Là năm **triệu chứng đã được đặt tên** — mỗi chữ mô tả một kiểu đau mà người ta gặp đủ nhiều nên phải đặt tên cho nó.
+SOLID không phải năm luật phải tuân thủ. Đó là **năm mô tả về những kiểu hỏng hay gặp**, mỗi cái kèm một cách tránh.
 
-Đọc theo lối "code này đau ở đâu, chữ nào chẩn được" thì hữu ích. Đọc theo lối "phải thoả cả năm chữ" thì sinh ra kiến trúc thừa thãi.
+Cách học đúng: với mỗi chữ cái, đừng nhớ định nghĩa — nhớ **câu chuyện code hỏng như thế nào khi thiếu nó**.
 
-## S — Trách nhiệm đơn nhất
+## Mental model
 
-> Một module chỉ nên có **một lý do để thay đổi**.
+Hãy coi năm nguyên lý như **năm câu hỏi bạn tự hỏi khi review một thiết kế**:
 
-Chú ý: *một lý do để đổi*, không phải *"chỉ làm một việc"*. Khác biệt này quan trọng.
-
-```ts
-// ❌ Ba lý do đổi trong một class
-class BaoCaoDon {
-  layDuLieu() { return db.query('SELECT ...') }      // ① lược đồ DB đổi
-  tinhTongDoanhThu() { /* quy tắc nghiệp vụ */ }      // ② chính sách kế toán đổi
-  xuatPdf() { /* thư viện PDF */ }                    // ③ đổi thư viện xuất file
-}
+```text
+S  →  "Ai là người sẽ yêu cầu sửa lớp này? Có nhiều hơn một người không?"
+O  →  "Thêm loại mới thì tôi sửa code cũ hay chỉ viết thêm code mới?"
+L  →  "Lớp con này có làm được MỌI thứ lớp cha hứa không?"
+I  →  "Người dùng có bị bắt phụ thuộc vào thứ họ không dùng không?"
+D  →  "Phần nghiệp vụ đang phụ thuộc vào chi tiết kỹ thuật cụ thể nào?"
 ```
 
-Ba bộ phận công ty khác nhau có thể yêu cầu đổi ba phương thức này, độc lập nhau. Mỗi lần đổi đều bắt bạn chạm vào file mà hai bên kia đang dùng.
+Năm câu này dùng được ngay, kể cả khi bạn quên tên đầy đủ của các nguyên lý.
+
+## Ví dụ nhỏ
+
+Chữ **S** — trách nhiệm đơn nhất — nhìn cho cụ thể:
 
 ```ts
-// ✅ Tách theo lý do đổi
-class KhoDon      { lay() {} }              // đổi khi lược đồ DB đổi
-class TinhDoanhThu { tinh(dons: Don[]) {} }  // đổi khi chính sách kế toán đổi
-class XuatPdf     { xuat(bc: BaoCao) {} }    // đổi khi đổi thư viện
-```
-
-**Triệu chứng nhận ra:** một file bị sửa trong hầu hết pull request, vì lý do khác nhau mỗi lần. Xem `git log` của file đó — nếu thông điệp commit nói về những chủ đề chẳng liên quan gì nhau, chữ S đang bị vi phạm.
-
-## O — Mở để mở rộng, đóng để sửa đổi
-
-> Thêm hành vi mới bằng cách **thêm code**, không phải sửa code đang chạy.
-
-```ts
-// ❌ Thêm cổng thanh toán = sửa hàm đang chạy tốt
-function tinhPhi(cong: string, tien: number): number {
-  if (cong === 'momo')  return tien * 0.01
-  if (cong === 'vnpay') return tien * 0.015
-  if (cong === 'the')   return tien * 0.025 + 2000
-  throw new Error('Cổng lạ')
-}
-```
-
-Mỗi cổng mới bắt bạn mở lại hàm này — nơi ba cổng cũ đang chạy tốt. Rủi ro làm vỡ cái đang chạy, và phải test lại tất cả.
-
-```ts
-// ✅ Thêm cổng = thêm một object, không đụng code cũ
-interface Cong { ma: string; tinhPhi(tien: number): number }
-
-const CONGS: Cong[] = [
-  { ma: 'momo',  tinhPhi: (t) => t * 0.01 },
-  { ma: 'vnpay', tinhPhi: (t) => t * 0.015 },
-  { ma: 'the',   tinhPhi: (t) => t * 0.025 + 2000 },
-]
-const theoMa = new Map(CONGS.map((c) => [c.ma, c]))
-
-function tinhPhi(ma: string, tien: number): number {
-  const c = theoMa.get(ma)
-  if (!c) throw new Error(`Cổng lạ: ${ma}`)
-  return c.tinhPhi(tien)
-}
-```
-
-**Triệu chứng:** chuỗi `if/else` hoặc `switch` trên một chuỗi "loại", và nó dài thêm mỗi quý.
-
-Cảnh báo cân bằng: đừng dựng cơ chế cắm-thêm cho thứ **chưa bao giờ đổi**. Chữ O chỉ đáng trả giá ở những trục bạn **biết** sẽ mở rộng. Ba nhánh `if` ổn định năm năm thì cứ để yên.
-
-## L — Thay thế được (Liskov)
-
-> Đưa lớp con vào chỗ đang dùng lớp cha thì **mọi thứ vẫn đúng**.
-
-```ts
-class Chim { bay() { /* ... */ } }
-class ChimCanhCut extends Chim {
-  bay() { throw new Error('Chim cánh cụt không bay được') }   // ❌
-}
-
-function choBayHet(dan: Chim[]) { dan.forEach((c) => c.bay()) }   // nổ khi gặp cánh cụt
-```
-
-Lớp con **thu hẹp** hợp đồng của lớp cha là vi phạm. Nó biến một hàm đang đúng thành hàm có thể nổ, mà chữ ký kiểu không hề cảnh báo.
-
-```ts
-// ✅ Mô hình lại theo NĂNG LỰC, không theo phân loại sinh học
-interface BayDuoc { bay(): void }
-class ChimSe implements BayDuoc { bay() {} }
-class ChimCanhCut { boi() {} }      // đơn giản là không có năng lực bay
-
-function choBayHet(dan: BayDuoc[]) { dan.forEach((c) => c.bay()) }
-```
-
-**Triệu chứng:** lớp con ném lỗi "không hỗ trợ", hoặc có `if (x instanceof LoaiCuThe)` nằm trong code lẽ ra phải tổng quát. Bẫy hình vuông / hình chữ nhật ở [[oop-that-su-la-gi]] là ví dụ kinh điển của chữ này.
-
-## I — Tách giao diện
-
-> Đừng bắt ai phụ thuộc vào phương thức họ không dùng.
-
-```ts
-// ❌ Giao diện béo
-interface KhoDuLieu {
-  doc(id: string): Promise<Don>
-  ghi(d: Don): Promise<void>
-  xoa(id: string): Promise<void>
-  saoLuu(): Promise<void>
-  donDep(): Promise<void>
-}
-
-// Màn hình chỉ hiển thị, nhưng test nó phải giả lập cả năm phương thức
-class ManHinhXem { constructor(private kho: KhoDuLieu) {} }
-```
-
-```ts
-// ✅ Cắt theo nhu cầu người dùng giao diện
-interface DocDuoc { doc(id: string): Promise<Don> }
-interface GhiDuoc { ghi(d: Don): Promise<void>; xoa(id: string): Promise<void> }
-
-class ManHinhXem { constructor(private kho: DocDuoc) {} }    // giả lập 1 phương thức
-```
-
-**Triệu chứng:** test phải viết `throw new Error('không dùng')` cho một nửa số phương thức của bản giả. Xem [[test-double-stub-mock-fake]].
-
-Bonus thật: kiểu `DocDuoc` giờ **nói ra** rằng `ManHinhXem` không ghi gì cả. Đọc chữ ký là biết, không phải đọc ruột.
-
-## D — Đảo ngược phụ thuộc
-
-> Module cấp cao và cấp thấp đều phụ thuộc vào **trừu tượng**, không phụ thuộc lẫn nhau.
-
-```ts
-// ❌ Nghiệp vụ dính thẳng vào hạ tầng
-import { PostgresClient } from 'pg'
-class DichVuDon {
-  private db = new PostgresClient(...)      // nghiệp vụ → Postgres
+// ❌ Ba người khác nhau có thể yêu cầu sửa lớp này
+class BaoCaoDoanhThu {
+  tinhDoanhThu() {}      // ← kế toán yêu cầu đổi công thức
+  dinhDangPDF() {}       // ← marketing yêu cầu đổi layout
+  guiEmail() {}          // ← kỹ thuật đổi nhà cung cấp mail
 }
 ```
 
 ```ts
-// ✅ Cả hai cùng nhìn vào giao diện ở giữa
-interface KhoDon { luu(d: Don): Promise<void> }              // do tầng nghiệp vụ định nghĩa
-class DichVuDon { constructor(private kho: KhoDon) {} }       // nghiệp vụ → giao diện
-class KhoDonPostgres implements KhoDon { async luu(d) {} }    // hạ tầng → giao diện
+// ✅ Mỗi lớp một lý do thay đổi
+class TinhDoanhThu {}
+class XuatPDF {}
+class GuiMail {}
 ```
 
-Điểm mấu chốt hay bị bỏ qua: **giao diện thuộc về tầng nghiệp vụ**, không thuộc tầng hạ tầng. Mũi tên phụ thuộc đảo chiều — đó là lý do nó tên là "đảo ngược".
+"Trách nhiệm đơn nhất" **không** có nghĩa là "một lớp chỉ có một hàm". Nó nghĩa là: **một lớp chỉ nên có một lý do để thay đổi** — và cách nhận ra lý do là hỏi *ai* sẽ yêu cầu thay đổi đó.
 
-**Triệu chứng:** file chứa quy tắc nghiệp vụ có `import` từ thư viện database, HTTP, hay hệ thống file.
+## Code chạy thế nào
 
-Chính giáo trình này làm đúng vậy: `src/lib/db/` là chỗ **duy nhất** chạm dữ liệu, còn `src/app/` và `src/components/` không file nào đọc file trực tiếp. Nhờ vậy đổi từ JSON sang Postgres không phải sửa giao diện người dùng.
+Chữ **O** — mở để mở rộng, đóng để sửa đổi — thấy rõ nhất qua cách code **lớn lên**:
 
-## Bảng tra nhanh
+```text
+KHÔNG có O — mỗi loại mới là một lần sửa hàm cũ
+  v1:  if (loai === 'the')     { ... }
+  v2:  if (loai === 'the')     { ... }
+       else if (loai === 'momo') { ... }        ← sửa hàm cũ
+  v3:  else if (loai === 'zalopay') { ... }     ← lại sửa hàm cũ
+       ⇒ hàm phình dần, và mỗi lần sửa đều có nguy cơ làm vỡ nhánh cũ
 
-| Chữ | Triệu chứng trong code | Sửa bằng |
+CÓ O — mỗi loại mới là một file mới
+  const congThanhToan = { the: new The(), momo: new Momo() }
+  congThanhToan[loai].thanhToan(sum)
+
+  v3:  thêm  zalopay: new ZaloPay()             ← thêm dòng khai báo, không sửa logic
+       ⇒ code cũ đã chạy đúng thì không bị đụng vào
+```
+
+```ts
+interface CongThanhToan { thanhToan(sum: number): void }
+
+class The implements CongThanhToan { thanhToan(s) {} }
+class Momo implements CongThanhToan { thanhToan(s) {} }
+
+const cong: Record<string, CongThanhToan> = { the: new The(), momo: new Momo() }
+cong[loai].thanhToan(sum)
+```
+
+Điểm mấu chốt: nguy cơ làm vỡ nằm ở việc **sửa code đang chạy đúng**. Nguyên lý này không làm code ít đi — nó chuyển thay đổi từ "sửa" sang "thêm".
+
+## Tại sao cần nó
+
+Vì mỗi chữ cái ngăn một kiểu hỏng rất cụ thể:
+
+| Chữ | Câu hỏi | Lỗi nó ngăn |
 |---|---|---|
-| **S** | Một file bị sửa trong mọi PR, vì lý do khác nhau | Tách theo **lý do thay đổi** |
-| **O** | `switch` dài thêm mỗi quý | Bảng tra / danh sách cắm thêm |
-| **L** | Lớp con ném "không hỗ trợ" | Mô hình theo **năng lực** |
-| **I** | Bản giả trong test phải cài phương thức thừa | Cắt giao diện nhỏ hơn |
-| **D** | Nghiệp vụ `import` từ `pg` / `axios` / `fs` | Giao diện do tầng nghiệp vụ định nghĩa |
+| **S** | Ai yêu cầu sửa lớp này? | Sửa layout PDF làm vỡ công thức doanh thu |
+| **O** | Thêm loại mới thì sửa hay thêm? | Thêm cổng thanh toán làm vỡ cổng cũ |
+| **L** | Lớp con làm được mọi thứ cha hứa? | `ChimCanhCut.bay()` ném lỗi giữa chừng |
+| **I** | Có bị ép phụ thuộc thứ không dùng? | Đổi một hàm trong interface to làm 10 lớp phải sửa |
+| **D** | Nghiệp vụ dính chi tiết kỹ thuật? | Không test được vì phải có cơ sở dữ liệu thật |
 
-Cả năm đều là hệ quả của hai thước đo ở [[ket-dinh-cao-lien-ket-long]]: S và I nói về kết dính, O, L, D nói về liên kết. Nhớ hai thước đo thì suy ra được năm chữ; thuộc năm chữ mà không hiểu hai thước đo thì hay áp sai chỗ.
+Chữ **L** (Liskov) nói gọn: **lớp con phải dùng được ở mọi chỗ lớp cha dùng được, không gây bất ngờ**. Vi phạm nó thì đa hình mất tác dụng, vì người gọi bắt đầu phải hỏi "đây thật ra là loại gì?" — và thế là quay lại `if/else`.
 
-## Lỗi hay gặp
+Chữ **I** (tách giao diện): một interface 15 hàm bắt mọi bản cài đặt phải làm đủ 15, kể cả thứ chúng không cần. Tách thành ba interface nhỏ thì mỗi bên chỉ phụ thuộc phần nó dùng.
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Áp cả năm chữ cho một script 100 dòng | Năm interface cho một việc | Áp khi thấy triệu chứng, không áp trước |
-| Hiểu S là "một class một phương thức" | Hàng trăm class vụn | S là *một lý do đổi*, không phải một việc |
-| Dựng cắm-thêm cho trục không bao giờ đổi | Khuôn khổ thừa, khó đọc | Chỉ mở ở trục biết sẽ mở rộng |
-| Kế thừa rồi ném "không hỗ trợ" | Hàm đang đúng thành nổ | Mô hình theo năng lực |
-| Đặt interface cạnh lớp hạ tầng | Mũi tên vẫn sai chiều, chưa đảo gì | Interface thuộc tầng nghiệp vụ |
-| Interface một chỗ dùng, một chỗ cài | Thêm tầng không lợi ích | Chỉ tách khi có ≥2 bản cài hoặc cần test |
+Chữ **D** (đảo ngược phụ thuộc): phần nghiệp vụ **không được** phụ thuộc vào Postgres, SendGrid hay S3 — nó phụ thuộc vào một hợp đồng, và chi tiết kỹ thuật cài hợp đồng đó. Đây chính là ví dụ `dangKy(email, boGuiMail)` ở [[ket-dinh-cao-lien-ket-long]], và là thứ làm test viết được mà không dựng cả hệ thống ([[test-double-stub-mock-fake]]).
 
-## Ghi nhớ
+## So sánh
 
-- SOLID là **năm triệu chứng đã được đặt tên**, không phải năm luật bắt buộc.
-- **S** — một lý do để đổi, không phải một việc.
-- **O** — thêm hành vi bằng cách thêm code; nhưng chỉ mở ở trục thật sự hay đổi.
-- **L** — lớp con không được thu hẹp hợp đồng của cha.
-- **I** — bản giả trong test phải cài phương thức thừa là dấu hiệu giao diện béo.
-- **D** — giao diện thuộc tầng nghiệp vụ; hạ tầng đi cài nó.
-- Cả năm quy về kết dính cao, liên kết lỏng.
+Điều ít ai nói: **năm nguyên lý này không độc lập, và chúng chỉ là hệ quả của hai thước đo**:
 
-## Tự kiểm tra
+```text
+S, I  →  làm KẾT DÍNH cao hơn  (mỗi thứ chỉ chứa cái thuộc về nhau)
+O, L, D  →  làm LIÊN KẾT lỏng hơn  (phụ thuộc vào hợp đồng, không vào chi tiết)
+```
 
-1. "Một lý do để thay đổi" khác "chỉ làm một việc" ở chỗ nào?
-2. Vì sao `ChimCanhCut extends Chim` vi phạm chữ L, và sửa thế nào?
-3. Trong chữ D, interface nên đặt ở tầng nào và vì sao điều đó quyết định?
+Nên nếu chỉ nhớ được một thứ, hãy nhớ hai thước đo — SOLID sẽ tự suy ra được. Đó cũng là lý do bài này đứng **sau** bài kết dính/liên kết chứ không phải trước.
+
+## Dễ nhầm
+
+**1. Áp dụng SOLID cho code chưa cần.** Tạo interface cho một lớp duy nhất, tách một lớp 30 dòng thành năm lớp — bạn vừa mua bảo hiểm cho thay đổi chưa chắc xảy ra, và trả bằng năm chỗ phải nhảy tới khi đọc. Chờ tới khi có **lý do cụ thể**.
+
+**2. Hiểu S thành "một lớp một hàm".** Trách nhiệm đo bằng **lý do thay đổi**, không đo bằng số hàm. Lớp `TaiKhoan` có `rut`, `gui`, `xemSoDu` vẫn là một trách nhiệm: giữ số dư luôn hợp lệ.
+
+**3. Hiểu O thành "không bao giờ sửa code cũ".** Sửa code cũ là chuyện bình thường và cần thiết. O chỉ nói: với **trục thay đổi mà bạn đã biết là sẽ có** (thêm cổng thanh toán, thêm định dạng xuất), hãy làm sao thêm được mà không phải sửa.
+
+**4. Tưởng vi phạm L chỉ xảy ra với kế thừa.** Nó xảy ra với mọi hợp đồng: một bản cài đặt `LuuTru` ném lỗi ở hàm `xoa()` trong khi các bản khác thì không, cũng là vi phạm L — dù chẳng có `extends` nào.
+
+**5. Coi SOLID là mục tiêu.** Mục tiêu là code dễ đổi. SOLID là **phương tiện**, và có lúc phương tiện đó không phù hợp — xem [[khi-cac-nguyen-ly-mau-thuan]].
+
+## Mẹo nhớ
+
+> **S** ai yêu cầu sửa · **O** thêm chứ đừng sửa · **L** con phải giữ lời cha hứa · **I** đừng ép người ta ôm thứ họ không dùng · **D** nghiệp vụ không được biết tên nhà cung cấp.
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Chữ S đo trách nhiệm bằng gì — số hàm hay lý do thay đổi? Cho ví dụ.
+2. Chữ O chuyển thay đổi từ dạng nào sang dạng nào?
+3. `ChimCanhCut.bay()` ném lỗi vi phạm chữ nào, và hậu quả với người gọi là gì?
+4. Chữ D nói phần nghiệp vụ **không được** phụ thuộc vào cái gì?
+5. Năm nguyên lý này quy về hai thước đo nào?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, chỉ ra lớp này vi phạm những chữ nào và sửa lại:
+
+```ts
+class XuLyDonHang {
+  constructor() { this.db = new PostgresClient() }
+
+  xuLy(don, loaiThanhToan) {
+    if (loaiThanhToan === 'the') { /* ... */ }
+    else if (loaiThanhToan === 'momo') { /* ... */ }
+    this.db.query('INSERT INTO don_hang ...')
+    this.guiMailXacNhan(don)
+  }
+}
+```
+
+Tự kiểm: sau khi sửa, bạn có test được `xuLy` mà **không cần Postgres** không?
+
+## Thử sức
+
+Đội bạn có quy tắc: *"mọi service đều phải có interface"*. Hiện có 40 interface, và **38 cái chỉ có đúng một bản cài đặt**.
+
+Quy tắc đó đang phục vụ chữ D hay đang vi phạm tinh thần của SOLID? Nêu **tiêu chí cụ thể** để quyết định service nào cần interface, service nào không — tiêu chí phải trả lời được bằng dữ kiện, không bằng cảm giác.

@@ -4,235 +4,182 @@ slug: oop-that-su-la-gi
 summary: Bốn tính chất trong sách chỉ có ba cái đáng giá. Vì sao kế thừa bị lạm dụng, và vì sao "ưu tiên kết hợp" là lời khuyên đắt giá nhất.
 level: trung-cap
 tags: [nen-tang, thiet-ke, oop, ke-thua, ket-hop]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** hiểu OOP giải bài toán gì, phân biệt được đóng gói thật với `private` hình thức, và biết vì sao gần như mọi lần bạn định dùng kế thừa thì kết hợp mới là đáp án.
+> **Sau bài này bạn sẽ:** biết OOP giải bài toán gì (và không giải bài toán gì), và có một phép thử một câu để quyết định giữa kế thừa và kết hợp.
 
-## OOP giải bài toán gì
+## Ý tưởng chính
 
-Trước OOP, chương trình là dữ liệu ở một nơi và hàm ở nơi khác. Vấn đề: **không gì buộc dữ liệu ở trạng thái hợp lệ**.
+OOP không sinh ra để "mô hình hoá thế giới thực" — đó là cách giải thích trong sách giáo khoa và nó gây hiểu nhầm rất nhiều.
+
+OOP sinh ra để giải một bài toán cụ thể: **giữ dữ liệu luôn ở trạng thái hợp lệ, bằng cách buộc mọi thay đổi phải đi qua các cửa do chính nó quy định.**
+
+## Mental model
+
+Hãy nghĩ tới **máy ATM** so với **một két sắt mở toang**.
+
+> Két mở toang: ai cũng thò tay lấy tiền, bỏ tiền vào, viết lại con số trên sổ. Không có gì bảo đảm con số trên sổ khớp với tiền trong két.
+>
+> ATM: bạn **không chạm được vào tiền**. Bạn chỉ có ba nút — rút, gửi, xem số dư — và mỗi nút đều kiểm tra trước khi làm. *"Rút 5 triệu khi số dư 2 triệu"* bị từ chối, chứ không âm thầm ghi số dư âm.
+
+Cái ATM giấu tiền đi không phải để bí mật. Nó giấu để **không ai làm hỏng được sự nhất quán giữa tiền và sổ**. Đó chính là đóng gói, và đó là toàn bộ giá trị cốt lõi của OOP.
+
+## Ví dụ nhỏ
 
 ```ts
+// ❌ Két mở toang: ai cũng sửa được, không ai bảo đảm hợp lệ
 const taiKhoan = { soDu: 100 }
-taiKhoan.soDu = -5000        // không ai chặn — số dư âm giờ tồn tại trong hệ thống
+taiKhoan.soDu = -50        // không ai chặn
+taiKhoan.soDu = 'nhiều'    // cũng không ai chặn
 ```
 
-OOP đề xuất: **gói dữ liệu cùng với các phép hợp lệ trên nó, và không cho ai chạm vào dữ liệu theo đường khác.**
-
 ```ts
+// ✅ ATM: chỉ có cửa vào, và mỗi cửa tự kiểm tra
 class TaiKhoan {
-  private soDu: number
-  constructor(banDau: number) {
-    if (banDau < 0) throw new Error('Số dư ban đầu không được âm')
-    this.soDu = banDau
+  #soDu = 0                                    // # = thật sự riêng tư
+
+  rut(sum: number) {
+    if (sum <= 0) throw new Error('Số tiền phải dương')
+    if (sum > this.#soDu) throw new Error('Không đủ số dư')
+    this.#soDu -= sum
   }
-  rut(tien: number): void {
-    if (tien <= 0) throw new Error('Số tiền rút phải dương')
-    if (tien > this.soDu) throw new Error('Không đủ số dư')
-    this.soDu -= tien
-  }
-  xem(): number { return this.soDu }
+
+  get soDu() { return this.#soDu }              // đọc được, ghi thì không
 }
 ```
 
-```python
-class TaiKhoan:
-    def __init__(self, ban_dau: float):
-        if ban_dau < 0: raise ValueError('Số dư ban đầu không được âm')
-        self._so_du = ban_dau
+Sau khi viết `TaiKhoan`, **không tồn tại đường nào** để đưa nó về trạng thái sai. Đó là thứ bạn mua được bằng OOP.
 
-    def rut(self, tien: float) -> None:
-        if tien <= 0:        raise ValueError('Số tiền rút phải dương')
-        if tien > self._so_du: raise ValueError('Không đủ số dư')
-        self._so_du -= tien
+## Code chạy thế nào
+
+Điều đáng để ý là **ai chịu trách nhiệm giữ quy tắc**:
+
+```text
+KÉT MỞ TOANG — quy tắc nằm rải ở mọi chỗ dùng
+  chỗ A: if (sum <= soDu) soDu -= sum          ← nhớ kiểm
+  chỗ B: soDu -= sum                            ← QUÊN kiểm  ← lỗi ở đây
+  chỗ C: if (sum <= soDu) soDu -= sum          ← nhớ kiểm
+
+  ⇒ có 3 chỗ có thể sai, và sẽ thành 10 chỗ sau một năm
+
+ATM — quy tắc nằm đúng MỘT chỗ
+  chỗ A, B, C: taiKhoan.rut(sum)
+                    │
+                    └─► kiểm tra ở đây, không ai bỏ qua được
+
+  ⇒ có 1 chỗ có thể sai, và nó được test kỹ
 ```
 
-Cái bạn được không phải cú pháp `class`. Là **một bất biến**: *ở bất kỳ thời điểm nào, `soDu` không bao giờ âm* — và bạn chứng minh được điều đó bằng cách đọc **một** file, vì không có đường nào khác chạm tới nó.
+Đây là lý do `private` không phải chuyện "che giấu": nó là cách **thu hẹp số chỗ có thể làm hỏng dữ liệu** từ N xuống 1.
 
-Đây là giá trị thật của OOP, và nó chỉ tồn tại nếu bạn thực sự đóng cửa.
+## Tại sao cần nó
 
-## Đóng gói thật và `private` hình thức
+Vì không có nó, mọi trạng thái quan trọng đều dần trôi về trạng thái sai — không phải do ai ẩu, mà do **số chỗ chạm vào nó lớn dần theo thời gian**.
 
-Rất nhiều class có `private` nhưng chẳng đóng gói gì:
+Nhưng cũng vì vậy, OOP chỉ đáng dùng khi **có trạng thái cần bảo vệ**. Một object chỉ chứa dữ liệu và không có quy tắc nào thì không cần class:
 
 ```ts
-// ❌ private hình thức — getter/setter mở toang lại đúng cái vừa đóng
-class TaiKhoan {
-  private soDu: number = 0
-  getSoDu() { return this.soDu }
-  setSoDu(x: number) { this.soDu = x }   // ← ai cũng đặt -5000 được
-}
+// Không cần class — nó chỉ là dữ liệu
+type Diem = { x: number; y: number }
 ```
 
-Class này y hệt một object trần, chỉ dài hơn ba lần. Sinh `getX/setX` cho mọi trường là thói quen từ công cụ sinh code, không phải thiết kế.
+Ba tính chất đáng giá và một tính chất bị thổi phồng:
 
-Một bẫy tinh vi hơn, có thật và hay gặp:
+| Tính chất | Đáng giá? | Vì sao |
+|---|---|---|
+| **Đóng gói** | ⭐ cốt lõi | Thu hẹp chỗ có thể làm hỏng dữ liệu về một |
+| **Đa hình** | ⭐ rất đáng | Thêm loại mới mà không sửa chỗ dùng |
+| **Trừu tượng** | ⭐ đáng | Lộ ra ý định, giấu cơ chế |
+| **Kế thừa** | ⚠️ dè chừng | Tạo liên kết chặt nhất trong mọi kiểu liên kết |
+
+## So sánh
+
+Kế thừa và kết hợp giải cùng một nhu cầu — dùng lại code — theo hai cách rất khác:
 
 ```ts
-class GioHang {
-  private items: Item[] = []
-  layItems(): Item[] { return this.items }   // ❌ trả về CHÍNH mảng bên trong
-}
+// Kế thừa: "Chim LÀ Động vật"
+class Chim extends DongVat { }
 
-const g = new GioHang()
-g.layItems().push(itemLau)      // sửa được ruột từ bên ngoài, vòng qua mọi kiểm tra
+// Kết hợp: "Chim CÓ khả năng bay"
+class Chim {
+  constructor(private cachDiChuyen: CachDiChuyen) {}
+  diChuyen() { this.cachDiChuyen.thucHien() }
+}
 ```
 
-Đúng ra:
+Vì sao kế thừa hay hỏng — bài toán kinh điển:
 
 ```ts
-layItems(): readonly Item[] { return [...this.items] }   // ✅ trả bản sao
-```
-
-Đây là hệ quả trực tiếp của [[bien-trang-thai-va-luong-dieu-khien]]: trả về một mảng là trả **đường tới** mảng đó, không phải bản sao.
-
-Câu hỏi kiểm tra đóng gói: **có cách nào đưa object này vào trạng thái không hợp lệ từ bên ngoài không?** Có, thì `private` chỉ là trang trí.
-
-## Bốn tính chất — ba cái đáng giá
-
-**① Đóng gói** — giấu trạng thái, chỉ lộ phép hợp lệ. ✅ Giá trị cốt lõi, như trên.
-
-**② Trừu tượng** — lộ ra *cái gì*, giấu *thế nào*. ✅ Đáng giá, chi tiết ở [[truu-tuong-hoa-khi-nao-tach]].
-
-**③ Đa hình** — nhiều loại đáp ứng cùng một giao diện, chỗ gọi không cần biết loại nào. ✅ Đáng giá, và **là thứ dùng nhiều nhất trong thực tế**:
-
-```ts
-interface CongThanhToan { tru(tien: number): Promise<KetQua> }
-
-class Momo implements CongThanhToan   { async tru(t) { /* ... */ } }
-class VnPay implements CongThanhToan  { async tru(t) { /* ... */ } }
-class TheTest implements CongThanhToan { async tru(t) { return { ok: true } } }
-
-// Chỗ gọi không đổi một chữ khi thêm cổng mới
-async function thanhToan(cong: CongThanhToan, tien: number) {
-  return cong.tru(tien)
+class Chim { bay() {} }
+class ChimCanh extends Chim {}
+class ChimCanhCut extends Chim {
+  bay() { throw new Error('Cánh cụt không bay được') }   // ❌ vỡ hợp đồng
 }
 ```
 
-Chú ý: đa hình ở đây **không cần kế thừa** — chỉ cần cùng một giao diện. Điều này quan trọng, vì nó tách được thứ hữu ích ra khỏi thứ gây rắc rối.
-
-**④ Kế thừa** — ⚠️ **cái này mới là vấn đề.**
-
-## Vì sao kế thừa bị lạm dụng
-
-Kế thừa được dạy như "cách dùng lại code". Đó là cách hiểu sai, và nó dẫn tới:
-
-```ts
-// ❌ Kế thừa để dùng lại — nghe hợp lý, sai bản chất
-class DanhSach<T> {
-  protected items: T[] = []
-  them(x: T) { this.items.push(x) }
-  soLuong() { return this.items.length }
-}
-
-class NganXep<T> extends DanhSach<T> {     // "ngăn xếp cũng là một danh sách mà?"
-  lay(): T | undefined { return this.items.pop() }
-}
-
-const s = new NganXep<number>()
-s.them(1)
-s.items.splice(0, 1)     // ❌ ngăn xếp bị sửa từ giữa — phá vỡ chính định nghĩa của nó
-```
-
-`NganXep` thừa hưởng **toàn bộ** bề mặt của `DanhSach`, kể cả những phép làm nó không còn là ngăn xếp nữa.
-
-Ba vấn đề thật của kế thừa:
-
-- **Liên kết chặt nhất có thể.** Lớp con phụ thuộc vào cả chi tiết bên trong lớp cha. Đổi lớp cha vỡ mọi lớp con, và bạn không biết có bao nhiêu lớp con.
-- **Bài toán lớp cha mong manh.** Lớp cha đổi cách một phương thức gọi phương thức khác — lớp con vỡ dù chữ ký không đổi chút nào.
-- **Chỉ có một cha.** Cần hành vi từ hai chỗ thì hết cách, sinh ra cây kế thừa méo mó.
-
-Và cái bẫy kinh điển nhất, cho thấy "là một" không đủ để dùng kế thừa:
-
-```ts
-class HinhChuNhat {
-  constructor(protected r: number, protected c: number) {}
-  datRong(x: number) { this.r = x }
-  datCao(x: number) { this.c = x }
-  dienTich() { return this.r * this.c }
-}
-
-class HinhVuong extends HinhChuNhat {    // toán học nói hình vuông LÀ hình chữ nhật
-  datRong(x: number) { this.r = this.c = x }
-  datCao(x: number)  { this.r = this.c = x }
-}
-
-function kiemTra(h: HinhChuNhat) {
-  h.datRong(5); h.datCao(4)
-  console.log(h.dienTich())     // mong đợi 20 — với HinhVuong ra 16
-}
-```
-
-Hàm `kiemTra` đúng với `HinhChuNhat` và sai với `HinhVuong`. Đây là vi phạm **nguyên lý thay thế** — chữ L trong [[solid-giai-thich-bang-code-that]]. Bài học: quan hệ "là một" trong đời thật **không** đảm bảo thay thế được trong code.
-
-## Ưu tiên kết hợp
-
-Thay vì *"ngăn xếp **là một** danh sách"*, dùng *"ngăn xếp **có một** mảng"*:
-
-```ts
-// ✅ Kết hợp — chỉ lộ đúng phép của ngăn xếp
-class NganXep<T> {
-  private items: T[] = []            // có một mảng, không phải là một mảng
-  day(x: T) { this.items.push(x) }
-  lay(): T | undefined { return this.items.pop() }
-  soLuong() { return this.items.length }
-}
-```
-
-```python
-class NganXep:
-    def __init__(self): self._items = []
-    def day(self, x):  self._items.append(x)
-    def lay(self):     return self._items.pop() if self._items else None
-```
-
-Không ai chạm được vào giữa. Bề mặt đúng bằng cái bạn muốn cho phép.
+Mọi hàm nhận `Chim` giờ có thể nổ giữa chừng. Cây phân loại nghe rất tự nhiên lúc vẽ trên giấy, nhưng nó **cứng**: mỗi lớp con thừa hưởng *toàn bộ* lớp cha, kể cả phần không đúng với nó. Đây chính là chữ **L** trong SOLID ([[solid-giai-thich-bang-code-that]]).
 
 | | Kế thừa | Kết hợp |
 |---|---|---|
-| Quan hệ | "là một" | "có một" |
-| Bề mặt lộ ra | **toàn bộ** của cha | đúng cái bạn chọn |
-| Đổi lúc chạy | không | có |
-| Số nguồn hành vi | một cha | bao nhiêu cũng được |
-| Lớp cha đổi | lớp con có thể vỡ | không ảnh hưởng |
+| Quan hệ | "LÀ một" | "CÓ một" |
+| Quyết định lúc | Viết code | Chạy chương trình |
+| Đổi hành vi | Sửa cây phân loại | Truyền thứ khác vào |
+| Liên kết | **Chặt nhất** | Lỏng |
+| Kết hợp nhiều hành vi | Rất khó (đa kế thừa) | Dễ |
 
-Nguyên tắc: **kết hợp để dùng lại code, giao diện để đa hình, kế thừa chỉ khi thật sự là quan hệ thay thế được.**
+Phép thử một câu: **"X có mãi mãi LÀ một Y, trong mọi hoàn cảnh, không ngoại lệ?"** Do dự một chút thôi thì chọn kết hợp.
 
-## Vậy khi nào kế thừa đúng
+## Dễ nhầm
 
-Vẫn có chỗ dùng đúng, chỉ là ít hơn nhiều so với lượng người ta dùng:
+**1. Tưởng dùng `class` là đang làm OOP.** Class chỉ chứa dữ liệu công khai, còn logic nằm ở service bên ngoài, thì đó là lập trình mệnh lệnh mặc áo OOP — và bạn mất đúng cái lợi duy nhất là giữ trạng thái hợp lệ. Xem [[ba-loi-viet-menh-lenh-oop-ham]].
 
-- Lớp con **thay thế được hoàn toàn** cho lớp cha ở mọi chỗ, không có ngoại lệ
-- Lớp cha là **trừu tượng**, chỉ định nghĩa hợp đồng, không giữ trạng thái
-- Cây kế thừa **nông** (một, tối đa hai tầng)
-- Framework yêu cầu (`extends Error`, `extends Component`)
+**2. `private` hình thức.** Đặt `private` rồi mở luôn getter/setter cho mọi trường thì két vẫn mở toang, chỉ thêm hai lớp cửa giả:
 
-Nếu phân vân, chọn kết hợp. Chuyển từ kết hợp sang kế thừa dễ; gỡ một cây kế thừa bốn tầng thì không.
+```ts
+class TaiKhoan {
+  private soDu = 0
+  getSoDu() { return this.soDu }
+  setSoDu(v: number) { this.soDu = v }   // ❌ vẫn ghi được giá trị bất kỳ
+}
+```
 
-## Lỗi hay gặp
+Đóng gói thật là **không có setter** — chỉ có các hành vi nghiệp vụ (`rut`, `gui`) tự kiểm tra bên trong.
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Sinh `getX/setX` cho mọi trường | Đóng gói bằng không, chỉ dài hơn | Chỉ lộ phép hợp lệ |
-| Trả thẳng mảng/object bên trong | Sửa được ruột từ ngoài | Trả bản sao hoặc `readonly` |
-| Kế thừa để dùng lại code | Lộ cả bề mặt không mong muốn | Kết hợp |
-| Cây kế thừa 4–5 tầng | Không biết phương thức đến từ đâu | Làm phẳng, dùng kết hợp |
-| Tin "là một" nên kế thừa được | Bẫy hình vuông / hình chữ nhật | Kiểm tra thay thế được thật không |
-| Class ôm hết mọi thứ liên quan | Kết dính thấp, xem [[ket-dinh-cao-lien-ket-long]] | Tách theo trách nhiệm |
-| Dùng class ở nơi một hàm là đủ | Khuôn khổ thừa | Xem [[ba-loi-viet-menh-lenh-oop-ham]] |
+**3. Kế thừa để dùng lại code.** Đây là lý do sai phổ biến nhất. `class BaoCaoPDF extends TienIchFile` chỉ vì muốn dùng vài hàm tiện ích — trong khi báo cáo **không phải là** một tiện ích file. Cần dùng lại thì gọi hàm, hoặc truyền vào bằng kết hợp.
 
-## Ghi nhớ
+**4. Cây kế thừa sâu.** Ba tầng trở lên thì để hiểu một lớp bạn phải đọc cả ba, và sửa lớp cha có thể làm vỡ những lớp con bạn không hề biết tồn tại. Đây là **liên kết chặt nhất** trong mọi kiểu — xem [[ket-dinh-cao-lien-ket-long]].
 
-- Giá trị thật của OOP là **giữ được một bất biến** — chứng minh được bằng cách đọc một file.
-- `private` mà có setter mở toang thì không đóng gói gì cả.
-- Trả về mảng bên trong = trả đường tới nó. Phải chép.
-- Đa hình **không cần** kế thừa — chỉ cần cùng giao diện.
-- Kế thừa là liên kết chặt nhất: lộ toàn bộ bề mặt cha, chỉ một cha, cha đổi thì con vỡ.
-- "Là một" trong đời thật không đảm bảo thay thế được trong code.
-- **Kết hợp để dùng lại, giao diện để đa hình, kế thừa chỉ khi thật sự thay thế được.**
+**5. Bọc class quanh mọi thứ.** Một hàm thuần không có trạng thái thì cứ để là hàm. Bọc nó vào `class TinhToanHelper` chỉ thêm một lớp vỏ, không thêm quy tắc nào cần bảo vệ — đúng thứ mà [[truu-tuong-hoa-khi-nao-tach]] cảnh báo.
 
-## Tự kiểm tra
+## Mẹo nhớ
 
-1. Câu hỏi nào kiểm tra được một class có đóng gói thật hay chỉ `private` hình thức?
-2. Vì sao `NganXep extends DanhSach` là sai, và kết hợp sửa được gì?
-3. Bẫy hình vuông / hình chữ nhật cho thấy điều gì về quan hệ "là một"?
+> **OOP là cái ATM: giấu tiền đi để không ai làm lệch sổ.**
+>
+> **"LÀ một" thì kế thừa. "CÓ một" thì kết hợp. Do dự thì chọn kết hợp.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. OOP giải quyết bài toán gì — nói bằng một câu, không nhắc tới "thế giới thực"?
+2. `private` thu hẹp cái gì, và vì sao điều đó quan trọng?
+3. Vì sao `getSoDu`/`setSoDu` là đóng gói hình thức?
+4. Phép thử một câu để chọn giữa kế thừa và kết hợp?
+5. Vì sao kế thừa là kiểu liên kết chặt nhất?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết lớp `GioHang` sao cho **không tồn tại cách nào** đưa nó về trạng thái sai:
+
+```text
+Quy tắc: số lượng mỗi món ≥ 1; tổng tiền luôn khớp với các món trong giỏ.
+```
+
+Tự kiểm: lớp của bạn có setter nào không? Nếu có, thử nghĩ xem người dùng nó có thể phá quy tắc nào bằng chính setter đó.
+
+## Thử sức
+
+Bạn có `class NhanVien` và cần thêm `NhanVienThoiVu` — không có bảo hiểm, tính lương theo giờ, không được duyệt nghỉ phép.
+
+Kế thừa hay kết hợp? Trả lời rồi thử tiếp: nếu tháng sau có thêm *"nhân viên chính thức làm bán thời gian"* và *"cộng tác viên tính theo dự án"*, lựa chọn của bạn còn trụ được không?

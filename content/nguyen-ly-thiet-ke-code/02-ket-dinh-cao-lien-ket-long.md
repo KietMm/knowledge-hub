@@ -4,181 +4,160 @@ slug: ket-dinh-cao-lien-ket-long
 summary: Hai thước đo nằm dưới gần như mọi lời khuyên thiết kế khác. Hiểu chúng thì SOLID và mẫu thiết kế thành hệ quả, không phải luật cần thuộc.
 level: co-ban
 tags: [nen-tang, thiet-ke, cohesion, coupling]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** đo được chất lượng thiết kế bằng hai câu hỏi cụ thể, và nhận ra vì sao "sửa chỗ này lại vỡ chỗ kia" luôn quy về cùng một nguyên nhân.
+> **Sau bài này bạn sẽ:** đánh giá được một thiết kế bằng hai câu hỏi thay vì bằng cảm giác, và hiểu vì sao SOLID chỉ là hệ quả của hai câu hỏi đó.
 
-## Hai thước đo
+## Ý tưởng chính
 
-Mọi module, class, hay hàm đều đo được bằng hai câu:
+Gần như mọi lời khuyên thiết kế bạn từng nghe đều quy về hai thước đo:
 
-- **Kết dính** (cohesion) — *những thứ bên trong nó có thuộc về nhau không?* Cao là tốt.
-- **Liên kết** (coupling) — *nó phụ thuộc vào bao nhiêu thứ bên ngoài, và chặt tới đâu?* Lỏng là tốt.
+```text
+Kết dính (cohesion)  →  Những thứ TRONG một module có thuộc về nhau không?
+Liên kết (coupling)  →  Module này phụ thuộc bao nhiêu vào module khác?
+```
 
-Mục tiêu: **kết dính cao, liên kết lỏng.** Gần như mọi nguyên lý thiết kế khác — SOLID, mẫu thiết kế, kiến trúc nhiều tầng — đều chỉ là cách cụ thể để đạt hai điều này.
+Mục tiêu luôn là **kết dính cao, liên kết lỏng**. Hiểu hai câu này thì SOLID, mẫu thiết kế, kiến trúc nhiều tầng đều trở thành **hệ quả** — không phải luật phải học thuộc.
 
-## Kết dính thấp trông thế nào
+## Mental model
+
+Hãy nghĩ tới cách sắp xếp một căn bếp.
+
+> **Kết dính cao** là ngăn kéo đựng **toàn đồ làm bánh**: bột, men, khuôn, cân. Mở một ngăn là làm được cả việc.
+>
+> **Kết dính thấp** là ngăn kéo "linh tinh": kéo, pin, dây sạc, hoá đơn cũ. Ai cũng có ngăn đó, và ai cũng ghét nó.
+>
+> **Liên kết lỏng** là cái nồi — dùng được trên bếp ga, bếp từ, bếp củi.
+>
+> **Liên kết chặt** là cái nồi chỉ vừa **đúng một cái bếp**. Đổi bếp là phải mua nồi mới.
+
+Ngăn kéo linh tinh không sai về chức năng — mọi thứ vẫn ở trong đó. Nó chỉ khiến bạn phải lục cả ngăn mỗi lần cần một món.
+
+## Ví dụ nhỏ
 
 ```ts
-// ❌ Kết dính thấp — cái tên 'Helper' đã tự tố cáo
-class Helper {
-  dinhDangNgay(d: Date): string {}
-  guiEmail(to: string): void {}
-  tinhThue(tien: number): number {}
-  nenAnh(buf: Buffer): Buffer {}
+// ❌ Kết dính thấp: một lớp làm bốn việc chẳng liên quan gì nhau
+class NguoiDungService {
+  taoNguoiDung() {}
+  guiEmailChaoMung() {}
+  xuatBaoCaoExcel() {}
+  saoLuuCoSoDuLieu() {}   // ← cái này làm gì ở đây?
 }
 ```
 
-Bốn phương thức không liên quan gì tới nhau. Hệ quả cụ thể, không phải chuyện thẩm mỹ:
-
-- Ai cần định dạng ngày cũng phải nạp cả module có mã nén ảnh
-- Đổi cách gửi email làm test của phần tính thuế phải chạy lại
-- Không ai biết nên đặt hàm mới vào đâu → cái gì cũng nhét vào `Helper`
-- Tên module không nói được nó làm gì
-
-**Dấu hiệu nhận biết** kết dính thấp, thấy là biết ngay: tên chứa `Helper`, `Util`, `Manager`, `Common`, `Misc`, `Base`, `Shared`.
-
 ```ts
-// ✅ Kết dính cao — mỗi module một chủ đề
-// ngay.ts     → dinhDangNgay, congNgay, khoangCachNgay
-// email.ts    → guiEmail, dungMauEmail
-// thue.ts     → tinhThue, tinhThueNhapKhau
-```
-
-Câu hỏi kiểm tra: **tả module này trong một câu, không dùng chữ "và"** — không tả được thì kết dính đang thấp.
-
-## Liên kết chặt trông thế nào
-
-```ts
-// ❌ Liên kết chặt — tự dựng lấy thứ nó cần
-class DichVuDon {
-  private db = new PostgresClient('postgres://localhost/prod')   // ① dính DB cụ thể
-  private mail = new SendGridClient(process.env.SENDGRID_KEY)    // ② dính nhà cung cấp
-
-  async tao(don: Don) {
-    await this.db.query('INSERT INTO dons ...')
-    await this.mail.send(don.email, 'Đã đặt hàng')
-    console.log('đã tạo đơn')                                     // ③ dính cách ghi log
-  }
+// ❌ Liên kết chặt: hàm này dính cứng vào một nhà cung cấp cụ thể
+import { SendGrid } from 'sendgrid'
+function dangKy(email) {
+  new SendGrid(process.env.KEY).send({ to: email, template: 'welcome' })
 }
 ```
 
-Cái class này **không test được** nếu không có Postgres thật và tài khoản SendGrid thật. Không đổi được nhà cung cấp email mà không sửa nó. Không dùng lại được ở môi trường khác.
+Lớp thứ nhất: sửa logic sao lưu thì phải mở file người dùng. Hàm thứ hai: đổi nhà cung cấp email thì phải sửa mọi chỗ gọi, và **không test được** nếu không thật sự gửi mail.
+
+## Code chạy thế nào
+
+Gỡ liên kết chặt không phải là thêm tầng cho sang — nó đổi hẳn thứ mà `dangKy` **phụ thuộc vào**:
+
+```text
+TRƯỚC:  dangKy ──phụ thuộc──► SendGrid (một thư viện cụ thể)
+
+        muốn test → phải có API key thật, và mail thật được gửi đi
+        đổi nhà cung cấp → sửa dangKy
+
+SAU:    dangKy ──phụ thuộc──► "thứ gì đó có hàm .gui()"
+                                      ▲              ▲
+                              SendGrid            GiaLapEmail
+                              (chạy thật)         (lúc test)
+
+        test → truyền bản giả vào, không gửi gì cả
+        đổi nhà cung cấp → viết lớp mới, dangKy không đổi một chữ
+```
 
 ```ts
-// ✅ Liên kết lỏng — nhận thứ nó cần từ bên ngoài
-interface KhoDon { luu(don: Don): Promise<void> }
-interface GuiThu { gui(to: string, noiDung: string): Promise<void> }
-
-class DichVuDon {
-  constructor(private kho: KhoDon, private thu: GuiThu) {}
-
-  async tao(don: Don) {
-    await this.kho.luu(don)
-    await this.thu.gui(don.email, 'Đã đặt hàng')
-  }
+function dangKy(email, boGuiMail) {
+  boGuiMail.gui(email, 'chao-mung')
 }
 ```
 
-```python
-class DichVuDon:
-    def __init__(self, kho: KhoDon, thu: GuiThu):
-        self.kho, self.thu = kho, thu
+Một tham số thêm vào, và `dangKy` chuyển từ *"tôi biết dùng SendGrid"* sang *"tôi cần ai đó biết gửi mail"*. Đó là toàn bộ nội dung của chữ **D** trong SOLID — xem [[solid-giai-thich-bang-code-that]].
 
-    async def tao(self, don: Don) -> None:
-        await self.kho.luu(don)
-        await self.thu.gui(don.email, 'Đã đặt hàng')
-```
+## Tại sao cần nó
 
-Kỹ thuật vừa dùng là **tiêm phụ thuộc** (dependency injection) — nghe to tát nhưng chỉ là *"đừng tự tạo thứ mình cần, hãy nhận nó từ ngoài vào"*.
+Vì hai thước đo này quyết định **chi phí của mọi thay đổi sau này**:
 
-Cái bạn được, cụ thể:
-
-```ts
-// Test không cần database, không cần mạng, chạy trong mili-giây
-const daLuu: Don[] = []
-const dv = new DichVuDon(
-  { luu: async (d) => { daLuu.push(d) } },
-  { gui: async () => {} },
-)
-await dv.tao(donMau)
-expect(daLuu).toHaveLength(1)
-```
-
-Đây chính là lý do [[test-double-stub-mock-fake]] khả thi: bạn thay được thành phần thật bằng bản giả **chỉ khi** liên kết đủ lỏng.
-
-## Các mức liên kết, từ tệ tới tốt
-
-| Mức | Ví dụ | Đánh giá |
+| | Kết dính cao, liên kết lỏng | Kết dính thấp, liên kết chặt |
 |---|---|---|
-| Dùng chung biến toàn cục | Hai module cùng sửa `global.config` | Tệ nhất |
-| Biết cấu trúc bên trong của nhau | `a.b.c.d.tinh()` | Rất tệ |
-| Phụ thuộc lớp cụ thể | `new PostgresClient()` | Chặt |
-| Phụ thuộc giao diện | `kho: KhoDon` | **Tốt** |
-| Chỉ truyền dữ liệu | `tinhThue(tien: number)` | **Tốt nhất** |
+| Sửa một tính năng | Mở một chỗ | Mở năm chỗ, sợ sót |
+| Viết test | Truyền bản giả vào là xong | Phải dựng cả hệ thống |
+| Người mới vào dự án | Đọc một module là hiểu một việc | Phải hiểu cả cây phụ thuộc |
+| Xoá tính năng cũ | Xoá một thư mục | Không ai dám xoá |
+| Chia việc cho nhiều người | Mỗi người một module | Ai cũng đụng vào cùng file |
 
-Dòng thứ hai có tên riêng — **luật Demeter**, hay "chỉ nói chuyện với hàng xóm":
+Dòng cuối là chỗ đau nhất trong đội nhiều người: liên kết chặt biến mọi thay đổi thành một cuộc thương lượng.
+
+Và đây cũng là lý do test khó viết là **tín hiệu thiết kế**, không phải vấn đề của test: nếu phải dựng cả cơ sở dữ liệu chỉ để kiểm một phép tính, thứ cần sửa là thiết kế chứ không phải bộ test — xem [[test-double-stub-mock-fake]].
+
+## So sánh
+
+Các mức liên kết, từ tệ nhất tới tốt nhất:
+
+| Mức | Nghĩa là | Ví dụ |
+|---|---|---|
+| Liên kết nội dung | A thò tay vào ruột B | Sửa thẳng thuộc tính private của object khác |
+| Liên kết chung | Cùng dùng một biến toàn cục | Hai module cùng đọc/ghi `global.config` |
+| Liên kết điều khiển | A truyền cờ bảo B làm gì | `xuLy(don, true)` |
+| Liên kết dữ liệu | A truyền đúng dữ liệu B cần | `tinhThue(gia, thueSuat)` ✅ |
+| Liên kết qua giao diện | A chỉ biết một hợp đồng | `dangKy(email, boGuiMail)` ✅ |
+
+Hai mức cuối là chỗ nên tới. Mức "liên kết điều khiển" đáng nhớ vì nó rất hay gặp: một tham số boolean điều khiển luồng gần như luôn có nghĩa là **hàm đang làm hai việc**, và tách ra thì cả hai đều rõ hơn.
+
+## Dễ nhầm
+
+**1. Tưởng liên kết lỏng nghĩa là thêm càng nhiều tầng càng tốt.** Hai thước đo này **kéo ngược nhau**: tách mạnh để giảm liên kết thì bạn có nhiều mảnh nhỏ, mỗi mảnh phải nói chuyện với nhiều mảnh khác — và liên kết tổng thể lại tăng. Điểm cân bằng là **module đủ lớn để tự làm trọn một việc**, đủ nhỏ để nói được nó làm gì bằng một câu.
+
+**2. Tưởng interface là thuốc chữa bách bệnh.** Tạo interface cho thứ **chỉ có một bản cài đặt và sẽ mãi như vậy** là thêm một lớp gián tiếp không mua được gì. Interface đáng giá khi có (hoặc chắc chắn sẽ có) nhiều bản cài đặt, hoặc khi bạn cần thay bằng bản giả lúc test.
+
+**3. Nhầm "cùng chủ đề" với "kết dính".** Một file `utils.ts` chứa mọi hàm liên quan tới chuỗi vẫn là ngăn kéo linh tinh nếu các hàm đó không bao giờ đổi cùng nhau. Phép thử tốt hơn: **những thứ này có thay đổi vì cùng một lý do không?**
+
+**4. Bỏ qua liên kết ẩn.** Hai module không `import` nhau vẫn có thể dính chặt: cùng đọc một bảng cơ sở dữ liệu, cùng phụ thuộc thứ tự chạy, cùng ngầm hiểu một định dạng chuỗi. Loại liên kết này nguy hiểm hơn vì không có mũi tên nào để nhìn thấy.
+
+## Mẹo nhớ
+
+> **Ngăn kéo đồ làm bánh, không phải ngăn kéo linh tinh.**
+>
+> **Cái nồi dùng được trên mọi bếp.**
+>
+> **Test khó viết = thiết kế đang kêu cứu.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Kết dính và liên kết đo hai thứ khác nhau — mỗi cái đo cái gì?
+2. Vì sao "test khó viết" là tín hiệu thiết kế chứ không phải vấn đề của test?
+3. Vì sao tham số boolean điều khiển luồng là mùi liên kết xấu?
+4. Hai thước đo này kéo ngược nhau ở chỗ nào?
+5. Cho một ví dụ về **liên kết ẩn** — hai module dính nhau mà không `import` nhau.
+
+## Tự viết lại
+
+Không nhìn lại phần trên, tách lớp này sao cho mỗi phần có một lý do thay đổi:
 
 ```ts
-// ❌ Biết quá nhiều về ruột người khác
-const tp = don.khach.diaChi.thanhPho.ten
-
-// ✅ Hỏi thứ mình cần, không tự đi mò
-const tp = don.tenThanhPhoGiao()
+class DonHang {
+  tinhTong() {}
+  luuVaoDatabase() {}
+  xuatHoaDonPDF() {}
+  guiMailXacNhan() {}
+}
 ```
 
-Chuỗi `a.b.c.d` nghĩa là code của bạn phụ thuộc vào **bốn** cấu trúc. Bất kỳ ai đổi một trong bốn đều làm vỡ bạn.
+Tự kiểm: bạn tách thành mấy phần, và với mỗi phần hãy nói **ai là người yêu cầu thay đổi nó** — kế toán, kỹ thuật, hay marketing?
 
-## Hai thước đo kéo ngược nhau
+## Thử sức
 
-Điều ít được nói: bạn **không** tối đa được cả hai.
+Hai module `BaoCao` và `HoaDon` không hề `import` nhau. Nhưng khi bạn đổi định dạng cột `ngay_tao` trong cơ sở dữ liệu từ chuỗi sang timestamp, **cả hai đều vỡ**.
 
-Cắt module nhỏ hơn → kết dính mỗi cái cao hơn, nhưng số liên kết giữa chúng **tăng**. Gộp lại → ít liên kết hơn, nhưng kết dính giảm.
-
-```
-1 module lớn:  kết dính thấp,  liên kết = 0
-20 module nhỏ: kết dính cao,   liên kết = rất nhiều đường
-```
-
-Chỗ đúng nằm ở giữa, và tìm nó bằng một câu hỏi: **cắt sao cho những thứ hay thay đổi cùng nhau nằm cùng một chỗ.** Cắt đúng thì phần lớn thay đổi chỉ chạm một module — đó mới là thước đo thật, không phải số lượng file.
-
-Cùng một logic được áp ở quy mô lớn hơn khi chia service, xem [[ranh-gioi-service]].
-
-## Kiểm nhanh thiết kế của bạn
-
-Năm câu, trả lời được là ổn:
-
-1. Tả module này trong một câu không có chữ "và"?
-2. Test nó có cần dựng database / mạng / hệ thống file không?
-3. Đổi thư viện bên ngoài thì phải sửa bao nhiêu file?
-4. Có chuỗi `a.b.c.d` nào không?
-5. Thêm một tính năng điển hình thì chạm mấy module?
-
-Câu 5 là câu thật nhất. Thêm một tính năng mà phải sửa bảy module nghĩa là đường cắt đang sai — bất kể code trông sạch thế nào.
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Module tên `Utils` / `Helper` / `Common` | Cái gì cũng nhét vào, không ai dám xoá | Cắt theo chủ đề |
-| `new` thứ mình cần ngay trong class | Không test được, không thay được | Nhận qua constructor |
-| Chuỗi `a.b.c.d.e` | Bốn cấu trúc có thể làm vỡ bạn | Hỏi thứ cần, đừng mò |
-| Dùng biến toàn cục để hai module nói chuyện | Không lần được ai sửa cái gì | Truyền tường minh |
-| Cắt quá nhỏ để "kết dính cao" | Số liên kết bùng nổ, đọc mệt hơn | Cắt theo lý do thay đổi |
-| Thêm tính năng phải sửa bảy module | Đường cắt sai | Gom thứ thay đổi cùng nhau lại |
-| Class ôm cả dữ liệu, HTTP, hiển thị | Kết dính thấp, đổi gì cũng vỡ | Tách theo trách nhiệm |
-
-## Ghi nhớ
-
-- **Kết dính cao**: thứ bên trong thuộc về nhau. **Liên kết lỏng**: ít phụ thuộc ngoài, và phụ thuộc vào giao diện chứ không vào lớp cụ thể.
-- Tên `Helper` / `Util` / `Manager` là dấu hiệu kết dính thấp, gần như luôn đúng.
-- Đừng tự tạo thứ mình cần — nhận từ ngoài vào. Đó là toàn bộ ý của tiêm phụ thuộc.
-- Chuỗi `a.b.c.d` nghĩa là bạn phụ thuộc vào bốn cấu trúc.
-- Hai thước đo kéo ngược nhau; cắt sao cho **thứ thay đổi cùng nhau nằm cùng chỗ**.
-- Thước đo thật: thêm một tính năng thì chạm mấy module.
-
-## Tự kiểm tra
-
-1. Vì sao class tên `Helper` gần như luôn có kết dính thấp?
-2. `new PostgresClient()` trong class gây ra ba vấn đề cụ thể nào?
-3. Cắt module càng nhỏ càng tốt — sai ở đâu?
+Chúng có liên kết chặt không? Nếu có thì liên kết qua cái gì, và bạn làm thế nào để lần sau đổi kiểu cột chỉ phải sửa **một** chỗ?

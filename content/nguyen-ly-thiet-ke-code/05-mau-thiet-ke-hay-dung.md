@@ -4,192 +4,194 @@ slug: mau-thiet-ke-hay-dung
 summary: Sáu mẫu bạn thật sự gặp, và chỗ chúng đã nằm sẵn trong React, Express, Postgres mà bạn dùng hằng ngày.
 level: trung-cap
 tags: [nen-tang, thiet-ke, design-pattern, mau-thiet-ke]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** nhận ra sáu mẫu thiết kế trong thư viện bạn đang dùng, biết mỗi mẫu giải bài toán gì, và biết vì sao học thuộc 23 mẫu là cách học sai.
+> **Sau bài này bạn sẽ:** nhận ra sáu mẫu này trong thư viện bạn đang dùng, và biết gọi tên chúng khi bàn thiết kế — thay vì học thuộc 23 mẫu trong sách.
 
-## Mẫu thiết kế là gì, nói cho đúng
+## Ý tưởng chính
 
-Mẫu thiết kế **không phải** thứ bạn đi tìm chỗ để áp vào. Nó là **tên gọi cho một lời giải đã lặp lại đủ nhiều**.
+Mẫu thiết kế **không phải thứ bạn đi tìm chỗ để áp dụng**. Chúng là **tên gọi cho những lời giải đã lặp đi lặp lại** — người ta gặp cùng một vấn đề nhiều lần, giải theo cùng một cách, rồi đặt tên cho cách đó.
 
-Giá trị thật của nó là **từ vựng**: nói *"chỗ này dùng Strategy"* nhanh hơn nhiều so với mô tả năm câu. Giá trị đó chỉ có khi cả hai bên đều biết từ.
+Giá trị lớn nhất của chúng là **ngôn ngữ chung**: nói "chỗ này dùng Strategy" ngắn hơn nhiều so với mô tả cả thiết kế.
 
-Cách học sai: thuộc 23 mẫu rồi tìm chỗ nhét vào. Cách học đúng: gặp một bài toán, giải nó, rồi phát hiện lời giải của mình đã có tên.
+## Mental model
 
-## ① Strategy — thay thuật toán mà không sửa chỗ gọi
+Hãy coi mẫu thiết kế như **tên các thế trong cờ vua**: "nhập thành", "phong hậu".
 
-**Bài toán:** một việc có nhiều cách làm, chọn cách nào tuỳ lúc chạy.
+> Người mới học không cần biết tên vẫn chơi được. Nhưng khi hai người cùng biết tên, họ bàn được ván cờ trong ba câu thay vì ba mươi câu.
+>
+> Và điều quan trọng: **không ai chơi cờ bằng cách tìm chỗ để nhập thành.** Thế cờ tự dẫn tới đó.
+
+Đi tìm chỗ áp dụng mẫu là làm ngược. Bạn giải bài toán trước; nếu lời giải trùng một mẫu, bạn gọi đúng tên nó.
+
+## Ví dụ nhỏ
+
+**Strategy** — thay thuật toán mà không sửa chỗ gọi:
 
 ```ts
-interface CachSapXep { sap(ds: Don[]): Don[] }
-
-const theoNgay: CachSapXep = { sap: (ds) => [...ds].sort((a, b) => +a.ngay - +b.ngay) }
-const theoTien: CachSapXep = { sap: (ds) => [...ds].sort((a, b) => b.tong - a.tong) }
-
-function hienThi(ds: Don[], cach: CachSapXep) {   // không biết và không cần biết cách nào
-  return cach.sap(ds)
+// ❌ Mỗi cách tính phí mới là một lần sửa hàm cũ
+function tinhPhi(don, loai) {
+  if (loai === 'thuong') return 30000
+  if (loai === 'nhanh') return 60000
+  if (loai === 'hoa-toc') return don.khoangCach * 5000
 }
 ```
 
-```python
-def hien_thi(ds, cach):   # cach chỉ là một hàm — Python/JS không cần class
-    return cach(ds)
-
-hien_thi(dons, lambda ds: sorted(ds, key=lambda d: d.ngay))
+```ts
+// ✅ Mỗi cách tính là một object; chỗ gọi không bao giờ đổi
+const cachTinhPhi = {
+  thuong: () => 30000,
+  nhanh: () => 60000,
+  'hoa-toc': (don) => don.khoangCach * 5000,
+}
+const phi = cachTinhPhi[loai](don)
 ```
 
-Điểm quan trọng cho ngôn ngữ có hàm bậc cao: **Strategy thường chỉ là một hàm truyền vào**. `array.sort(comparator)` chính là Strategy — bạn dùng nó mỗi ngày mà không gọi tên.
+Trong JavaScript, Strategy thường chỉ là **một object chứa các hàm** — không cần class, không cần interface. Nhiều mẫu trong sách trông nặng nề vì sách viết cho Java những năm 1990.
 
-**Đã nằm sẵn ở:** `sort(fn)`, `filter(fn)`, middleware, chiến lược xác thực của Passport.
+## Code chạy thế nào
 
-## ② Adapter — bọc thứ không vừa cho vừa
+Sáu mẫu, mỗi mẫu một câu và một chỗ bạn đã gặp:
 
-**Bài toán:** thư viện bên ngoài có giao diện khác cái code bạn cần.
+**① Strategy** — *"nhiều cách làm cùng một việc, chọn lúc chạy"*
+
+```text
+đã gặp ở: cachTinhPhi[loai](don) · mảng .sort(cachSoSanh) · middleware xác thực
+```
+
+**② Adapter** — *"bọc thứ không vừa cho vừa"*
 
 ```ts
-interface GuiThu { gui(to: string, noiDung: string): Promise<void> }
-
-// SendGrid có API riêng, không khớp
-class AdapterSendGrid implements GuiThu {
-  constructor(private sg: SendGridClient) {}
-  async gui(to: string, noiDung: string) {
-    await this.sg.send({ to, from: 'no-reply@x.com', html: noiDung })   // dịch
+// Thư viện trả về hình dạng khác thứ code bạn cần
+class AdapterThanhToan {
+  constructor(private sdk: SdkBenThuBa) {}
+  async traTien(sum: number) {
+    const r = await this.sdk.charge({ amount: sum * 100, currency: 'VND' })
+    return { thanhCong: r.status === 'ok', ma: r.transaction_id }   // ← dịch sang ngôn ngữ của bạn
   }
 }
 ```
 
-Lợi ích thật: **đổi nhà cung cấp chỉ sửa một file**. Không có adapter thì tên `SendGrid` rải khắp codebase.
+Giá trị thật: khi đổi nhà cung cấp, bạn viết adapter mới — **phần còn lại của dự án không biết gì cả**.
 
-**Đã nằm sẵn ở:** driver database, adapter lưu trữ, mọi lớp bọc SDK.
-
-## ③ Factory — tập trung chỗ tạo object
-
-**Bài toán:** việc tạo có logic (chọn loại, đọc cấu hình, kiểm tra), và bạn không muốn logic đó rải khắp nơi.
+**③ Factory** — *"tập trung chỗ tạo object"*
 
 ```ts
-function taoCong(ma: string, cauHinh: CauHinh): CongThanhToan {
-  switch (ma) {
-    case 'momo':  return new Momo(cauHinh.momoKey)
-    case 'vnpay': return new VnPay(cauHinh.vnpayKey, cauHinh.vnpaySecret)
-    default: throw new Error(`Cổng không hỗ trợ: ${ma}`)
-  }
+function taoBoNhoDem(moiTruong: string) {
+  return moiTruong === 'production' ? new RedisCache() : new CacheTrongBoNho()
 }
 ```
 
-Không có nó thì mỗi chỗ cần cổng thanh toán phải tự biết cần key nào — và thêm cổng mới là sửa mười chỗ.
+Đáng dùng khi việc tạo có điều kiện hoặc nhiều bước; **không** đáng dùng khi chỉ là `new X()`.
 
-**Đã nằm sẵn ở:** `createServer()`, `createClient()`, `createContext()`.
+**④ Observer** — *"báo cho nhiều bên khi có chuyện, mà không cần biết họ là ai"*
 
-## ④ Observer — báo cho nhiều bên khi có chuyện
-
-**Bài toán:** một sự kiện xảy ra, nhiều nơi cần biết, và nơi phát **không nên biết** ai đang nghe.
-
-```ts
-type Nghe<T> = (du: T) => void
-
-class Phat<T> {
-  private nghes: Nghe<T>[] = []
-  dangKy(fn: Nghe<T>): () => void {
-    this.nghes.push(fn)
-    return () => { this.nghes = this.nghes.filter((x) => x !== fn) }   // trả hàm huỷ
-  }
-  phat(du: T) { this.nghes.forEach((fn) => fn(du)) }
-}
-
-const donMoi = new Phat<Don>()
-donMoi.dangKy((d) => guiEmail(d))
-donMoi.dangKy((d) => capNhatKho(d))    // thêm người nghe không đụng chỗ phát
+```text
+đã gặp ở: addEventListener · useEffect trong React · pub/sub trong hàng đợi
 ```
 
-Chú ý chi tiết **trả về hàm huỷ đăng ký** — quên nó là rò rỉ bộ nhớ kinh điển. Đúng thứ `useEffect` bắt bạn làm khi trả về hàm dọn dẹp, xem [[useeffect-dung-cach]].
+Người phát không biết ai đang nghe. Đó vừa là điểm mạnh (thêm người nghe không sửa người phát) vừa là điểm yếu (khó lần ra ai đã phản ứng khi gỡ lỗi). Ở quy mô hệ thống, mẫu này chính là [[hang-doi-va-xu-ly-bat-dong-bo]].
 
-**Đã nằm sẵn ở:** `addEventListener`, `EventEmitter` của Node, `useEffect`, hàng đợi tin nhắn ở quy mô hệ thống — xem [[hang-doi-va-xu-ly-bat-dong-bo]].
-
-## ⑤ Decorator — thêm hành vi mà không sửa bản gốc
-
-**Bài toán:** cần thêm ghi log / đo giờ / thử lại / bộ nhớ đệm quanh một thứ đã có.
+**⑤ Decorator** — *"thêm hành vi mà không sửa bản gốc"*
 
 ```ts
-function themThuLai<T>(goc: () => Promise<T>, lan = 3): () => Promise<T> {
-  return async () => {
-    let loiCuoi: unknown
-    for (let i = 0; i < lan; i++) {
-      try { return await goc() } catch (e) { loiCuoi = e }
-    }
-    throw loiCuoi
-  }
+const withLog = (fn) => async (...args) => {
+  console.time(fn.name)
+  const kq = await fn(...args)
+  console.timeEnd(fn.name)
+  return kq
 }
-
-const goiCoThuLai = themThuLai(() => api.layDon(id))
+const layDonHang = withLog(layDonHangGoc)
 ```
 
-Ghép chồng được: `themLog(themThuLai(themDem(goc)))` — mỗi lớp một mối quan tâm, đúng tinh thần kết dính cao.
+```text
+đã gặp ở: middleware của Express · higher-order component · @decorator trong NestJS
+```
 
-**Đã nằm sẵn ở:** middleware Express, decorator của Python, `React.memo`, chặn request của Axios.
-
-## ⑥ Repository — giấu chỗ dữ liệu nằm
-
-**Bài toán:** không muốn nghiệp vụ biết dữ liệu đến từ SQL, file, hay API.
+**⑥ Repository** — *"giấu chỗ dữ liệu nằm"*
 
 ```ts
-interface KhoDon {
-  layTheoId(id: string): Promise<Don | null>
-  luu(d: Don): Promise<void>
+interface KhoNguoiDung {
+  timTheoId(id: string): Promise<NguoiDung | null>
+  luu(u: NguoiDung): Promise<void>
 }
 ```
 
-Đây là chữ **D** của [[solid-giai-thich-bang-code-that]] đóng gói thành một mẫu. Giáo trình này dùng đúng nó: `notes.repo.ts` giấu chuyện dữ liệu nằm trong file JSON, nên đổi sang Postgres không phải sửa giao diện.
+Phần nghiệp vụ chỉ biết `KhoNguoiDung`. Đằng sau là Postgres, file JSON hay bộ nhớ tạm lúc test — nó không cần biết. Đây chính là chữ D của SOLID ở dạng cụ thể ([[solid-giai-thich-bang-code-that]]).
 
-## Mẫu nên dè chừng: Singleton
+## Tại sao cần nó
 
-Singleton — đảm bảo chỉ có **một** thể hiện — được dạy nhiều nhất và gây hại nhiều nhất:
+Ba lý do, theo thứ tự thực dụng:
+
+**Ngôn ngữ chung khi bàn việc.** "Tách phần này ra Strategy" thay cho ba đoạn giải thích.
+
+**Nhận ra thứ mình đang dùng.** `useEffect` là Observer, middleware là Decorator, `sort(fn)` là Strategy. Biết tên rồi thì bạn hiểu **vì sao chúng được thiết kế như vậy**, và đoán được cách dùng đúng — ví dụ vì sao `useEffect` cần hàm dọn dẹp ([[useeffect-dung-cach]]).
+
+**Có sẵn danh sách bẫy.** Mỗi mẫu đã được dùng hàng triệu lần, nên nhược điểm của nó đã được ghi lại đầy đủ — bạn không phải tự phát hiện.
+
+## So sánh
+
+Mẫu nên dè chừng: **Singleton** — bảo đảm chỉ có một thể hiện duy nhất.
 
 ```ts
-class CauHinh {
-  private static instance: CauHinh
-  static lay(): CauHinh {
-    if (!CauHinh.instance) CauHinh.instance = new CauHinh()
-    return CauHinh.instance
-  }
+class ConfigManager {
+  private static instance: ConfigManager
+  static getInstance() { return (this.instance ??= new ConfigManager()) }
 }
 ```
 
-Vấn đề: nó là **biến toàn cục đội lốt thiết kế**. Test không cô lập được (test này ảnh hưởng test kia), phụ thuộc bị giấu (đọc chữ ký hàm không thấy nó), và trong môi trường nhiều tiến trình thì "một thể hiện" cũng không còn đúng.
+Nghe hợp lý, nhưng nó là **biến toàn cục mặc áo class**, và kéo theo ba vấn đề:
 
-Gần như mọi lúc, thứ bạn cần là **một thể hiện được truyền vào** — như [[ket-dinh-cao-lien-ket-long]] mô tả, chứ không phải một thể hiện toàn cục.
+| Vấn đề | Hậu quả |
+|---|---|
+| Trạng thái dùng chung toàn cục | Test này ảnh hưởng test kia, thứ tự chạy đổi thì kết quả đổi |
+| Phụ thuộc ẩn | Nhìn chữ ký hàm không biết nó dùng ConfigManager |
+| Không thay được lúc test | Không truyền bản giả vào được |
 
-## Khi nào **đừng** dùng mẫu
+Thay bằng: tạo **một thể hiện ở điểm khởi động** rồi truyền xuống nơi cần. Vẫn "chỉ có một", nhưng phụ thuộc là tường minh và thay được.
 
-- Chỉ có **một** cách làm, và chưa có dấu hiệu sẽ có cách thứ hai → đừng Strategy
-- Chỉ có **một** bản cài, mãi mãi → đừng interface, đừng Adapter
-- Bạn đang dùng mẫu để "cho đúng chuẩn" chứ không để giải bài toán nào
-- Số dòng khuôn khổ nhiều hơn số dòng nghiệp vụ
+## Dễ nhầm
 
-Mẫu thiết kế là **chi phí trả trước để mua sự linh hoạt về sau**. Mua sự linh hoạt bạn không cần thì đó là lỗ thuần — và là đúng thứ [[truu-tuong-hoa-khi-nao-tach]] cảnh báo.
+**1. Đi tìm chỗ để áp dụng mẫu.** Đây là lỗi phổ biến nhất sau khi đọc sách mẫu thiết kế. Dấu hiệu: dự án có `AbstractFactoryBuilderStrategy` cho một việc mà `if/else` ba dòng giải quyết xong.
 
-## Lỗi hay gặp
+**2. Dùng mẫu Java trong ngôn ngữ có hàm hạng nhất.** Strategy trong JavaScript là một object hàm; Decorator là một hàm bọc hàm. Dựng cả cây class để mô phỏng lại sách là thêm việc mà không thêm giá trị.
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Học thuộc 23 mẫu rồi tìm chỗ nhét | Kiến trúc thừa gấp ba nhu cầu | Giải bài toán trước, gọi tên sau |
-| Strategy bằng class ở JS/Python | Khuôn khổ thừa | Truyền thẳng một hàm |
-| Observer quên hàm huỷ đăng ký | Rò rỉ bộ nhớ | Luôn trả hàm huỷ và gọi nó |
-| Singleton cho mọi dịch vụ | Test dính nhau, phụ thuộc bị giấu | Truyền thể hiện vào |
-| Interface cho thứ chỉ có một bản cài | Thêm tầng, không thêm lợi ích | Chờ tới bản cài thứ hai |
-| Factory cho `new X()` không có logic | Một tầng gián tiếp vô nghĩa | Gọi thẳng |
-| Dùng tên mẫu mà nhóm không biết | Từ vựng chung không tồn tại → mất tác dụng | Giải thích hoặc mô tả thẳng |
+**3. Quên rằng mẫu nào cũng thêm một lớp gián tiếp.** Mỗi mẫu là một lần trừu tượng hoá, và mọi cảnh báo ở [[truu-tuong-hoa-khi-nao-tach]] đều áp dụng. Ba chỗ dùng trở lên rồi hãy tách — quy tắc ba lần vẫn đúng ở đây.
 
-## Ghi nhớ
+**4. Tưởng nhiều mẫu là thiết kế tốt.** Số mẫu dùng không đo chất lượng. Thước đo vẫn là hai câu ở [[ket-dinh-cao-lien-ket-long]]: mọi thứ trong module có thuộc về nhau không, và nó phụ thuộc bao nhiêu vào bên ngoài.
 
-- Mẫu thiết kế là **tên gọi cho lời giải lặp lại**, không phải thứ đi tìm chỗ áp.
-- Giá trị chính là **từ vựng chung** — mất giá trị nếu người nghe không biết từ.
-- Ở ngôn ngữ có hàm bậc cao, Strategy và Decorator thường chỉ là **một hàm**.
-- Observer phải trả hàm huỷ đăng ký, nếu không sẽ rò rỉ bộ nhớ.
-- Singleton là biến toàn cục đội lốt — gần như luôn nên truyền thể hiện vào thay thế.
-- Mẫu là chi phí trả trước mua linh hoạt; không cần linh hoạt thì đó là lỗ.
+## Mẹo nhớ
 
-## Tự kiểm tra
+> **Strategy** nhiều cách một việc · **Adapter** bọc cho vừa · **Factory** gom chỗ tạo · **Observer** báo cho nhiều bên · **Decorator** thêm mà không sửa · **Repository** giấu chỗ dữ liệu nằm.
 
-1. Vì sao `array.sort(fn)` đã là mẫu Strategy?
-2. Observer quên điều gì thì gây rò rỉ bộ nhớ?
-3. Singleton gây ra ba vấn đề cụ thể nào, và thay bằng gì?
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Giá trị lớn nhất của mẫu thiết kế là gì?
+2. `useEffect`, middleware Express, và `arr.sort(fn)` — mỗi cái là mẫu nào?
+3. Vì sao Singleton bị coi là biến toàn cục mặc áo class?
+4. Vì sao Strategy trong JavaScript thường không cần class?
+5. Dấu hiệu nào cho biết bạn đang lạm dụng mẫu thiết kế?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết lại đoạn này bằng Strategy — và **không dùng class**:
+
+```ts
+function xuatBaoCao(duLieu, dinhDang) {
+  if (dinhDang === 'csv') { /* ... */ }
+  else if (dinhDang === 'json') { /* ... */ }
+  else if (dinhDang === 'xml') { /* ... */ }
+  else throw new Error('Không hỗ trợ')
+}
+```
+
+Tự kiểm: thêm định dạng `pdf` thì bạn sửa mấy dòng của code cũ? Câu trả lời đúng là **không dòng nào**.
+
+## Thử sức
+
+Dự án của bạn dùng thư viện gửi SMS của nhà cung cấp A. Sếp báo tháng sau chuyển sang B, và **có thể** quay lại A nếu B không ổn định.
+
+Bạn dùng mẫu nào, và đặt nó ở đâu? Câu hỏi khó hơn: nếu B **thiếu một tính năng** mà A có và code bạn đang dùng, thì mẫu đó còn cứu được bạn không — hay vấn đề nằm ở chỗ khác?

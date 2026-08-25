@@ -4,167 +4,150 @@ slug: dat-ten-va-code-doc-duoc
 summary: Code được đọc nhiều gấp mười lần được viết. Tên tốt là hình thức tài liệu duy nhất không bao giờ lỗi thời.
 level: co-ban
 tags: [nen-tang, thiet-ke, dat-ten, clean-code]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** đặt được tên nói đúng ý định thay vì mô tả cơ chế, và biết khi nào một comment là dấu hiệu code cần sửa.
+> **Sau bài này bạn sẽ:** nhìn một cái tên là biết nó tốt hay tệ theo tiêu chí rõ ràng, thay vì theo cảm giác — và biết khi nào một comment là dấu hiệu code cần sửa.
 
-## Vì sao tên quan trọng hơn bạn tưởng
+## Ý tưởng chính
 
-Một dòng code được viết một lần và đọc hàng chục lần — bởi đồng nghiệp, bởi người review, và nhiều nhất là bởi **chính bạn sáu tháng sau**, khi bối cảnh trong đầu đã bay hết.
+Bạn viết một dòng code **một lần** và đọc lại nó **hàng chục lần** — lúc gỡ lỗi, lúc thêm tính năng, lúc người khác vào dự án. Nên tối ưu cho người viết là tối ưu sai chỗ.
 
-Tên là **hình thức tài liệu duy nhất không lỗi thời**, vì nó nằm ngay chỗ code chạy. Comment nói dối được; tên biến sai thì lộ ngay khi đọc.
+Và trong mọi hình thức tài liệu, **tên là thứ duy nhất không bao giờ lỗi thời**: comment có thể nói dối sau khi code đổi, tài liệu ngoài có thể quên cập nhật, nhưng tên biến thì luôn nằm ngay cạnh thứ nó mô tả.
 
-## Tên nói **ý định**, không nói cơ chế
+## Mental model
 
-```ts
-// ❌ Mô tả cơ chế — đọc xong vẫn không biết để làm gì
-const list = users.filter((u) => u.d !== null)
-const flag = list.length > 0
-if (flag) { process(list) }
+Hãy coi mỗi cái tên là một **lời hứa với người đọc tương lai**.
 
-// ✅ Nói ý định — đọc một lượt là hiểu nghiệp vụ
-const daXoa = nguoiDungs.filter((u) => u.thoiDiemXoa !== null)
-if (daXoa.length > 0) khoiPhuc(daXoa)
-```
+> Bạn viết `layNguoiDung()`. Người đọc tin rằng gọi nó thì được một người dùng — nhanh, không tác dụng phụ, không xoá gì.
+>
+> Nếu hàm đó còn âm thầm ghi log, gọi mạng và cập nhật cache, **bạn vừa nói dối** — và người đọc sẽ phát hiện ra vào lúc tệ nhất có thể.
 
-```python
-# ❌                                    # ✅
-d = [u for u in users if u.d]           da_xoa = [u for u in nguoi_dungs if u.thoi_diem_xoa]
-if len(d) > 0: p(d)                     if da_xoa: khoi_phuc(da_xoa)
-```
+Người đọc tương lai đó thường là **chính bạn, sáu tháng sau**, không còn nhớ gì về ngữ cảnh hôm nay. Đặt tên là viết thư cho người ấy.
 
-Câu hỏi kiểm tra: **đọc tên xong có phải mở ruột ra xem mới hiểu không?** Phải mở thì tên chưa đạt.
-
-## Bốn luật đặt tên dùng được ở mọi ngôn ngữ
-
-**① Độ dài tên tỉ lệ với phạm vi sống của nó.**
+## Ví dụ nhỏ
 
 ```ts
-ds.map((u) => u.ten)                    // ✅ 'u' sống một dòng — ngắn là đúng
-
-let u = await db.layNguoiDung(id)       // ❌ 'u' sống 40 dòng
-// ... 40 dòng dùng u ...
-let nguoiDungHienTai = await db.layNguoiDung(id)   // ✅
+// Tên nói CƠ CHẾ — người đọc phải tự dịch sang ý nghĩa
+const d = new Date().getTime() - u.t
+if (d > 2592000000) { }
 ```
-
-Biến sống một dòng thì `i`, `u`, `x` hoàn toàn ổn — thêm chữ chỉ thêm nhiễu. Biến sống cả hàm thì phải tự giải thích.
-
-**② Boolean đặt tên như một câu khẳng định.**
 
 ```ts
-if (user.status) { }              // ❌ status là gì? có? bật? hợp lệ?
-if (nguoiDung.daKichHoat) { }     // ✅ đọc thành câu: "nếu người dùng đã kích hoạt"
-
-if (!khong Cho Phep) { }          // ❌ phủ định của phủ định — não phải dịch hai lần
-if (duocPhep) { }                 // ✅
+// Tên nói Ý ĐỊNH — đọc là hiểu
+const MOT_THANG_MS = 30 * 24 * 60 * 60 * 1000
+const thoiGianKhongHoatDong = Date.now() - nguoiDung.lanDangNhapCuoi
+if (thoiGianKhongHoatDong > MOT_THANG_MS) { }
 ```
 
-Tránh phủ định trong tên. `if (!chuaXacMinh)` bắt người đọc đảo ngược trong đầu; `if (daXacMinh)` thì không.
+Hai đoạn chạy y hệt nhau. Đoạn dưới không cần comment nào, và không ai phải bấm máy tính xem `2592000000` là bao nhiêu ngày.
 
-**③ Hàm bắt đầu bằng động từ, và động từ phải đúng.**
+## Tại sao cần nó
 
-| Tiền tố | Hứa điều gì | Vi phạm thì sao |
+Vì tên tệ không chỉ khó đọc — nó **giấu lỗi**.
+
+```ts
+function kiemTra(ds, x) {
+  for (const i of ds) if (i.id === x) return true
+  return false
+}
+```
+
+Hàm này trả về `true` khi **tìm thấy**. Nhưng cái tên `kiemTra` không nói kết quả `true` nghĩa là gì: tìm thấy? hợp lệ? bị cấm? Người dùng nó sáu tháng sau rất dễ viết `if (!kiemTra(ds, id))` với ý "nếu hợp lệ" và tạo ra một lỗi logic không có dòng đỏ nào.
+
+Đổi thành `coIdTrongDanhSach(ds, id)` thì câu `if (!coIdTrongDanhSach(...))` tự tố cáo ý định của nó.
+
+## So sánh
+
+Bốn luật đặt tên dùng được ở mọi ngôn ngữ:
+
+| Luật | Tệ | Tốt |
 |---|---|---|
-| `lay` / `get` | Trả về nhanh, không tác dụng phụ | `layX()` mà gọi API là bẫy người dùng |
-| `tim` / `find` | Có thể không thấy → trả `null` | Trả về mà ném lỗi là sai hợp đồng |
-| `tinh` / `calc` | Có tính toán, thuần | |
-| `kiemTra` / `is` / `co` | Trả boolean | |
-| `luu` / `xoa` / `gui` | **Có tác dụng phụ** | Tên phải nói rõ |
-| `tai` / `nap` | Chậm, có I/O | |
+| **Độ dài tỉ lệ với phạm vi sống** | `nguoiDungHienTai` cho biến chạy trong 2 dòng | `i`, `x` trong vòng lặp ngắn; tên dài cho biến sống cả file |
+| **Boolean đọc như câu hỏi có/không** | `trangThai`, `flag`, `check` | `daThanhToan`, `coQuyenSua`, `laHetHan` |
+| **Hàm bắt đầu bằng động từ nói việc nó làm** | `nguoiDung()`, `duLieu()` | `layNguoiDung()`, `tinhTongTien()`, `kiemTraEmail()` |
+| **Không viết tắt trừ khi cả ngành dùng** | `usrMgr`, `calcTtl`, `procData` | `quanLyNguoiDung`; nhưng `id`, `url`, `db`, `api` thì được |
 
-Đây không phải quy ước hình thức — nó là hợp đồng. `layTenNguoiDung()` mà bên trong gọi ba API là lý do người ta viết vòng lặp gọi nó 1000 lần rồi không hiểu sao chậm.
+Ba cái tên nên tránh vì chúng **không loại trừ được gì**: `data`, `info`, `manager`. Nếu hàm của bạn tên `xuLyDuLieu` thì mọi hàm trong dự án cũng có thể mang tên đó.
 
-**④ Đừng nhét kiểu vào tên.**
+## Dễ nhầm
 
-```ts
-const userArray: User[] = []      // ❌ dấu [] đã nói rồi
-const nguoiDungs: User[] = []     // ✅ số nhiều là đủ
-const strTen: string              // ❌ Hungarian notation, đã lỗi thời từ lâu
-```
-
-## Số ma thuật và chuỗi ma thuật
+**1. Tưởng tên ngắn là tên gọn.** Ngắn chỉ tốt khi phạm vi sống ngắn:
 
 ```ts
-// ❌ 86400 là gì? 3 là gì? Người sửa sau không dám đụng
-if (Date.now() - t > 86400000) { }
-if (don.trangThai === 3) { }
-
-// ✅
-const MOT_NGAY_MS = 24 * 60 * 60 * 1000
-if (Date.now() - t > MOT_NGAY_MS) { }
-
-const TrangThaiDon = { CHO: 1, DANG_GIAO: 2, DA_GIAO: 3 } as const
-if (don.trangThai === TrangThaiDon.DA_GIAO) { }
+ds.map((x) => x * 2)                    // ✅ x sống trong 1 dòng
+const x = await db.layDonHang(id)       // ❌ x sống suốt hàm 40 dòng
 ```
 
-Lợi ích thật không phải "đẹp hơn": nó là **tìm được**. Gõ `TrangThaiDon.DA_GIAO` vào ô tìm kiếm ra đúng mọi chỗ liên quan; gõ `3` ra ba nghìn kết quả vô nghĩa.
-
-Ngoại lệ hợp lý: `0`, `1`, và những con số mà bối cảnh đã nói rõ (`arr.length - 1`).
-
-## Comment: khi nào cần, khi nào là mùi
+**2. Dùng comment để cứu một cái tên tệ.**
 
 ```ts
-// ❌ Nói lại điều code đã nói
-// tăng i lên 1
-i++
+// ❌ comment đang gánh việc của cái tên
+const d = 30   // số ngày giữ log trước khi xoá
 
-// ❌ Comment thay cho việc đặt tên đúng
-// kiểm tra xem người dùng đã kích hoạt và chưa bị khoá chưa
-if (u.s === 1 && u.b === 0) { }
-
-// ✅ Đặt tên đúng thì comment biến mất
-if (nguoiDung.daKichHoat && !nguoiDung.biKhoa) { }
+// ✅ tên tự nói
+const SO_NGAY_GIU_LOG = 30
 ```
 
-Comment cần thiết trả lời câu **"vì sao"**, thứ mà code không bao giờ nói được:
+Quy tắc: khi định viết comment giải thích *cái gì*, hãy thử đổi tên trước. Comment chỉ đáng viết khi nó nói **vì sao** — thứ code không bao giờ nói được:
 
 ```ts
-// Retry 3 lần: cổng thanh toán trả 503 rải rác khoảng 0,5% số lần,
-// nhà cung cấp xác nhận đây là hành vi đã biết và khuyên thử lại.
-// Đừng bỏ đoạn này khi thấy "code thừa" — đã từng bỏ và gây sự cố ngày 12/3.
-for (let i = 0; i < 3; i++) { ... }
+// ✅ comment đúng loại: giải thích lý do, không giải thích cơ chế
+// Retry 3 lần vì cổng thanh toán trả 503 ngẫu nhiên khoảng 1% số lần.
+// Nhà cung cấp đã xác nhận đây là hành vi mong đợi (ticket #4821).
+await thuLai(() => congThanhToan.tinhPhi(don), 3)
 ```
 
-Comment này **không thể** thay bằng tên biến, vì nó chứa thông tin nằm ngoài code: một sự thật về thế giới. Giáo trình này dùng comment đúng theo lối đó — chỗ nào cũng ghi *vì sao chọn thế* chứ không ghi *đang làm gì*.
+**3. Số ma thuật rải trong code.** `if (tuoi > 17)`, `setTimeout(fn, 300000)` — người đọc không biết 17 và 300000 từ đâu ra, và khi con số đổi thì phải đi tìm mọi chỗ. Đặt tên cho chúng, và chỗ khai báo trở thành nơi duy nhất phải sửa.
 
-Quy tắc gọn: **code nói "làm gì", comment nói "vì sao".** Comment giải thích *làm gì* là dấu hiệu tên chưa đạt.
+**4. Tên nói dối sau khi code đổi.** Hàm tên `layNguoiDung` nhưng giờ còn tạo mới nếu chưa có. Tên cũ **tệ hơn không có tên**, vì nó khiến người đọc tin vào điều sai. Đổi code thì đổi tên theo.
 
-## Nhất quán quan trọng hơn đúng
+**5. Ưu tiên "đúng" hơn "nhất quán".** Nếu cả dự án dùng `fetchUser`, `fetchOrder`, thì hàm mới của bạn nên là `fetchInvoice` — kể cả khi bạn thấy `retrieveInvoice` chính xác hơn. Người đọc quét mắt theo khuôn mẫu; một cái tên lệch khuôn buộc họ dừng lại nghĩ.
+
+## Mẹo nhớ
+
+> **Tên là lời hứa với chính bạn sáu tháng sau.**
+>
+> **Comment nói VÌ SAO. Tên nói CÁI GÌ. Code nói THẾ NÀO.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Vì sao tên là hình thức tài liệu bền nhất?
+2. Độ dài của một cái tên nên phụ thuộc vào điều gì?
+3. Khi nào một comment là dấu hiệu code cần sửa, khi nào nó đáng viết?
+4. Vì sao `if (!kiemTra(ds, id))` là câu nguy hiểm?
+5. Vì sao đôi khi nên chọn cái tên "kém chính xác hơn" nhưng nhất quán với dự án?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, đặt lại tên cho toàn bộ đoạn này:
 
 ```ts
-// ❌ Cùng một khái niệm, ba tên trong một codebase
-function layNguoiDung() {}
-function fetchUser() {}
-function getKhachHang() {}
+function proc(d, f) {
+  const r = []
+  for (const i of d) {
+    if (f && i.s === 1) r.push(i)
+    else if (!f) r.push(i)
+  }
+  return r
+}
 ```
 
-Ba tên cho một thứ buộc người đọc phải nhớ rằng chúng là một. Chọn **một** từ cho **một** khái niệm rồi giữ nguyên — kể cả khi lựa chọn ban đầu không phải hay nhất. Nhất quán tiết kiệm nhiều công sức hơn tối ưu từng cái tên.
+Tự kiểm: sau khi đổi tên xong, đoạn code còn cần comment nào không? Và bạn có phát hiện ra logic của nó **rút gọn được** không?
 
-Chuyện tiếng Việt hay tiếng Anh cũng vậy: chọn một lối rồi giữ. Giáo trình này dùng tiếng Việt cho tên nghiệp vụ và giữ tiếng Anh cho thuật ngữ đã chuẩn hoá (`Map`, `commit`, `cache`) — quan trọng là **có luật**, không phải luật nào.
+## Thử sức
 
-## Lỗi hay gặp
+Bạn gặp hàm này trong dự án:
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Tên viết tắt tự chế (`usrMgr`, `procDt`) | Người sau đoán sai nghĩa | Viết đủ chữ |
-| Boolean tên phủ định (`khongHopLe`) | Não phải đảo ngược mỗi lần đọc | Đặt tên khẳng định |
-| `lay...()` nhưng bên trong gọi API | Người dùng gọi trong vòng lặp, chậm bất ngờ | Đổi thành `tai...()` |
-| Số ma thuật rải khắp | Sửa sót một chỗ | Đặt hằng số có tên |
-| Comment mô tả code đang làm gì | Code đổi, comment nói dối | Sửa tên, xoá comment |
-| Ba tên cho một khái niệm | Người đọc phải nhớ chúng là một | Một khái niệm, một từ |
-| Tên dài cho biến sống một dòng | Nhiễu | Độ dài theo phạm vi |
+```ts
+async function updateUser(id, data) {
+  const u = await db.users.update(id, data)
+  await sendEmail(u.email, 'Thông tin của bạn đã thay đổi')
+  await audit.log('user.updated', id)
+  return u
+}
+```
 
-## Ghi nhớ
-
-- Code được đọc nhiều hơn được viết — người đọc chính là bạn, sáu tháng sau.
-- Tên nói **ý định**, không nói cơ chế. Phải mở ruột mới hiểu = tên chưa đạt.
-- Độ dài tên tỉ lệ với phạm vi sống.
-- Động từ mở đầu hàm là một **hợp đồng** về chi phí và tác dụng phụ.
-- Code nói *làm gì*, comment nói *vì sao*. Comment giải thích *làm gì* là mùi.
-- Nhất quán ăn đứt tối ưu từng cái tên.
-
-## Tự kiểm tra
-
-1. Vì sao `if (!chuaXacMinh)` khó đọc hơn `if (daXacMinh)`?
-2. Tiền tố `lay` và `tai` hứa hai điều khác nhau gì với người gọi?
-3. Comment nào là cần thiết, comment nào là dấu hiệu code cần sửa?
+Cái tên có nói đúng những gì hàm làm không? Nếu không, bạn **đổi tên** hay **đổi code**? Hai lựa chọn dẫn tới hai thiết kế khác nhau — mỗi cái phù hợp lúc nào?

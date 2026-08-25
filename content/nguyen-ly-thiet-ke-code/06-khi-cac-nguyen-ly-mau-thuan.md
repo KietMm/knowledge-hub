@@ -1,146 +1,146 @@
 ---
 title: Khi các nguyên lý mâu thuẫn nhau
 slug: khi-cac-nguyen-ly-mau-thuan
-summary: DRY chống lại tách theo lý do thay đổi. YAGNI chống lại mở-đóng. Bài cuối: cách chọn khi hai lời khuyên đúng cùng chỉ ngược hướng.
+summary: "DRY chống lại tách theo lý do thay đổi. YAGNI chống lại mở-đóng. Bài cuối: cách chọn khi hai lời khuyên đúng cùng chỉ ngược hướng."
 level: nang-cao
 tags: [nen-tang, thiet-ke, danh-doi, yagni, dry]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** biết mọi nguyên lý thiết kế đều là đánh đổi có điều kiện, và có cách quyết định khi hai nguyên lý đúng lại chỉ ngược hướng nhau.
+> **Sau bài này bạn sẽ:** có ba câu hỏi để quyết định khi hai nguyên lý đúng cùng chỉ ngược hướng, thay vì chọn theo cái mình nhớ gần đây nhất.
 
-## Vì sao bài này tồn tại
+## Ý tưởng chính
 
-Học xong SOLID, DRY, YAGNI, mẫu thiết kế, người ta thường bước vào một giai đoạn khó chịu: **áp cả bốn cùng lúc thì không được**, vì chúng mâu thuẫn nhau.
+Sách dạy từng nguyên lý riêng lẻ, nên chúng đều nghe hợp lý. Vấn đề chỉ lộ ra khi bạn ngồi trước một đoạn code thật và **hai nguyên lý cùng đúng lại chỉ ngược hướng nhau**.
 
-Đó không phải vì bạn hiểu sai. Mỗi nguyên lý là câu trả lời cho **một loại đau cụ thể**, và chữa loại đau này thường làm nặng loại kia. Người có kinh nghiệm không phải người thuộc nhiều nguyên lý hơn — mà là người biết **loại đau nào đang có mặt**.
+Lúc đó không có luật nào cứu bạn. Chỉ có việc **hiểu mỗi nguyên lý đang bảo vệ điều gì**, rồi chọn cái bảo vệ thứ quan trọng hơn trong hoàn cảnh này.
 
-## Mâu thuẫn 1: DRY chống lại "tách theo lý do thay đổi"
+## Mental model
 
-- **DRY** nói: thấy code lặp thì gộp.
-- **Chữ S của SOLID** nói: tách theo lý do thay đổi.
+Hãy nghĩ tới **hai người cố vấn giỏi ngồi hai bên vai bạn**.
 
-Hai đoạn code giống hệt nhau nhưng đổi vì hai lý do khác nhau — gộp hay không?
+> Người bên trái: *"Đừng lặp lại — gộp ba chỗ này thành một."*
+> Người bên phải: *"Đừng gộp — ba chỗ này sẽ đổi theo ba hướng khác nhau."*
+>
+> **Cả hai đều đúng.** Họ chỉ đang bảo vệ hai thứ khác nhau: người trái sợ bạn phải sửa ba chỗ, người phải sợ bạn không dám sửa chỗ nào.
 
-```ts
-// Cùng công thức, khác lý do đổi
-const thueVat = (t: number) => t * 0.1     // luật thuế đổi
-const hoaHong = (t: number) => t * 0.1     // chính sách bán hàng đổi
-```
+Nhiệm vụ của bạn không phải chọn ai giỏi hơn. Là hỏi: **trong bài này, rủi ro nào lớn hơn?**
 
-**Chữ S thắng.** DRY vốn không nói về "code trông giống nhau" — bản gốc của nó nói về **tri thức**: *mỗi mẩu tri thức chỉ nên có một biểu diễn duy nhất trong hệ thống*. Hai công thức trên là **hai** mẩu tri thức tình cờ cùng con số.
-
-Câu hỏi quyết định: **"yêu cầu đổi thì hai chỗ này có phải đổi cùng nhau không?"** Không → để riêng, dù trông giống hệt. Chi tiết ở [[truu-tuong-hoa-khi-nao-tach]].
-
-## Mâu thuẫn 2: YAGNI chống lại mở-đóng
-
-- **YAGNI** (*bạn sẽ không cần nó đâu*) nói: đừng xây cho tương lai tưởng tượng.
-- **Chữ O** nói: thiết kế sao cho thêm hành vi mới không phải sửa code cũ.
+## Ví dụ nhỏ
 
 ```ts
-// Cần một cổng thanh toán. Dựng interface luôn cho "sau này dễ mở rộng"?
-interface CongThanhToan { tru(t: number): Promise<KetQua> }
-class Momo implements CongThanhToan {}
+// Ba chỗ, code giống hệt nhau
+function tinhGiamGiaHocSinh(gia) { return gia * 0.9 }
+function tinhGiamGiaNhanVien(gia) { return gia * 0.9 }
+function tinhGiamGiaKhachVip(gia) { return gia * 0.9 }
 ```
 
-**YAGNI thắng ở mặc định**, vì lý do bất đối xứng: chi phí **thêm** trừu tượng về sau là **thấp** (một lần refactor có test bảo vệ), còn chi phí **gỡ** một trừu tượng sai là **cao** (phải lần mọi chỗ gọi, và thường không ai dám).
+DRY nói: gộp lại. "Tách theo lý do thay đổi" nói: **để yên**.
 
-Ngoại lệ hợp lý — mở sẵn khi bạn có **bằng chứng**, không phải linh cảm:
+Ai đúng? Câu trả lời không nằm trong code — nó nằm ở câu hỏi: *"khi công ty đổi mức giảm giá cho học sinh, hai mức kia có đổi theo không?"* Không ⇒ chúng là ba quy tắc nghiệp vụ khác nhau tình cờ cùng bằng 0.9 ⇒ **để yên**.
 
-- Đã có trong lộ trình quý này
-- Đã có bản cài thứ hai (kể cả bản giả cho test)
-- Chi phí sửa sau **thật sự** cao (đã lộ ra API công khai, đã có dữ liệu di trú)
+Gộp lại thành `tinhGiamGia(gia)` thì sáu tháng sau, khi học sinh được giảm 15%, bạn sẽ thêm một tham số `loai`, rồi một `if`, rồi ba `if` — và đoạn code cuối cùng tệ hơn ba dòng ban đầu.
 
-Không có bằng chứng nào → viết thẳng, chờ tới lần thứ ba.
+## Tại sao cần nó
 
-## Mâu thuẫn 3: Đóng gói chống lại đơn giản
+Vì bốn cặp mâu thuẫn dưới đây bạn sẽ gặp hằng tuần, và mỗi lần chọn sai đều để lại nợ:
 
-Đóng gói nói: giấu trạng thái sau các phép hợp lệ. Nhưng:
+**Mâu thuẫn 1 — DRY chống lại "tách theo lý do thay đổi".** Vừa nói ở trên. Phép thử: *ba chỗ này có đổi cùng nhau không?*
+
+**Mâu thuẫn 2 — YAGNI chống lại mở-đóng.**
+
+```text
+YAGNI     →  "Chưa cần thì đừng xây. Viết thẳng cho một cổng thanh toán."
+Mở-đóng   →  "Xây sẵn interface để thêm cổng mới khỏi phải sửa."
+```
+
+Chọn thế nào: **YAGNI thắng khi bạn chưa biết chắc sẽ có loại thứ hai.** Mở-đóng thắng khi **đã có** loại thứ hai trên bàn — không phải khi bạn tưởng tượng ra nó. Chi phí của đoán sai ở đây rất lệch: xây sẵn cho thứ không tới thì bạn ôm một lớp trừu tượng vô ích *mãi mãi*; còn không xây sẵn thì lúc cần chỉ tốn một buổi refactor.
+
+**Mâu thuẫn 3 — đóng gói chống lại đơn giản.**
 
 ```ts
-// Chỉ chở dữ liệu từ API về màn hình — không có bất biến nào để bảo vệ
-type Don = { id: string; tong: number; ngay: Date }
+// Đóng gói chặt: an toàn, nhưng viết nhiều
+class Diem {
+  #x: number; #y: number
+  constructor(x, y) { this.#x = x; this.#y = y }
+  get x() { return this.#x }
+  get y() { return this.#y }
+}
+
+// Đơn giản: đọc là hiểu, nhưng ai cũng sửa được
+type Diem = { x: number; y: number }
 ```
 
-Bọc cái này vào class có `private` và getter là **khuôn khổ thuần tuý**. Đóng gói đáng giá khi **có một bất biến để giữ** (số dư không âm, giỏ hàng không quá 50 món). Không có bất biến thì một kiểu dữ liệu trần là đúng.
+Chọn thế nào: **có quy tắc cần bảo vệ thì đóng gói; chỉ là dữ liệu thì để trần.** `Diem` không có quy tắc nào (mọi cặp số đều hợp lệ) ⇒ dùng bản đơn giản. `TaiKhoan` có quy tắc "số dư không âm" ⇒ đóng gói.
 
-Quy tắc: **dữ liệu có quy tắc → class; dữ liệu chỉ chở đi → kiểu trần.**
+**Mâu thuẫn 4 — ít liên kết chống lại ít gián tiếp.** Mỗi lớp trừu tượng thêm vào để giảm liên kết cũng là thêm một chỗ phải nhảy tới khi đọc. Bảy tầng trừu tượng "sạch" có thể khó hiểu hơn một hàm 40 dòng viết thẳng.
 
-## Mâu thuẫn 4: Ít liên kết chống lại ít gián tiếp
+## So sánh
 
-Mỗi interface bạn thêm vào làm liên kết lỏng hơn, và làm code **khó lần hơn một bậc**:
+Ba câu hỏi để quyết định, hỏi theo đúng thứ tự:
 
+**1. Sai theo hướng nào thì sửa rẻ hơn?**
+
+```text
+Gộp sớm rồi phát hiện sai  →  phải gỡ ra, tìm mọi chỗ dùng, rủi ro cao
+Để lặp rồi phát hiện nên gộp →  gộp lại, việc cơ học, rủi ro thấp
 ```
-Đọc code: DichVuDon → KhoDon (interface) → ??? 
-                                            ↑ phải tra ai cài nó
+
+Vì bất đối xứng đó, **khi phân vân thì chọn phương án dễ đảo ngược hơn** — thường là chọn viết thẳng, chưa trừu tượng.
+
+**2. Điều gì thật sự sẽ thay đổi?** Không phải "có thể", mà là *đã có dấu hiệu*: sếp đã nói, đối thủ đã làm, đã có ticket. Thiết kế cho thay đổi có bằng chứng, không thiết kế cho thay đổi tưởng tượng.
+
+**3. Ai đọc code này sau tôi?** Đội junior thì code thẳng, ít tầng, dễ dò. Đội quen kiến trúc thì trừu tượng đúng chỗ lại giúp họ đi nhanh hơn. "Tốt" phụ thuộc người đọc, không phải chỉ phụ thuộc code.
+
+## Dễ nhầm
+
+**1. Coi nguyên lý là mục tiêu.** Không ai trả tiền cho bạn để code "SOLID" hay "DRY". Họ trả tiền để phần mềm **chạy đúng và sửa được**. Nguyên lý là phương tiện — khi phương tiện chống lại mục tiêu, bỏ phương tiện.
+
+**2. Áp dụng nguyên lý mà không nêu được nó bảo vệ điều gì.** Nếu bạn không nói được *"tôi tách chỗ này để tránh chuyện X"*, thì bạn đang làm theo quán tính. Cách kiểm: nói to lý do; nếu nghe như một câu trích sách chứ không phải một rủi ro cụ thể, dừng lại.
+
+**3. Nhớ nguyên lý nào gần đây nhất thì dùng nguyên lý đó.** Vừa đọc bài về DRY thì thấy chỗ nào cũng cần gộp; vừa đọc về YAGNI thì thấy chỗ nào cũng thừa. Ba câu hỏi ở trên tồn tại để thay trí nhớ ngắn hạn bằng dữ kiện.
+
+**4. Quên rằng có ba nguyên lý gần như không mâu thuẫn với gì.** Khi lạc lối, quay về ba cái này:
+
+```text
+Đặt tên tốt        →  chưa bao giờ có hại  ([[dat-ten-va-code-doc-duoc]])
+Hàm không tác dụng phụ  →  gần như luôn tốt  ([[ham-dau-vao-dau-ra-va-tac-dung-phu]])
+Xoá code chết      →  luôn đúng
 ```
 
-Với một bản cài duy nhất, bạn vừa trả một bước nhảy và không mua được gì. Với ba bản cài, bạn mua được thật.
+**5. Tưởng quyết định hôm nay là vĩnh viễn.** Thiết kế sai không phải thảm hoạ nếu bạn phát hiện sớm và sửa. Thứ biến nó thành thảm hoạ là **để nguyên và vá thêm** — xem [[no-ky-thuat-va-refactor]].
 
-Ngưỡng thực dụng: **tách interface khi có ≥ 2 bản cài thật, hoặc khi cần thay bằng bản giả để test.** Bản giả cho test **có tính** là bản cài thứ hai — đó là lý do tầng dữ liệu thường xứng đáng có interface ngay từ đầu.
+## Mẹo nhớ
 
-## Cách quyết định: hỏi ba câu
+> **Nguyên lý là phương tiện, không phải mục tiêu.**
+>
+> **Phân vân thì chọn hướng dễ đảo ngược hơn.**
 
-Khi hai nguyên lý chỉ ngược hướng, đừng chọn theo nguyên lý nào nổi tiếng hơn. Hỏi:
+## Tự nhớ
 
-**① Đâu là trục thay đổi thật của bài toán này?**
+Không nhìn lên, trả lời bằng lời của bạn:
 
-Không phải mọi chiều đều cần linh hoạt. App thương mại điện tử thêm cổng thanh toán mới **liên tục** và đổi cấu trúc bảng đơn hàng **hiếm khi**. Vậy mở ở trục thanh toán, đóng cứng ở trục lược đồ. Cùng một app, hai quyết định ngược nhau, cả hai đều đúng.
+1. Vì sao DRY và "tách theo lý do thay đổi" có thể mâu thuẫn? Phép thử là gì?
+2. Khi nào YAGNI thắng mở-đóng, và ngược lại?
+3. Vì sao "chọn hướng dễ đảo ngược hơn" là lời khuyên tốt khi phân vân?
+4. Điều gì phân biệt "thay đổi có bằng chứng" với "thay đổi tưởng tượng"?
+5. Ba nguyên lý gần như không bao giờ mâu thuẫn với gì?
 
-**② Sửa sai theo hướng nào rẻ hơn?**
+## Tự viết lại
 
-| | Thiếu trừu tượng | Thừa trừu tượng |
-|---|---|---|
-| Triệu chứng | Sửa một tính năng chạm 7 file | 5 tầng gián tiếp cho 1 bản cài |
-| Cách sửa | Trích xuất — công cụ làm được | Gỡ, lần mọi chỗ gọi |
-| Rủi ro khi sửa | Thấp, có test bảo vệ | Cao, thường không ai dám |
+Không nhìn lại phần trên, quyết định cho từng tình huống và **nêu rõ nguyên lý nào thắng, vì sao**:
 
-Bảng này giải thích vì sao **nghiêng về ít trừu tượng hơn** là mặc định đúng: sai theo hướng đó rẻ hơn hẳn.
+```text
+a) Ba màn hình cùng có đoạn kiểm tra "đã đăng nhập chưa"
+b) Sếp nói "có thể năm sau sẽ hỗ trợ đăng nhập bằng Google"
+c) Một class 200 dòng nhưng chỉ có đúng một lý do thay đổi
+d) Hàm 15 dòng viết thẳng vs 5 lớp nhỏ "sạch" hơn
+```
 
-**③ Ai sẽ đọc đoạn này, và bao lâu một lần?**
+Tự kiểm: với mỗi câu, bạn dùng câu hỏi nào trong ba câu ở trên?
 
-Code trong vòng lặp nóng ai cũng đọc → ưu tiên hiển nhiên hơn thông minh. Code chạy một lần lúc khởi động → khuôn khổ không đáng.
+## Thử sức
 
-## Ba nguyên lý ít mâu thuẫn nhất
+Bạn review một pull request. Tác giả gộp bốn hàm gần giống nhau thành một hàm có ba tham số boolean, và ghi trong mô tả: *"áp dụng DRY, giảm 60 dòng code"*.
 
-Có vài thứ gần như luôn đúng, không cần cân đo:
-
-- **Đặt tên tốt.** Không có đánh đổi nào. Xem [[dat-ten-va-code-doc-duoc]].
-- **Không sửa thứ mình không sở hữu.** Xem [[ham-dau-vao-dau-ra-va-tac-dung-phu]].
-- **Nghiệp vụ không import hạ tầng.** Chữ D — hầu như luôn lời.
-
-Khi phân vân, làm ba thứ này trước rồi hẵng nghĩ tới phần còn lại.
-
-## Sai lầm cuối: coi nguyên lý là mục tiêu
-
-Mục tiêu không phải "code thoả SOLID". Mục tiêu là **thay đổi tiếp theo rẻ và an toàn**.
-
-Nguyên lý là phương tiện, và như mọi phương tiện, chúng có điều kiện áp dụng. Một codebase 200 dòng thoả cả năm chữ SOLID với mười interface đang **tệ hơn** một file 200 dòng viết thẳng — nó khó đọc hơn mà không mua được gì.
-
-Thước đo cuối cùng chỉ có một, và nó đo được: **thêm tính năng điển hình thì chạm mấy file, và bạn có sợ khi sửa không?** Chạm ít và không sợ thì thiết kế đang đúng, bất kể nó có tên gọi nào hay không. Cách biến câu hỏi đó thành hành động là nội dung của [[no-ky-thuat-va-refactor]].
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Áp DRY cho code chỉ **trông** giống | Buộc hai tri thức khác nhau cùng số phận | Hỏi "có đổi cùng nhau không" |
-| Mở sẵn mọi trục "cho dễ mở rộng" | Khuôn khổ gấp ba nghiệp vụ | Chỉ mở khi có bằng chứng |
-| Bọc class cho dữ liệu không có bất biến | Khuôn khổ thuần tuý | Kiểu trần là đủ |
-| Interface cho một bản cài duy nhất | Thêm một bước nhảy, không mua gì | Chờ bản cài thứ hai |
-| Coi "thoả SOLID" là mục tiêu | Kiến trúc phục vụ nguyên lý, không phục vụ người | Mục tiêu là thay đổi tiếp theo rẻ |
-| Chọn theo nguyên lý nổi tiếng hơn | Quyết định ngẫu nhiên | Hỏi ba câu: trục nào, sai hướng nào rẻ, ai đọc |
-| Sợ gỡ trừu tượng vì "đã lỡ viết" | Nó tiếp tục lan | Gỡ sớm khi còn rẻ |
-
-## Ghi nhớ
-
-- Nguyên lý mâu thuẫn nhau là **bình thường** — mỗi cái chữa một loại đau khác nhau.
-- DRY nói về **tri thức**, không nói về code trông giống nhau.
-- YAGNI thắng ở mặc định vì **thêm** trừu tượng rẻ hơn **gỡ** trừu tượng.
-- Đóng gói đáng giá khi có bất biến để giữ; không có thì kiểu trần là đúng.
-- Tách interface khi có ≥2 bản cài — bản giả cho test có tính.
-- Mục tiêu không phải thoả nguyên lý, mà là **thay đổi tiếp theo rẻ và an toàn**.
-
-## Tự kiểm tra
-
-1. Hai hàm cùng công thức nhưng khác lý do đổi — DRY hay chữ S thắng, vì sao?
-2. Vì sao "nghiêng về ít trừu tượng hơn" là mặc định đúng?
-3. Thước đo cuối cùng của một thiết kế tốt là gì?
+Số dòng giảm là thật. Hãy nêu **bằng chứng cụ thể** để phản biện (hoặc để đồng ý) — bằng chứng phải nằm trong bản chất nghiệp vụ, không phải trong cảm giác "trông không sạch".
