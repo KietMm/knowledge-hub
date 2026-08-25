@@ -25,6 +25,12 @@
           "name": "Nguyên lý thiết kế code",
           "slug": "nguyen-ly-thiet-ke-code",
           "description": "OOP, SOLID và mẫu thiết kế — giải thích bằng code thật, kể cả lúc chúng mâu thuẫn nhau."
+        },
+        {
+          "id": "topic-thuat-toan",
+          "name": "Thuật toán & luyện tập",
+          "slug": "thuat-toan-va-luyen-tap",
+          "description": "Các kỹ thuật giải bài lặp đi lặp lại trong phỏng vấn và trong việc thật, kèm bài tập chấm ngay trên web."
         }
       ]
     },

@@ -8,7 +8,7 @@ import remarkParse from 'remark-parse'
 import remarkRehype from 'remark-rehype'
 import { unified } from 'unified'
 import { visit } from 'unist-util-visit'
-import { remarkWikiLink } from '@/lib/wiki-link'
+import { remarkWikiLink, type DichLink } from '@/lib/wiki-link'
 import type { Root as MdastRoot } from 'mdast'
 
 /**
@@ -35,11 +35,11 @@ const langLabel = {
  * unified() rẻ; phần đắt là bộ highlighter của shiki và nó được @shikijs/rehype tự nhớ
  * lại giữa các lần gọi, nên không dựng lại engine mỗi lần.
  */
-function buildProcessor(titles: Map<string, string>) {
+function buildProcessor(dich: Map<string, DichLink>) {
   return unified()
   .use(remarkParse)
   .use(remarkGfm)
-  .use(remarkWikiLink, titles)
+  .use(remarkWikiLink, dich)
   .use(remarkRehype)
   .use(rehypeSlug) // gắn id cho heading, dùng cùng thuật toán với GithubSlugger dưới đây
   .use(rehypeShiki, {
@@ -72,14 +72,14 @@ function extractToc(tree: MdastRoot): TocEntry[] {
 }
 
 /**
- * `titles` là bảng slug → tiêu đề để render `[[slug]]` thành link. Bỏ trống thì
+ * `dich` là bảng slug → {tiêu đề, url} để render `[[slug]]` thành link. Bỏ trống thì
  * `[[slug]]` giữ nguyên nguyên văn — hàm vẫn thuần và test được không cần dữ liệu thật.
  */
 export async function renderMarkdown(
   markdown: string,
-  titles: Map<string, string> = new Map(),
+  dich: Map<string, DichLink> = new Map(),
 ): Promise<RenderedMarkdown> {
-  const processor = buildProcessor(titles)
+  const processor = buildProcessor(dich)
   const tree = processor.parse(markdown)
   // TOC trích TRƯỚC khi chạy plugin: heading không chứa [[...]] nên kết quả không đổi,
   // và extractToc chỉ cần cây mdast thô.

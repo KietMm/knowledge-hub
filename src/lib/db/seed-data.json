@@ -99,6 +99,14 @@
       "order": 3
     },
     {
+      "id": "topic-thuat-toan",
+      "name": "Thuật toán & luyện tập",
+      "slug": "thuat-toan-va-luyen-tap",
+      "description": "Các kỹ thuật giải bài lặp đi lặp lại trong phỏng vấn và trong việc thật, kèm bài tập chấm ngay trên web.",
+      "categoryId": "cat-nen-tang",
+      "order": 4
+    },
+    {
       "id": "topic-typescript",
       "name": "JavaScript / TypeScript",
       "slug": "javascript-typescript",
@@ -630,6 +638,157 @@
       "updatedAt": "2026-01-01T17:00:00.000Z"
     },
     {
+      "id": "note-cach-tiep-can-mot-bai-thuat-toan",
+      "topicId": "topic-thuat-toan",
+      "title": "Cách tiếp cận một bài thuật toán",
+      "slug": "cach-tiep-can-mot-bai-thuat-toan",
+      "summary": "Quy trình sáu bước từ lúc đọc đề tới lúc code chạy đúng, và vì sao viết cách chậm trước lại tiết kiệm thời gian.",
+      "content": "> **Sau bài này bạn sẽ:** có một quy trình để bám vào khi nhìn đề bài mà chưa nghĩ ra gì, thay vì ngồi im chờ ý tưởng loé lên.\n\n## Vấn đề thật không phải là thuật toán\n\nNgười mới giải bài thuật toán hay thất bại ở chỗ không ai ngờ: **họ bắt đầu gõ code quá sớm**. Đọc đề xong, thấy quen quen, gõ luôn. Được nửa chừng thì phát hiện hiểu sai đề, xoá đi làm lại. Lần thứ ba mới xong, và code cuối cùng chằng chịt những mảnh vá.\n\nNgười giải nhiều thì làm ngược lại: họ dành phần lớn thời gian **trước** khi gõ dòng đầu tiên.\n\n## Sáu bước\n\n**1. Đọc đề hai lần, lần hai tìm cái bẫy.** Câu hỏi cần trả lời được trước khi làm gì khác: đầu vào có thể rỗng không? Có số âm không? Có phần tử trùng nhau không? Dữ liệu đã sắp xếp chưa? Có bảo đảm luôn tồn tại đáp án không? Đáp án có duy nhất không?\n\nMỗi câu trả lời \"có\" ở trên là một ca test bạn sẽ phải qua. Người viết đề luôn nhét ít nhất một trong số đó vào bộ test.\n\n**2. Làm tay một ví dụ nhỏ.** Lấy giấy, chạy ví dụ trong đề bằng tay. Nghe thừa, nhưng đây là bước tách người hiểu đề khỏi người tưởng là mình hiểu. Nếu bạn không tự làm tay được với `n = 4`, bạn không viết nổi vòng lặp cho `n = 10⁵`.\n\nTrong lúc làm tay, để ý xem **bạn** đang làm gì — thường thuật toán nằm ngay ở đó. Bạn ngó lại phần tử phía sau? Đó là hai con trỏ. Bạn ghi nhớ những gì đã gặp? Đó là bảng băm.\n\n**3. Viết cách chậm nhất trước.** Cách vét cạn, `O(n²)` hay `O(n³)` cũng được. Đừng bỏ qua bước này.\n\nNó cho bạn ba thứ: một lời giải **đúng** để đối chiếu, một hiểu biết cụ thể về cấu trúc bài toán, và một điểm khởi đầu để tối ưu. Nhảy thẳng vào lời giải tối ưu khi chưa hiểu bài là cách nhanh nhất để viết ra một đoạn code sai mà trông rất thông minh.\n\nVí dụ cụ thể với bài \"có cặp nào cộng lại bằng target không\". Cách chậm viết trong 30 giây:\n\n```js\n// O(n²) — đúng, chậm, và là mốc để đối chiếu mọi lời giải sau\nfunction coCapTong(nums, target) {\n  for (let i = 0; i < nums.length; i += 1) {\n    for (let j = i + 1; j < nums.length; j += 1) {\n      if (nums[i] + nums[j] === target) return true\n    }\n  }\n  return false\n}\n```\n\nCó nó rồi, câu hỏi tối ưu trở nên cụ thể: *vòng trong đang làm gì?* Nó quét lại mảng để hỏi \"có phần tử nào bằng `target - nums[i]` không\". Câu hỏi đó là một phép tra cứu — và tra cứu thì có `Set`.\n\n**4. Tìm phần việc bị làm đi làm lại.** Mọi tối ưu về cơ bản chỉ là một câu: *\"chỗ nào tôi đang tính lại cái vừa tính?\"*\n\n| Bạn thấy | Cách bỏ đi phần lặp |\n|---|---|\n| Vòng trong quét lại để tìm một giá trị | Bảng băm (nhớ những gì đã gặp) |\n| Vòng trong tính lại tổng của một đoạn | Cửa sổ trượt, hoặc mảng cộng dồn |\n| So sánh mọi cặp trên dữ liệu đã sắp xếp | Hai con trỏ |\n| Gọi đệ quy lặp lại cùng tham số | Ghi nhớ / quy hoạch động |\n| Tìm kiếm tuần tự trên dữ liệu đã sắp xếp | Tìm kiếm nhị phân |\n\nBảng này phủ phần lớn bài tập phỏng vấn. Nó không phải mẹo — nó là danh sách những chỗ mà \"tính lại\" hay xảy ra.\n\n**5. Code, và đặt tên biến tử tế.** `l`, `r`, `tmp`, `arr2` làm bạn tự tạo lỗi cho chính mình khi bài dài quá 20 dòng. `trai`, `phai`, `daGap` thì đọc lại hiểu ngay.\n\n**6. Chạy lại các ca biên.** Rỗng, một phần tử, hai phần tử, tất cả bằng nhau, đã sắp xếp sẵn, sắp xếp ngược. Đây là nơi lỗi nằm — không phải ở ca ví dụ trong đề.\n\n## Đọc được cái giá trước khi chạy\n\nƯớc lượng thô, đủ dùng cho mọi bài phỏng vấn: máy tính hiện đại chạy khoảng **10⁸ phép tính mỗi giây**.\n\n| `n` | Độ phức tạp chịu được |\n|---|---|\n| ≤ 10 | `O(n!)`, `O(2ⁿ)` |\n| ≤ 100 | `O(n³)` |\n| ≤ 1.000 | `O(n²)` |\n| ≤ 10⁶ | `O(n log n)` |\n| ≤ 10⁸ | `O(n)` |\n\nBảng này dùng ngược lại mới là chỗ hay: **ràng buộc trong đề cho bạn biết đáp án cần có dạng gì.** Đề nói `n ≤ 10⁵` nghĩa là `O(n²)` sẽ quá hạn — nên đừng phí thời gian tối ưu vòng lặp lồng nhau, hãy đi tìm lời giải `O(n log n)` hoặc `O(n)`. Chi tiết về cách đọc độ phức tạp ở [[big-o-doc-va-uoc-luong]].\n\n## Khi bí thật sự\n\nSau 10 phút không ra hướng nào, thử lần lượt:\n\n- **Sắp xếp đầu vào thử xem.** Rất nhiều bài trở thành hiển nhiên sau khi sắp xếp.\n- **Nghĩ ngược từ đáp án.** Nếu tôi đã có đáp án, làm sao kiểm tra nó đúng? Cách kiểm tra đó thường gợi ra cách xây.\n- **Giải bài nhỏ hơn.** Giải được cho `n = 2` chưa? Từ `n = k` sang `n = k+1` thì thêm gì? Đó là đường vào của đệ quy và quy hoạch động.\n- **Đổi cấu trúc dữ liệu.** Mảng đổi thành bảng băm, thành tập hợp, thành hàng đợi ưu tiên — xem [[chon-sai-cau-truc-du-lieu-la-dat]].\n\nVà một điều thực tế: nếu 25 phút vẫn chưa ra, hãy xem lời giải rồi **tự viết lại từ đầu không nhìn**. Ngồi bí thêm một tiếng ít giá trị hơn hiểu một kỹ thuật mới rồi luyện nó ba lần.\n\n## Ghi nhớ\n\n- Thời gian nghĩ trước khi gõ tiết kiệm nhiều hơn thời gian nó tốn.\n- Làm tay một ví dụ nhỏ: cách bạn làm tay thường chính là thuật toán.\n- Viết cách chậm trước — nó là mốc đúng để đối chiếu và là điểm khởi đầu để tối ưu.\n- Mọi tối ưu đều trả lời một câu hỏi: chỗ nào đang tính lại cái vừa tính?\n- Ràng buộc `n` trong đề nói cho bạn biết đáp án phải nhanh cỡ nào.\n\n## Tự kiểm tra\n\n1. Đề nói `n ≤ 200.000`. Lời giải `O(n²)` có chạy kịp không? Bạn cần độ phức tạp nào?\n2. Bạn phát hiện vòng lặp trong đang quét lại để tìm một giá trị. Đổi sang cấu trúc nào?\n3. Ba ca biên bạn luôn phải thử, dù đề không nhắc tới?",
+      "tags": [
+        "thuat-toan",
+        "tu-duy",
+        "phong-van"
+      ],
+      "order": 1,
+      "level": "co-ban",
+      "starred": false,
+      "createdAt": "2026-01-01T18:00:00.000Z",
+      "updatedAt": "2026-01-01T18:00:00.000Z"
+    },
+    {
+      "id": "note-hai-con-tro",
+      "topicId": "topic-thuat-toan",
+      "title": "Hai con trỏ",
+      "slug": "hai-con-tro",
+      "summary": "Ba biến thể của kỹ thuật hai con trỏ, dấu hiệu nhận ra bài dùng được nó, và vì sao nó biến O(n²) thành O(n).",
+      "content": "> **Sau bài này bạn sẽ:** nhận ra bài nào dùng được hai con trỏ, và viết được cả ba biến thể mà không phải nhớ thuộc lòng.\n\n## Ý tưởng\n\nThay vì hai vòng lặp lồng nhau chạy `n × n` lượt, ta dùng **hai chỉ số cùng chạy trên một mảng** và mỗi chỉ số chỉ đi qua mảng đúng một lần. Tổng cộng `2n` bước ⇒ `O(n)`.\n\nĐiều kiện để làm được: **biết chắc con trỏ nào cần dịch, dựa vào thông tin đang có.** Đây gần như luôn đến từ một trong hai chỗ — mảng đã được sắp xếp, hoặc bài toán có tính đối xứng.\n\n## Biến thể 1: hai đầu chạy vào giữa\n\nDùng cho: đảo ngược, kiểm tra đối xứng, tìm cặp có tổng cho trước **trong mảng đã sắp xếp**, bài chứa nước.\n\n```js\nfunction coCapTong(nums, target) {\n  // nums PHẢI đã sắp xếp tăng dần\n  let trai = 0\n  let phai = nums.length - 1\n\n  while (trai < phai) {\n    const tong = nums[trai] + nums[phai]\n    if (tong === target) return true\n    // Tổng nhỏ quá ⇒ chỉ có thể cứu bằng cách tăng số nhỏ nhất đang có.\n    if (tong < target) trai += 1\n    else phai -= 1\n  }\n  return false\n}\n```\n\nChỗ đáng hiểu là **vì sao được phép bỏ đi cả một nửa khả năng**. Khi `tong < target`, ta dịch `trai` sang phải và vĩnh viễn loại bỏ mọi cặp có dạng `(trai, x)` với `x ≤ phai`. Điều đó hợp lệ vì `nums[phai]` đang là giá trị lớn nhất còn lại: nếu ghép với nó mà tổng còn chưa đủ, thì ghép `trai` với bất kỳ cái nào nhỏ hơn cũng vô vọng.\n\nĐó chính là điều mà \"mảng đã sắp xếp\" mua cho bạn: mỗi bước loại được cả một nhóm khả năng thay vì một khả năng.\n\n## Biến thể 2: hai con trỏ cùng chiều (nhanh và chậm)\n\nDùng cho: xoá phần tử trùng tại chỗ, dồn phần tử về đầu mảng, lọc tại chỗ.\n\n```js\nfunction xoaTrungTaiCho(nums) {\n  // nums đã sắp xếp; trả về số phần tử duy nhất, đã dồn về đầu mảng\n  if (nums.length === 0) return 0\n\n  let cham = 0 // vị trí ghi tiếp theo\n  for (let nhanh = 1; nhanh < nums.length; nhanh += 1) {\n    if (nums[nhanh] !== nums[cham]) {\n      cham += 1\n      nums[cham] = nums[nhanh]\n    }\n  }\n  return cham + 1\n}\n```\n\nCách đọc: `nhanh` **duyệt**, `cham` **ghi**. Mọi thứ bên trái `cham` là kết quả đã hoàn thành. Mẫu này thay thế cho việc tạo một mảng mới, nên bộ nhớ phụ là `O(1)`.\n\n## Biến thể 3: hai con trỏ trên hai mảng\n\nDùng cho: trộn hai mảng đã sắp xếp, tìm phần giao/hợp.\n\n```js\nfunction tronHaiMangDaSap(a, b) {\n  const ketQua = []\n  let i = 0\n  let j = 0\n\n  while (i < a.length && j < b.length) {\n    if (a[i] <= b[j]) ketQua.push(a[i++])\n    else ketQua.push(b[j++])\n  }\n  // Một trong hai mảng đã hết; phần còn lại của mảng kia vốn đã sắp xếp.\n  return [...ketQua, ...a.slice(i), ...b.slice(j)]\n}\n```\n\nĐây chính là bước trộn của merge sort — xem [[sap-xep-va-tim-kiem-nhi-phan]].\n\n## Dấu hiệu nhận ra\n\nNghĩ tới hai con trỏ khi đề có một trong các dấu hiệu:\n\n- Nhắc tới **mảng/chuỗi đã sắp xếp**.\n- Yêu cầu **bộ nhớ phụ `O(1)`** hoặc \"làm tại chỗ\".\n- Đi tìm một **cặp/bộ ba** thoả điều kiện nào đó.\n- Cần **đảo, dồn, lọc** ngay trên mảng đầu vào.\n\nNgược lại, dấu hiệu KHÔNG dùng được: dữ liệu chưa sắp xếp *và* bài đòi giữ nguyên thứ tự gốc (lúc đó thường là bảng băm), hoặc cần xét đoạn con liên tiếp co giãn (lúc đó là cửa sổ trượt — [[cua-so-truot]], vốn cũng là một dạng hai con trỏ).\n\n## Bẫy thường gặp\n\n| Bẫy | Hậu quả |\n|---|---|\n| Quên sắp xếp trước ở biến thể 1 | Kết quả sai âm thầm với dữ liệu chưa sắp |\n| Viết `trai <= phai` khi cần `trai < phai` | Ghép một phần tử với chính nó |\n| Dịch cả hai con trỏ trong một nhánh | Bỏ sót cặp cần xét |\n| Trả về `cham` thay vì `cham + 1` | Lệch một — `cham` là chỉ số, không phải số lượng |\n\nLỗi lệch một ở dòng cuối là lỗi phổ biến nhất của biến thể 2. Cách kiểm nhanh: thử mảng một phần tử. Kết quả phải là `1`.\n\n## Ghi nhớ\n\n- Hai con trỏ đổi `O(n²)` lấy `O(n)` bằng cách mỗi bước loại bỏ cả một nhóm khả năng.\n- Điều kiện tiên quyết: phải biết chắc con trỏ nào nên dịch — thường nhờ mảng đã sắp xếp.\n- Ba biến thể: hai đầu vào giữa, nhanh–chậm cùng chiều, và trên hai mảng.\n- Luôn thử mảng rỗng và mảng một phần tử.\n\n## Tự kiểm tra\n\n1. Vì sao biến thể 1 bắt buộc mảng phải sắp xếp, còn biến thể 2 thì tuỳ bài?\n2. Trong `xoaTrungTaiCho`, `cham` mang ý nghĩa gì tại mỗi thời điểm?\n3. Bài \"tìm cặp có tổng bằng target\" trên mảng **chưa** sắp xếp và phải trả về chỉ số gốc — còn dùng hai con trỏ được không? Vì sao?",
+      "tags": [
+        "thuat-toan",
+        "hai-con-tro",
+        "mang",
+        "chuoi"
+      ],
+      "order": 2,
+      "level": "co-ban",
+      "starred": false,
+      "createdAt": "2026-01-01T19:00:00.000Z",
+      "updatedAt": "2026-01-01T19:00:00.000Z"
+    },
+    {
+      "id": "note-cua-so-truot",
+      "topicId": "topic-thuat-toan",
+      "title": "Cửa sổ trượt",
+      "slug": "cua-so-truot",
+      "summary": "Cửa sổ cố định và cửa sổ co giãn, bất biến phải giữ, và cách nhận ra bài toán đoạn con liên tiếp.",
+      "content": "> **Sau bài này bạn sẽ:** viết được cả hai kiểu cửa sổ trượt, và biết bất biến nào phải giữ để không rơi vào lỗi kinh điển \"mép trái bị kéo lùi\".\n\n## Bài toán mà nó giải\n\nCửa sổ trượt dành cho câu hỏi về **đoạn con liên tiếp**: tổng lớn nhất của `k` phần tử liền nhau, đoạn ngắn nhất có tổng ≥ `target`, chuỗi con dài nhất không lặp ký tự.\n\nTừ khoá phải để ý trong đề: **\"liên tiếp\"**, \"đoạn con\", \"chuỗi con\" (khác \"dãy con\" — dãy con được phép nhảy cách, và đó là bài toán khác hẳn, thường thuộc về quy hoạch động).\n\n## Kiểu 1: cửa sổ cố định\n\nKích thước `k` cho trước. Trượt sang phải: thêm phần tử mới vào, bỏ phần tử cũ ra.\n\n```js\nfunction tongLonNhatKPhanTu(nums, k) {\n  if (nums.length < k) return null\n\n  let tong = 0\n  for (let i = 0; i < k; i += 1) tong += nums[i]\n  let lonNhat = tong\n\n  for (let i = k; i < nums.length; i += 1) {\n    // Cập nhật theo HIỆU, không tính lại cả cửa sổ — đây chính là chỗ tiết kiệm.\n    tong += nums[i] - nums[i - k]\n    lonNhat = Math.max(lonNhat, tong)\n  }\n  return lonNhat\n}\n```\n\nCách vét cạn là `O(n × k)` vì mỗi vị trí lại cộng lại `k` phần tử. Cửa sổ trượt là `O(n)` vì nó nhận ra: hai cửa sổ liền nhau chỉ khác nhau **hai phần tử**.\n\n## Kiểu 2: cửa sổ co giãn\n\nKích thước không cho trước — nó tự lớn lên và co lại theo một điều kiện. Đây là kiểu hay gặp hơn và cũng khó hơn.\n\nKhung chung, gần như bài nào cũng có hình dạng này:\n\n```js\nfunction doanNganNhatCoTong(nums, target) {\n  let trai = 0\n  let tong = 0\n  let nganNhat = Infinity\n\n  for (let phai = 0; phai < nums.length; phai += 1) {\n    tong += nums[phai] // 1. mở rộng bên phải\n\n    while (tong >= target) {\n      // 2. cửa sổ đang hợp lệ ⇒ ghi nhận, rồi thử co lại cho ngắn hơn\n      nganNhat = Math.min(nganNhat, phai - trai + 1)\n      tong -= nums[trai]\n      trai += 1\n    }\n  }\n  return nganNhat === Infinity ? 0 : nganNhat\n}\n```\n\nBa câu hỏi phải trả lời cho mỗi bài, và trả lời xong là code tự hiện ra:\n\n1. **Mở rộng thì cập nhật trạng thái gì?** (tổng, bảng đếm, số ký tự phân biệt…)\n2. **Khi nào phải co lại?** (tổng vượt ngưỡng, có ký tự lặp, quá `k` loại phần tử…)\n3. **Ghi nhận đáp án ở đâu?** Bài tìm **ngắn nhất** thì ghi nhận *bên trong* vòng co; bài tìm **dài nhất** thì ghi nhận *sau khi* đã co xong.\n\nĐiểm 3 là chỗ nhầm nhiều nhất. Cửa sổ ngắn nhất chỉ hợp lệ ngay trước khi bị co quá tay; cửa sổ dài nhất chỉ hợp lệ sau khi vi phạm đã được sửa.\n\n## Bất biến: mép trái không bao giờ lùi\n\nĐây là điều làm cửa sổ trượt chạy `O(n)`: cả `trai` lẫn `phai` **chỉ tiến**, mỗi cái đi qua mảng đúng một lần. Tổng `2n` bước, dù vòng `while` bên trong trông như vòng lặp lồng nhau.\n\nLỗi kinh điển làm hỏng bất biến này, gặp ở bài chuỗi con không lặp:\n\n```js\n// SAI: mép trái bị kéo LÙI\nif (lanCuoi.has(c)) trai = lanCuoi.get(c) + 1\n\n// ĐÚNG: chỉ nhảy khi ký tự trùng còn nằm TRONG cửa sổ\nif (lanCuoi.has(c) && lanCuoi.get(c) >= trai) trai = lanCuoi.get(c) + 1\n```\n\nVới `\"abba\"`: khi `phai` tới `'a'` cuối, bảng nói `'a'` từng ở chỉ số 0, nhưng cửa sổ hiện tại đã bắt đầu ở 2. Bản sai kéo `trai` về 1 và cho ra kết quả 3 thay vì 2. Không có gì báo lỗi — chỉ có đáp án sai.\n\nNguyên tắc để không mắc lại: sau mỗi lần gán `trai`, tự hỏi *\"giá trị mới có chắc chắn ≥ giá trị cũ không?\"*\n\n## So sánh với hai con trỏ\n\nCửa sổ trượt **là** một dạng hai con trỏ cùng chiều, nhưng cách nghĩ khác:\n\n| | Hai con trỏ (nhanh–chậm) | Cửa sổ trượt |\n|---|---|---|\n| Quan tâm | Hai **vị trí** | **Đoạn** giữa hai vị trí |\n| Trạng thái mang theo | Thường không có | Tổng, bảng đếm… của cả đoạn |\n| Câu hỏi điển hình | \"Ghi phần tử này vào đâu?\" | \"Đoạn hiện tại có hợp lệ không?\" |\n\n## Ghi nhớ\n\n- Từ khoá kích hoạt: **liên tiếp**. Không liên tiếp thì đây không phải công cụ đúng.\n- Cửa sổ cố định cập nhật theo hiệu; cửa sổ co giãn theo khung mở rộng → co lại.\n- Ngắn nhất ghi nhận trong vòng co; dài nhất ghi nhận sau vòng co.\n- Mép trái chỉ tiến, không bao giờ lùi — đây là bất biến giữ cho thuật toán `O(n)`.\n\n## Tự kiểm tra\n\n1. Vì sao vòng `while` lồng trong vòng `for` vẫn cho tổng `O(n)` chứ không phải `O(n²)`?\n2. Bài \"đoạn con dài nhất có nhiều nhất `k` số 0\" — ghi nhận đáp án trước hay sau vòng co?\n3. Điều gì xảy ra với `\"abba\"` nếu bỏ điều kiện `lanCuoi.get(c) >= trai`?",
+      "tags": [
+        "thuat-toan",
+        "cua-so-truot",
+        "mang",
+        "chuoi"
+      ],
+      "order": 3,
+      "level": "co-ban",
+      "starred": false,
+      "createdAt": "2026-01-01T20:00:00.000Z",
+      "updatedAt": "2026-01-01T20:00:00.000Z"
+    },
+    {
+      "id": "note-dem-va-bang-bam-trong-giai-bai",
+      "topicId": "topic-thuat-toan",
+      "title": "Đếm và bảng băm trong giải bài",
+      "slug": "dem-va-bang-bam-trong-giai-bai",
+      "summary": "Ba mẫu dùng bảng băm chiếm phần lớn bài tập — nhớ đã gặp, đếm tần suất, và gom nhóm theo khoá suy ra.",
+      "content": "> **Sau bài này bạn sẽ:** nhận ra ba mẫu bảng băm chiếm phần lớn bài tập thực tế, và biết chọn khoá gom nhóm cho đúng.\n\n## Vì sao bảng băm xuất hiện ở khắp nơi\n\nBảng băm đổi câu hỏi *\"có tồn tại không\"* từ một phép **tìm kiếm** `O(n)` thành một phép **tra cứu** `O(1)`. Vì câu hỏi đó nằm trong vòng lặp trong của rất nhiều bài, đổi được nó nghĩa là đổi `O(n²)` thành `O(n)`.\n\nCấu trúc bên trong của bảng băm nằm ở [[bang-bam]]; bài này chỉ nói về cách dùng nó để giải bài.\n\n## Mẫu 1: nhớ những gì đã gặp\n\nCâu hỏi điển hình: \"có cặp nào thoả điều kiện không\", \"có phần tử trùng không\".\n\n```js\nfunction coTrung(nums) {\n  const daGap = new Set()\n  for (const x of nums) {\n    if (daGap.has(x)) return true\n    daGap.add(x)\n  }\n  return false\n}\n```\n\nChỗ tinh tế của mẫu này luôn là **thứ tự tra cứu và ghi vào**: tra trước, ghi sau. Ghi trước thì phần tử tự khớp với chính nó. Bài Hai tổng hỏng đúng ở đây với đầu vào `[3, 3]`.\n\nBiến thể quan trọng — lưu chỉ số thay vì chỉ lưu giá trị, khi đề đòi trả về vị trí:\n\n```js\nconst daGap = new Map() // giá trị -> chỉ số\n```\n\n## Mẫu 2: đếm tần suất\n\nCâu hỏi điển hình: \"phần tử xuất hiện nhiều nhất\", \"hai chuỗi có phải hoán vị của nhau\", \"phần tử xuất hiện quá `n/2` lần\".\n\n```js\nfunction demTanSuat(items) {\n  const dem = new Map()\n  for (const x of items) dem.set(x, (dem.get(x) ?? 0) + 1)\n  return dem\n}\n\nfunction laHoanVi(a, b) {\n  if (a.length !== b.length) return false // chặn sớm, rẻ và bắt được nhiều ca\n  const dem = demTanSuat(a)\n  for (const c of b) {\n    const con = dem.get(c)\n    if (con === undefined || con === 0) return false\n    dem.set(c, con - 1)\n  }\n  return true\n}\n```\n\n`(dem.get(x) ?? 0) + 1` là thành ngữ nên thuộc — nó xuất hiện trong hầu hết bài đếm. Ở Python, `collections.Counter` làm sẵn việc này.\n\nSo sánh hai cách kiểm hoán vị:\n\n| Cách | Thời gian | Ghi chú |\n|---|---|---|\n| Sắp xếp cả hai rồi so | `O(n log n)` | Ngắn hơn, đủ dùng khi `n` nhỏ |\n| Đếm tần suất | `O(n)` | Nhanh hơn, và mở rộng được cho bài cửa sổ trượt |\n\n## Mẫu 3: gom nhóm theo khoá suy ra\n\nĐây là mẫu mạnh nhất và cũng ít người nghĩ ra nhất. Ý tưởng: **hai phần tử thuộc cùng nhóm khi và chỉ khi chúng cho ra cùng một khoá** — và việc của bạn là nghĩ ra khoá đó.\n\nBài kinh điển: gom các từ là hoán vị của nhau (`\"listen\"`, `\"silent\"`).\n\n```js\nfunction gomHoanVi(tu) {\n  const nhom = new Map()\n  for (const t of tu) {\n    // Khoá: các chữ cái đã sắp xếp. Hai từ là hoán vị của nhau ⇔ cùng khoá này.\n    const khoa = [...t].sort().join('')\n    nhom.set(khoa, [...(nhom.get(khoa) ?? []), t])\n  }\n  return [...nhom.values()]\n}\n```\n\nCái khó không nằm ở code mà ở **chọn khoá**. Vài khoá hay dùng:\n\n| Bài toán | Khoá |\n|---|---|\n| Gom các từ hoán vị | Chữ cái đã sắp xếp, hoặc vector 26 số đếm |\n| Gom điểm thẳng hàng | Hệ số góc rút gọn |\n| Gom các dòng trùng nhau | Chuỗi nối các trường |\n| Tìm đoạn con có tổng bằng `k` | **Tổng cộng dồn** đã gặp |\n\nCái cuối đáng nói riêng, vì nó là mẫu chiếm nhiều bài trung–khó:\n\n```js\nfunction demDoanConTongK(nums, k) {\n  // Tổng đoạn (i..j) = congDon[j] - congDon[i-1]. Cần đếm bao nhiêu i thoả\n  // congDon[i-1] === congDon[j] - k ⇒ lại là một phép TRA CỨU.\n  const demCongDon = new Map([[0, 1]]) // tổng 0 xuất hiện một lần: đoạn rỗng ở đầu\n  let congDon = 0\n  let ketQua = 0\n\n  for (const x of nums) {\n    congDon += x\n    ketQua += demCongDon.get(congDon - k) ?? 0\n    demCongDon.set(congDon, (demCongDon.get(congDon) ?? 0) + 1)\n  }\n  return ketQua\n}\n```\n\nDòng khởi tạo `[[0, 1]]` là chỗ ai cũng quên: không có nó, những đoạn **bắt đầu từ chỉ số 0** không được đếm.\n\n## Cái giá phải trả\n\nBảng băm đổi bộ nhớ lấy thời gian — `O(n)` bộ nhớ thêm. Ba trường hợp nên nghĩ lại:\n\n- Dữ liệu đã sắp xếp: hai con trỏ cho cùng kết quả với `O(1)` bộ nhớ.\n- Miền giá trị nhỏ và biết trước (26 chữ cái, 0–100): mảng đếm nhanh hơn và gọn hơn bảng băm.\n- Cần thứ tự (nhỏ nhất, lớn thứ `k`): bảng băm không có thứ tự — dùng sắp xếp hoặc heap.\n\nVà một điều dễ sai trong JavaScript: **khoá của `Object` luôn là chuỗi**, nên `obj[1]` và `obj[\"1\"]` là cùng một chỗ. `Map` giữ nguyên kiểu khoá và cho phép khoá là object. Với bài thuật toán, mặc định dùng `Map`.\n\n## Ghi nhớ\n\n- Bảng băm biến \"tìm kiếm\" thành \"tra cứu\" — đó là toàn bộ giá trị của nó.\n- Mẫu nhớ-đã-gặp: luôn **tra trước, ghi sau**.\n- Mẫu đếm tần suất: thuộc lòng `(dem.get(x) ?? 0) + 1`.\n- Mẫu gom nhóm: phần khó là nghĩ ra khoá, không phải viết code.\n- Tổng cộng dồn + bảng băm giải cả lớp bài \"đoạn con có tổng bằng k\".\n\n## Tự kiểm tra\n\n1. Vì sao Hai tổng phải tra cứu trước rồi mới ghi vào bảng?\n2. Khoá nào gom được các từ là hoán vị của nhau, ngoài \"chữ cái đã sắp xếp\"?\n3. Bỏ dòng khởi tạo `[[0, 1]]` trong `demDoanConTongK` thì kết quả sai ở trường hợp nào?",
+      "tags": [
+        "thuat-toan",
+        "bang-bam",
+        "dem",
+        "mang"
+      ],
+      "order": 4,
+      "level": "trung-cap",
+      "starred": false,
+      "createdAt": "2026-01-01T21:00:00.000Z",
+      "updatedAt": "2026-01-01T21:00:00.000Z"
+    },
+    {
+      "id": "note-sap-xep-va-tim-kiem-nhi-phan",
+      "topicId": "topic-thuat-toan",
+      "title": "Sắp xếp và tìm kiếm nhị phân",
+      "slug": "sap-xep-va-tim-kiem-nhi-phan",
+      "summary": "Khi nào sắp xếp là bước mở đầu đúng, viết tìm kiếm nhị phân không lỗi lệch một, và mẫu \"nhị phân trên đáp án\".",
+      "content": "> **Sau bài này bạn sẽ:** viết được tìm kiếm nhị phân đúng ngay lần đầu, và nhận ra lớp bài giải bằng \"nhị phân trên đáp án\" — mẫu mạnh nhất mà tên gọi không gợi ra được.\n\n## Sắp xếp như một bước mở đầu\n\nSắp xếp tốn `O(n log n)`. Rất nhiều bài trở nên đơn giản sau khi sắp xếp, và `n log n` vẫn rẻ hơn nhiều so với `O(n²)` của cách vét cạn.\n\nDấu hiệu nên sắp xếp trước:\n\n- Bài nói về **cặp/bộ ba** thoả một điều kiện về giá trị.\n- Bài về **khoảng** (gộp khoảng, giao khoảng, xếp lịch).\n- Bài cần **`k` phần tử lớn nhất/nhỏ nhất** (tuy heap thường tốt hơn).\n- Bài cần phát hiện **trùng lặp** mà không được dùng bộ nhớ phụ.\n\nDấu hiệu KHÔNG nên: đề đòi giữ nguyên **thứ tự gốc** hoặc trả về **chỉ số gốc** — lúc đó sắp xếp làm mất thông tin, trừ khi bạn sắp trên cặp `[giá trị, chỉ số]`.\n\nTrong JavaScript có một bẫy phải nhớ: `sort()` không tham số so sánh theo **chuỗi**.\n\n```js\n[10, 9, 1].sort()                 // [1, 10, 9]  ← gần như không bao giờ là ý bạn\n[10, 9, 1].sort((a, b) => a - b)  // [1, 9, 10]\n```\n\n## Tìm kiếm nhị phân không lỗi lệch một\n\nÝ tưởng thì ai cũng biết; viết đúng mới là chuyện khác. Dùng một khuôn mẫu duy nhất và luôn viết đúng nó:\n\n```js\nfunction timKiemNhiPhan(nums, target) {\n  let trai = 0\n  let phai = nums.length - 1 // khoảng ĐÓNG [trai, phai]\n\n  while (trai <= phai) {\n    // Viết thế này thay vì (trai + phai) / 2 để không tràn số ở ngôn ngữ số nguyên\n    // 32-bit; ở JS thì không tràn, nhưng giữ một thói quen đúng ở mọi ngôn ngữ.\n    const giua = trai + Math.floor((phai - trai) / 2)\n\n    if (nums[giua] === target) return giua\n    if (nums[giua] < target) trai = giua + 1\n    else phai = giua - 1\n  }\n  return -1\n}\n```\n\nBa chi tiết quyết định tính đúng, và chúng phải **nhất quán** với nhau:\n\n1. `phai = nums.length - 1` (khoảng đóng) đi cùng `while (trai <= phai)` và `phai = giua - 1`.\n2. Nếu dùng khoảng nửa mở `phai = nums.length`, thì phải là `while (trai < phai)` và `phai = giua`.\n3. Luôn `+1`/`-1` khi đã loại `giua` — quên là vòng lặp vô hạn.\n\nTrộn hai kiểu là nguyên nhân của gần như mọi lỗi tìm kiếm nhị phân. Chọn một, viết mãi kiểu đó.\n\n**Biến thể hay cần hơn cả bản gốc:** tìm vị trí chèn (phần tử đầu tiên ≥ target).\n\n```js\nfunction viTriChen(nums, target) {\n  let trai = 0\n  let phai = nums.length // nửa mở [trai, phai)\n\n  while (trai < phai) {\n    const giua = trai + Math.floor((phai - trai) / 2)\n    if (nums[giua] < target) trai = giua + 1\n    else phai = giua\n  }\n  return trai // luôn nằm trong [0, nums.length]\n}\n```\n\nHàm này trả lời được nhiều câu hỏi hơn bản tìm-đúng-giá-trị: chèn vào đâu, có bao nhiêu phần tử nhỏ hơn `target`, biên trái/phải của một dãy giá trị bằng nhau.\n\n## Nhị phân trên đáp án\n\nĐây là mẫu đáng giá nhất trong bài này. Nhiều bài **không hề nhắc tới mảng đã sắp xếp**, nhưng vẫn giải được bằng tìm kiếm nhị phân — vì thứ được sắp xếp là **không gian đáp án**.\n\nĐiều kiện áp dụng: đáp án là một con số trong một khoảng biết trước, và có một hàm kiểm tra **đơn điệu** — nếu `x` khả thi thì mọi giá trị lớn hơn (hoặc nhỏ hơn) cũng khả thi.\n\n```js\n// \"Chia mảng thành k đoạn sao cho tổng đoạn lớn nhất là nhỏ nhất\"\nfunction tongDoanNhoNhat(nums, k) {\n  const chiaDuoc = (tran) => {\n    // Với trần này, cần ít nhất bao nhiêu đoạn?\n    let doan = 1\n    let tong = 0\n    for (const x of nums) {\n      if (tong + x > tran) {\n        doan += 1\n        tong = 0\n      }\n      tong += x\n    }\n    return doan <= k\n  }\n\n  let trai = Math.max(...nums) // trần không thể nhỏ hơn phần tử lớn nhất\n  let phai = nums.reduce((a, b) => a + b, 0) // trần lớn nhất cần thiết: gộp tất cả\n\n  while (trai < phai) {\n    const giua = trai + Math.floor((phai - trai) / 2)\n    if (chiaDuoc(giua)) phai = giua // vẫn được ⇒ thử trần nhỏ hơn\n    else trai = giua + 1\n  }\n  return trai\n}\n```\n\nNhận ra mẫu này qua cách đề được phát biểu: **\"nhỏ nhất của lớn nhất\"**, **\"lớn nhất của nhỏ nhất\"**, \"tốc độ tối thiểu để hoàn thành trong `h` giờ\", \"số ngày ít nhất để…\". Ba cách nói đó gần như luôn là nhị phân trên đáp án.\n\nCấu trúc lời giải luôn gồm hai phần: một hàm kiểm tra `khaThi(x)` viết theo cách tham lam, và một vòng nhị phân đi tìm `x` biên. Phần khó là viết `khaThi`, không phải phần nhị phân.\n\n## Cái giá\n\n| Thao tác | Chưa sắp xếp | Đã sắp xếp |\n|---|---|---|\n| Tìm một giá trị | `O(n)` | `O(log n)` |\n| Tìm cặp có tổng cho trước | `O(n²)` | `O(n)` (hai con trỏ) |\n| Tìm nhỏ nhất/lớn nhất | `O(n)` | `O(1)` |\n| Chèn một phần tử | `O(1)` | `O(n)` |\n\nDòng cuối là lý do: nếu dữ liệu thay đổi liên tục, sắp xếp lại mỗi lần sẽ đắt hơn tất cả những gì bạn tiết kiệm được. Lúc đó cần cấu trúc giữ thứ tự sẵn (cây cân bằng, heap).\n\n## Ghi nhớ\n\n- `n log n` để sắp xếp thường là cái giá đáng trả để bỏ đi một vòng lặp lồng.\n- Chọn một khuôn mẫu nhị phân (đóng hoặc nửa mở) và giữ nhất quán ba chi tiết của nó.\n- `viTriChen` dùng được nhiều hơn bản tìm-đúng-giá-trị.\n- \"Nhỏ nhất của lớn nhất\" ⇒ nghĩ ngay tới nhị phân trên đáp án.\n- Trong JS, `sort()` không tham số là so sánh chuỗi.\n\n## Tự kiểm tra\n\n1. Vì sao trộn `while (trai < phai)` với `phai = giua - 1` gây lỗi?\n2. `viTriChen([1, 3, 5], 4)` trả về gì, và con số đó nghĩa là gì?\n3. Đề: \"tốc độ ăn tối thiểu để ăn hết `n` đống chuối trong `h` giờ\". Vì sao đây là nhị phân trên đáp án, và hàm `khaThi(x)` kiểm cái gì?",
+      "tags": [
+        "thuat-toan",
+        "sap-xep",
+        "tim-kiem-nhi-phan",
+        "do-phuc-tap"
+      ],
+      "order": 5,
+      "level": "trung-cap",
+      "starred": false,
+      "createdAt": "2026-01-01T22:00:00.000Z",
+      "updatedAt": "2026-01-01T22:00:00.000Z"
+    },
+    {
+      "id": "note-de-quy-va-quay-lui",
+      "topicId": "topic-thuat-toan",
+      "title": "Đệ quy và quay lui",
+      "slug": "de-quy-va-quay-lui",
+      "summary": "Khung ba phần của một hàm đệ quy, khuôn mẫu quay lui, và cách cắt nhánh để không nổ tung.",
+      "content": "> **Sau bài này bạn sẽ:** viết được hàm đệ quy mà không sợ, và dùng được khuôn mẫu quay lui cho lớp bài \"liệt kê mọi khả năng\".\n\n## Ba phần của mọi hàm đệ quy\n\nCách nghĩ về đệ quy đã có ở [[de-quy-va-cach-nghi-ve-no]]; ở đây là cách dùng nó để giải bài. Mọi hàm đệ quy đều gồm đúng ba phần:\n\n```js\nfunction giai(baiToan) {\n  if (đủNhỏ(baiToan)) return đápÁnHiểnNhiên   // 1. điều kiện dừng\n  const nhỏHơn = thuNhỏ(baiToan)               // 2. thu nhỏ về phía điều kiện dừng\n  return ghép(giai(nhỏHơn))                    // 3. ghép kết quả\n}\n```\n\nSai ở phần 1 thì tràn ngăn xếp. Sai ở phần 2 — thu nhỏ không thật sự tiến về phía điều kiện dừng — cũng tràn ngăn xếp. Sai ở phần 3 thì ra đáp án sai.\n\nĐiều quan trọng nhất khi viết: **tin rằng lời gọi đệ quy trả về đúng.** Đừng cố lần theo cả cây gọi trong đầu — bạn sẽ lạc từ tầng thứ ba. Chỉ cần trả lời \"nếu `giai(nhỏHơn)` đúng, tôi ghép thế nào để `giai(baiToan)` cũng đúng?\".\n\n## Quay lui: liệt kê mọi khả năng\n\nQuay lui là đệ quy cộng thêm một thao tác: **chọn → đi tiếp → bỏ chọn**. Nó dành cho bài \"liệt kê tất cả\": mọi hoán vị, mọi tập con, mọi cách đặt quân hậu, mọi đường đi trong mê cung.\n\nKhuôn mẫu, và gần như bài nào cũng chỉ là điền vào bốn chỗ trống:\n\n```js\nfunction hoanVi(nums) {\n  const ketQua = []\n  const hienTai = []\n  const daDung = new Array(nums.length).fill(false)\n\n  function lui() {\n    // 1. Điều kiện ghi nhận\n    if (hienTai.length === nums.length) {\n      ketQua.push([...hienTai]) // SAO CHÉP — xem ghi chú bên dưới\n      return\n    }\n\n    for (let i = 0; i < nums.length; i += 1) {\n      if (daDung[i]) continue // 2. lựa chọn không hợp lệ\n\n      hienTai.push(nums[i]) // 3. chọn\n      daDung[i] = true\n\n      lui() // đi tiếp\n\n      hienTai.pop() // 4. bỏ chọn — trả trạng thái về như cũ\n      daDung[i] = false\n    }\n  }\n\n  lui()\n  return ketQua\n}\n```\n\nHai chỗ sai nhiều nhất:\n\n**Quên sao chép khi ghi nhận.** `ketQua.push(hienTai)` đẩy vào *tham chiếu* tới mảng đang dùng chung; sau khi chạy xong, mọi phần tử của `ketQua` đều trỏ tới cùng một mảng rỗng. Phải `[...hienTai]`.\n\n**Quên bỏ chọn.** Thiếu `hienTai.pop()` thì nhánh sau kế thừa trạng thái của nhánh trước, và kết quả sai theo kiểu rất khó lần. Quy tắc: mỗi thao tác \"chọn\" phải có đúng một thao tác \"bỏ chọn\" đối xứng, ngay sau lời gọi đệ quy.\n\n## Cắt nhánh\n\nQuay lui vét cạn có độ phức tạp khủng khiếp: `O(n!)` cho hoán vị, `O(2ⁿ)` cho tập con. Với `n = 12` là 479 triệu nhánh. **Cắt nhánh** là bỏ sớm những nhánh chắc chắn không dẫn tới đáp án:\n\n```js\nfunction tongTapCon(nums, target) {\n  const daSap = [...nums].sort((a, b) => a - b) // sắp xếp để cắt được sớm\n  const ketQua = []\n\n  function lui(batDau, hienTai, conLai) {\n    if (conLai === 0) {\n      ketQua.push([...hienTai])\n      return\n    }\n    for (let i = batDau; i < daSap.length; i += 1) {\n      // Đã sắp tăng dần: phần tử này đã vượt thì mọi phần tử sau cũng vượt.\n      if (daSap[i] > conLai) break\n      // Bỏ qua giá trị trùng ở cùng một tầng để không sinh ra kết quả lặp.\n      if (i > batDau && daSap[i] === daSap[i - 1]) continue\n\n      hienTai.push(daSap[i])\n      lui(i + 1, hienTai, conLai - daSap[i])\n      hienTai.pop()\n    }\n  }\n\n  lui(0, [], target)\n  return ketQua\n}\n```\n\nBa kiểu cắt nhánh dùng được ở hầu hết bài:\n\n| Kiểu cắt | Khi nào |\n|---|---|\n| `break` khi đã vượt ngưỡng | Dữ liệu đã sắp xếp tăng dần |\n| Bỏ qua giá trị trùng ở cùng tầng | Đề đòi kết quả không lặp |\n| Dừng khi phần còn lại không đủ | Biết trước tổng còn lại tối đa |\n\nCắt nhánh không đổi độ phức tạp trên giấy, nhưng đổi hẳn thời gian chạy thực tế — thường là từ \"quá hạn\" thành \"vài mili giây\".\n\n## Đệ quy hay vòng lặp\n\nĐệ quy tốn ngăn xếp: mỗi lời gọi là một khung, và JavaScript tràn ở khoảng 10.000 tầng.\n\n- Đệ quy **đuôi** (lời gọi đệ quy là việc cuối cùng) luôn viết lại được thành vòng lặp, và nên viết lại nếu độ sâu có thể lớn.\n- Duyệt cây, duyệt đồ thị, quay lui: giữ đệ quy — viết bằng vòng lặp cần tự quản một ngăn xếp và code sẽ khó đọc hơn hẳn.\n- Đệ quy có tham số lặp lại: đó là dấu hiệu của quy hoạch động, xem [[quy-hoach-dong]].\n\n## Ghi nhớ\n\n- Ba phần: điều kiện dừng, thu nhỏ, ghép. Tin rằng lời gọi con trả về đúng.\n- Quay lui = chọn → đi tiếp → **bỏ chọn**, và mỗi \"chọn\" phải có đúng một \"bỏ chọn\".\n- Luôn **sao chép** khi ghi nhận kết quả.\n- Cắt nhánh là thứ biến quay lui từ lý thuyết thành dùng được.\n\n## Tự kiểm tra\n\n1. `ketQua.push(hienTai)` thay vì `push([...hienTai])` cho ra kết quả gì?\n2. Vì sao phải sắp xếp trước khi cắt nhánh bằng `break`?\n3. Bài nào nên chuyển đệ quy thành vòng lặp, bài nào nên giữ nguyên?",
+      "tags": [
+        "thuat-toan",
+        "de-quy",
+        "quay-lui"
+      ],
+      "order": 6,
+      "level": "trung-cap",
+      "starred": false,
+      "createdAt": "2026-01-01T23:00:00.000Z",
+      "updatedAt": "2026-01-01T23:00:00.000Z"
+    },
+    {
+      "id": "note-quy-hoach-dong",
+      "topicId": "topic-thuat-toan",
+      "title": "Quy hoạch động",
+      "slug": "quy-hoach-dong",
+      "summary": "Nhận ra bài quy hoạch động, viết quan hệ truy hồi, và hai cách cài đặt — ghi nhớ từ trên xuống và bảng từ dưới lên.",
+      "content": "> **Sau bài này bạn sẽ:** nhận ra bài quy hoạch động qua hai dấu hiệu, viết được quan hệ truy hồi trước khi viết code, và chuyển qua lại giữa hai cách cài đặt.\n\n## Quy hoạch động là gì, nói cho gọn\n\nQuy hoạch động là **đệ quy cộng với việc không tính lại thứ đã tính**. Chỉ có thế.\n\nNghe đơn giản, nhưng nó biến `O(2ⁿ)` thành `O(n)` ở những bài đúng dạng. Fibonacci đệ quy thuần với `n = 45` mất vài giây; thêm một bảng ghi nhớ là còn vài micro giây.\n\n## Hai dấu hiệu nhận ra\n\nMột bài giải được bằng quy hoạch động khi có **cả hai**:\n\n**1. Bài toán con gối nhau.** Cùng một bài toán con xuất hiện nhiều lần trong cây đệ quy. Với Fibonacci, `fib(3)` được tính lại hàng nghìn lần.\n\n**2. Cấu trúc con tối ưu.** Đáp án tối ưu của bài lớn ghép được từ đáp án tối ưu của các bài con. Đường đi ngắn nhất từ A tới C qua B thì đoạn A→B cũng phải là ngắn nhất.\n\nThiếu dấu hiệu 1 thì đệ quy thường là đủ. Thiếu dấu hiệu 2 thì quy hoạch động cho ra đáp án sai — và đây là chỗ nguy hiểm, vì code vẫn chạy.\n\nDấu hiệu phụ hay thấy trong cách phát biểu đề: \"có bao nhiêu cách…\", \"giá trị lớn nhất/nhỏ nhất có thể\", \"có thể đạt được hay không\". Kèm theo là ràng buộc `n` cỡ vài nghìn — đủ lớn để vét cạn chết, đủ nhỏ để bảng `O(n²)` sống.\n\n## Quy trình bốn bước\n\nViết ra giấy trước khi gõ code. Bước 2 là bước thật sự khó; ba bước còn lại là thủ tục.\n\n**1. Định nghĩa trạng thái.** `dp[i]` **nghĩa là gì**? Viết thành một câu tiếng Việt đầy đủ. \"`dp[i]` là số cách leo tới bậc `i`\". Định nghĩa mơ hồ ở đây là nguồn gốc của mọi bế tắc phía sau.\n\n**2. Viết quan hệ truy hồi.** `dp[i]` tính từ những `dp` nào? Câu hỏi để tự hỏi: *\"ở bước cuối cùng, tôi có những lựa chọn nào?\"*\n\n**3. Xác định trường hợp cơ sở.** `dp[0]` bằng bao nhiêu, và vì sao.\n\n**4. Xác định thứ tự tính.** Muốn tính `dp[i]` thì `dp[i-1]` phải có sẵn.\n\nÁp vào bài leo cầu thang (mỗi bước leo 1 hoặc 2 bậc, có bao nhiêu cách lên `n` bậc):\n\n```\n1. dp[i] = số cách leo tới bậc i\n2. Bước cuối cùng chỉ có hai khả năng — từ bậc i-1 leo 1, hoặc từ bậc i-2 leo 2:\n   dp[i] = dp[i-1] + dp[i-2]\n3. dp[0] = 1 (đứng yên là một cách), dp[1] = 1\n4. Tính từ nhỏ tới lớn\n```\n\n## Hai cách cài đặt\n\n**Ghi nhớ (từ trên xuống)** — viết hàm đệ quy tự nhiên rồi thêm bộ nhớ đệm:\n\n```js\nfunction leoCauThang(n, nho = new Map()) {\n  if (n <= 1) return 1\n  const daCo = nho.get(n)\n  if (daCo !== undefined) return daCo\n\n  const kq = leoCauThang(n - 1, nho) + leoCauThang(n - 2, nho)\n  nho.set(n, kq)\n  return kq\n}\n```\n\nƯu điểm: gần với cách nghĩ, và **chỉ tính những trạng thái thật sự cần**. Nhược: tốn ngăn xếp, có thể tràn khi `n` lớn.\n\n**Bảng (từ dưới lên)** — điền bảng theo thứ tự:\n\n```js\nfunction leoCauThangBang(n) {\n  if (n <= 1) return 1\n  const dp = new Array(n + 1)\n  dp[0] = 1\n  dp[1] = 1\n  for (let i = 2; i <= n; i += 1) dp[i] = dp[i - 1] + dp[i - 2]\n  return dp[n]\n}\n```\n\nƯu điểm: không tràn ngăn xếp, thường nhanh hơn, và mở đường cho tối ưu bộ nhớ:\n\n```js\n// Chỉ cần hai giá trị gần nhất ⇒ O(1) bộ nhớ thay vì O(n).\nfunction leoCauThangGon(n) {\n  let truoc = 1\n  let hienTai = 1\n  for (let i = 2; i <= n; i += 1) [truoc, hienTai] = [hienTai, truoc + hienTai]\n  return hienTai\n}\n```\n\nMẫu \"chỉ giữ vài dòng gần nhất\" áp dụng được cho rất nhiều bài quy hoạch động một chiều, và cho cả bài hai chiều khi mỗi dòng chỉ phụ thuộc dòng liền trước.\n\n## Ba dạng hay gặp\n\n**Dãy con tăng dài nhất (`O(n²)`)** — `dp[i]` = độ dài dãy tăng dài nhất *kết thúc tại* `i`:\n\n```js\nfunction daySonTangDaiNhat(nums) {\n  if (nums.length === 0) return 0\n  const dp = new Array(nums.length).fill(1)\n\n  for (let i = 1; i < nums.length; i += 1) {\n    for (let j = 0; j < i; j += 1) {\n      if (nums[j] < nums[i]) dp[i] = Math.max(dp[i], dp[j] + 1)\n    }\n  }\n  return Math.max(...dp)\n}\n```\n\nĐể ý cụm **\"kết thúc tại i\"** trong định nghĩa trạng thái. Không có nó, `dp[i]` không đủ thông tin để tính `dp[i+1]`, và bài tắc.\n\n**Cái túi 0/1** — `dp[i][w]` = giá trị lớn nhất khi xét `i` món đầu với sức chứa `w`. Ở mỗi món có đúng hai lựa chọn: lấy hoặc không.\n\n**Đoạn con tổng lớn nhất (Kadane)** — `dp[i]` = tổng lớn nhất của đoạn *kết thúc tại* `i`:\n\n```js\nfunction tongDoanLonNhat(nums) {\n  let tot = nums[0]\n  let hienTai = nums[0]\n  for (let i = 1; i < nums.length; i += 1) {\n    // Đoạn trước đó âm thì mang theo chỉ làm hại — bắt đầu lại từ đây.\n    hienTai = Math.max(nums[i], hienTai + nums[i])\n    tot = Math.max(tot, hienTai)\n  }\n  return tot\n}\n```\n\nKadane trông không giống quy hoạch động vì bảng đã bị nén thành hai biến — nhưng nó chính là dạng gọn của `dp[i] = max(nums[i], dp[i-1] + nums[i])`.\n\n## Bẫy thường gặp\n\n| Bẫy | Dấu hiệu |\n|---|---|\n| Định nghĩa trạng thái mơ hồ | Viết truy hồi mãi không xong |\n| Thiếu \"kết thúc tại i\" trong định nghĩa | Truy hồi cần thông tin không có trong bảng |\n| Trường hợp cơ sở sai | Sai đúng ở `n = 0` hoặc `n = 1` |\n| Duyệt sai thứ tự | Đọc ô chưa được tính |\n| Dùng QHĐ khi không có cấu trúc con tối ưu | Đáp án sai mà code vẫn chạy |\n\n## Ghi nhớ\n\n- Quy hoạch động = đệ quy + không tính lại. Hai dấu hiệu: bài con gối nhau và cấu trúc con tối ưu.\n- Viết định nghĩa trạng thái thành một câu tiếng Việt trước khi gõ code.\n- \"Ở bước cuối cùng tôi có những lựa chọn nào?\" — đó là câu hỏi sinh ra truy hồi.\n- Ghi nhớ hợp với cách nghĩ; bảng hợp với `n` lớn và tối ưu bộ nhớ.\n- Rất nhiều bài một chiều nén được về `O(1)` bộ nhớ.\n\n## Tự kiểm tra\n\n1. Hai dấu hiệu bắt buộc để một bài giải được bằng quy hoạch động?\n2. Vì sao `dp[i]` của bài dãy con tăng phải là \"kết thúc tại i\" chứ không phải \"trong i phần tử đầu\"?\n3. Kadane liên hệ thế nào với công thức truy hồi `dp[i] = max(nums[i], dp[i-1] + nums[i])`?",
+      "tags": [
+        "thuat-toan",
+        "quy-hoach-dong",
+        "de-quy",
+        "do-phuc-tap"
+      ],
+      "order": 7,
+      "level": "nang-cao",
+      "starred": false,
+      "createdAt": "2026-01-02T00:00:00.000Z",
+      "updatedAt": "2026-01-02T00:00:00.000Z"
+    },
+    {
+      "id": "note-duyet-do-thi-bfs-va-dfs",
+      "topicId": "topic-thuat-toan",
+      "title": "Duyệt đồ thị — BFS và DFS",
+      "slug": "duyet-do-thi-bfs-va-dfs",
+      "summary": "Chọn giữa BFS và DFS, biểu diễn đồ thị, mẫu lưới hai chiều, và cách tránh lặp vô hạn.",
+      "content": "> **Sau bài này bạn sẽ:** chọn đúng giữa BFS và DFS trong ba giây, và viết được mẫu duyệt lưới hai chiều — dạng đồ thị hay gặp nhất trong bài tập.\n\n## Rất nhiều bài là bài đồ thị mà không nói ra\n\nĐồ thị chỉ là \"các thứ và mối nối giữa chúng\". Đề bài thường không dùng chữ \"đồ thị\":\n\n| Đề nói | Đỉnh | Cạnh |\n|---|---|---|\n| Lưới ô vuông, đảo và biển | Mỗi ô | Bốn ô kề |\n| Các khoá học và môn tiên quyết | Môn học | Quan hệ tiên quyết |\n| Bạn bè trên mạng xã hội | Người | Quan hệ bạn |\n| Đổi một chữ để thành từ khác | Từ | Khác nhau đúng một chữ |\n| Trạng thái trò chơi và nước đi | Trạng thái | Một nước đi |\n\nDòng cuối đáng nhớ: **trạng thái cũng là đỉnh**. Bài \"ít nhất bao nhiêu bước để biến X thành Y\" gần như luôn là BFS trên đồ thị trạng thái.\n\n## Chọn cái nào\n\n| | BFS (hàng đợi) | DFS (ngăn xếp / đệ quy) |\n|---|---|---|\n| Duyệt theo | Từng lớp, gần trước | Đi sâu một nhánh tới cùng |\n| Dùng khi | **Đường đi ngắn nhất** (cạnh không trọng số) | Có tồn tại đường đi, liên thông, chu trình |\n| Bộ nhớ | `O(chiều rộng)` | `O(chiều sâu)` |\n| Cạm bẫy | Hàng đợi phình ở đồ thị rộng | Tràn ngăn xếp ở đồ thị sâu |\n\nQuy tắc quyết định trong ba giây: **đề có chữ \"ngắn nhất\", \"ít bước nhất\", \"gần nhất\" ⇒ BFS.** Còn lại thường DFS vì viết ngắn hơn.\n\nLưu ý: BFS chỉ cho đường ngắn nhất khi mọi cạnh có **cùng trọng số**. Cạnh có trọng số khác nhau thì cần Dijkstra.\n\n## Biểu diễn đồ thị\n\nDanh sách kề là mặc định — gọn và duyệt hàng xóm nhanh:\n\n```js\n// Cạnh [[0,1],[0,2],[1,2]] -> Map: đỉnh -> danh sách hàng xóm\nfunction dungDanhSachKe(soDinh, canh, coHuong = false) {\n  const ke = new Map()\n  for (let i = 0; i < soDinh; i += 1) ke.set(i, [])\n  for (const [a, b] of canh) {\n    ke.get(a).push(b)\n    if (!coHuong) ke.get(b).push(a) // vô hướng: nối cả hai chiều\n  }\n  return ke\n}\n```\n\nQuên dòng `if (!coHuong)` là lỗi im lặng: thuật toán chạy, nhưng nửa số cạnh biến mất.\n\n## Hai khuôn mẫu\n\n```js\nfunction bfs(ke, batDau) {\n  const daTham = new Set([batDau])\n  const hangDoi = [batDau]\n  const khoangCach = new Map([[batDau, 0]])\n\n  // Chỉ số đầu thay cho shift(): shift() là O(n) nên vòng lặp thành O(n²).\n  for (let dau = 0; dau < hangDoi.length; dau += 1) {\n    const dinh = hangDoi[dau]\n    for (const hangXom of ke.get(dinh) ?? []) {\n      if (daTham.has(hangXom)) continue\n      // Đánh dấu NGAY khi đưa vào hàng đợi, không phải lúc lấy ra — nếu không,\n      // một đỉnh có thể vào hàng đợi nhiều lần và độ phức tạp hỏng.\n      daTham.add(hangXom)\n      khoangCach.set(hangXom, khoangCach.get(dinh) + 1)\n      hangDoi.push(hangXom)\n    }\n  }\n  return khoangCach\n}\n\nfunction dfs(ke, dinh, daTham = new Set()) {\n  daTham.add(dinh)\n  for (const hangXom of ke.get(dinh) ?? []) {\n    if (!daTham.has(hangXom)) dfs(ke, hangXom, daTham)\n  }\n  return daTham\n}\n```\n\nHai chi tiết trong BFS là chỗ phân biệt code chạy được với code chạy đúng tốc độ: dùng chỉ số đầu thay cho `shift()`, và đánh dấu đã thăm lúc **đưa vào** hàng đợi.\n\n## Mẫu lưới hai chiều\n\nDạng hay gặp nhất trong bài tập. Đếm số \"đảo\" trong lưới `1`/`0`:\n\n```js\nconst HUONG = [\n  [-1, 0],\n  [1, 0],\n  [0, -1],\n  [0, 1],\n]\n\nfunction demDao(luoi) {\n  if (luoi.length === 0) return 0\n  const cao = luoi.length\n  const rong = luoi[0].length\n  let dem = 0\n\n  function nhanChim(r, c) {\n    // Một câu điều kiện gộp cả biên lẫn ô nước — viết tách ra là mời gọi lỗi.\n    if (r < 0 || r >= cao || c < 0 || c >= rong || luoi[r][c] !== 1) return\n    luoi[r][c] = 0 // đánh dấu đã thăm bằng cách sửa luôn lưới\n    for (const [dr, dc] of HUONG) nhanChim(r + dr, c + dc)\n  }\n\n  for (let r = 0; r < cao; r += 1) {\n    for (let c = 0; c < rong; c += 1) {\n      if (luoi[r][c] === 1) {\n        dem += 1\n        nhanChim(r, c) // xoá cả hòn đảo này rồi mới đi tiếp\n      }\n    }\n  }\n  return dem\n}\n```\n\nSửa thẳng vào lưới để đánh dấu là thủ thuật tiết kiệm `O(n×m)` bộ nhớ. Cái giá: **nó phá dữ liệu đầu vào**. Trong bài tập thì chấp nhận được; trong code thật thì phải sao chép lưới hoặc dùng tập `daTham` riêng — sửa dữ liệu của người gọi là tác dụng phụ không ai mong đợi.\n\nVới lưới rất lớn, `nhanChim` đệ quy có thể tràn ngăn xếp; lúc đó viết lại bằng ngăn xếp tường minh hoặc dùng BFS.\n\n## Lỗi hay gặp\n\n| Lỗi | Hậu quả |\n|---|---|\n| Không đánh dấu đã thăm | Lặp vô hạn ở đồ thị có chu trình |\n| Đánh dấu lúc lấy ra khỏi hàng đợi | Đỉnh vào hàng đợi nhiều lần, chậm hẳn |\n| Dùng `shift()` làm hàng đợi | `O(n²)` thay vì `O(n)` |\n| Quên cạnh chiều ngược ở đồ thị vô hướng | Mất nửa số cạnh, kết quả sai |\n| Kiểm biên thiếu ở lưới | Đọc `undefined` rồi lỗi khó hiểu |\n| Dùng DFS cho bài đường đi ngắn nhất | Ra một đường đi, nhưng không phải ngắn nhất |\n\n## Ghi nhớ\n\n- Nhiều bài là đồ thị mà đề không nói; trạng thái trò chơi cũng là đỉnh.\n- \"Ngắn nhất/ít bước nhất\" ⇒ BFS. Còn lại thường DFS.\n- BFS: hàng đợi bằng chỉ số đầu, đánh dấu lúc đưa vào.\n- Lưới hai chiều là dạng đồ thị hay gặp nhất — thuộc mẫu bốn hướng và câu kiểm biên gộp.\n- BFS chỉ đúng cho đường ngắn nhất khi các cạnh cùng trọng số.\n\n## Tự kiểm tra\n\n1. Vì sao đánh dấu đã thăm lúc lấy ra khỏi hàng đợi làm BFS chậm đi?\n2. Đề: \"ít nhất bao nhiêu lần đổi chữ để biến từ A thành từ B\". Đỉnh là gì, cạnh là gì, dùng BFS hay DFS?\n3. `demDao` sửa thẳng vào lưới đầu vào. Khi nào điều đó không chấp nhận được, và thay bằng gì?",
+      "tags": [
+        "thuat-toan",
+        "do-thi",
+        "bfs",
+        "dfs",
+        "hang-doi"
+      ],
+      "order": 8,
+      "level": "nang-cao",
+      "starred": false,
+      "createdAt": "2026-01-02T01:00:00.000Z",
+      "updatedAt": "2026-01-02T01:00:00.000Z"
+    },
+    {
       "id": "note-kieu-du-lieu-va-bien",
       "topicId": "topic-typescript",
       "title": "Kiểu dữ liệu và cách khai báo biến",
@@ -644,8 +803,8 @@
       "order": 1,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-01T18:00:00.000Z",
-      "updatedAt": "2026-01-01T18:00:00.000Z"
+      "createdAt": "2026-01-02T02:00:00.000Z",
+      "updatedAt": "2026-01-02T02:00:00.000Z"
     },
     {
       "id": "note-ham-closure-va-this",
@@ -663,8 +822,8 @@
       "order": 2,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-01T19:00:00.000Z",
-      "updatedAt": "2026-01-01T19:00:00.000Z"
+      "createdAt": "2026-01-02T03:00:00.000Z",
+      "updatedAt": "2026-01-02T03:00:00.000Z"
     },
     {
       "id": "note-mang-object-va-bat-bien",
@@ -682,8 +841,8 @@
       "order": 3,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-01T20:00:00.000Z",
-      "updatedAt": "2026-01-01T20:00:00.000Z"
+      "createdAt": "2026-01-02T04:00:00.000Z",
+      "updatedAt": "2026-01-02T04:00:00.000Z"
     },
     {
       "id": "note-typescript-nhap-mon",
@@ -700,8 +859,8 @@
       "order": 4,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-01T21:00:00.000Z",
-      "updatedAt": "2026-01-01T21:00:00.000Z"
+      "createdAt": "2026-01-02T05:00:00.000Z",
+      "updatedAt": "2026-01-02T05:00:00.000Z"
     },
     {
       "id": "note-async-await-va-event-loop",
@@ -719,8 +878,8 @@
       "order": 5,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-01T22:00:00.000Z",
-      "updatedAt": "2026-01-01T22:00:00.000Z"
+      "createdAt": "2026-01-02T06:00:00.000Z",
+      "updatedAt": "2026-01-02T06:00:00.000Z"
     },
     {
       "id": "note-module-va-package-json",
@@ -738,8 +897,8 @@
       "order": 6,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-01T23:00:00.000Z",
-      "updatedAt": "2026-01-01T23:00:00.000Z"
+      "createdAt": "2026-01-02T07:00:00.000Z",
+      "updatedAt": "2026-01-02T07:00:00.000Z"
     },
     {
       "id": "note-generic-trong-typescript",
@@ -755,8 +914,8 @@
       "order": 7,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-02T00:00:00.000Z",
-      "updatedAt": "2026-01-02T00:00:00.000Z"
+      "createdAt": "2026-01-02T08:00:00.000Z",
+      "updatedAt": "2026-01-02T08:00:00.000Z"
     },
     {
       "id": "note-thu-hep-kieu-va-unknown",
@@ -774,8 +933,8 @@
       "order": 8,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-02T01:00:00.000Z",
-      "updatedAt": "2026-01-02T01:00:00.000Z"
+      "createdAt": "2026-01-02T09:00:00.000Z",
+      "updatedAt": "2026-01-02T09:00:00.000Z"
     },
     {
       "id": "note-tu-duy-khai-bao-va-jsx",
@@ -792,8 +951,8 @@
       "order": 1,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-02T02:00:00.000Z",
-      "updatedAt": "2026-01-02T02:00:00.000Z"
+      "createdAt": "2026-01-02T10:00:00.000Z",
+      "updatedAt": "2026-01-02T10:00:00.000Z"
     },
     {
       "id": "note-state-va-vong-doi-render",
@@ -810,8 +969,8 @@
       "order": 2,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-02T03:00:00.000Z",
-      "updatedAt": "2026-01-02T03:00:00.000Z"
+      "createdAt": "2026-01-02T11:00:00.000Z",
+      "updatedAt": "2026-01-02T11:00:00.000Z"
     },
     {
       "id": "note-useeffect-dung-cach",
@@ -828,8 +987,8 @@
       "order": 3,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-02T04:00:00.000Z",
-      "updatedAt": "2026-01-02T04:00:00.000Z"
+      "createdAt": "2026-01-02T12:00:00.000Z",
+      "updatedAt": "2026-01-02T12:00:00.000Z"
     },
     {
       "id": "note-hook-tuy-chinh-va-quy-tac-hook",
@@ -846,8 +1005,8 @@
       "order": 4,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-02T05:00:00.000Z",
-      "updatedAt": "2026-01-02T05:00:00.000Z"
+      "createdAt": "2026-01-02T13:00:00.000Z",
+      "updatedAt": "2026-01-02T13:00:00.000Z"
     },
     {
       "id": "note-context-va-quan-ly-state",
@@ -864,8 +1023,8 @@
       "order": 5,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-02T06:00:00.000Z",
-      "updatedAt": "2026-01-02T06:00:00.000Z"
+      "createdAt": "2026-01-02T14:00:00.000Z",
+      "updatedAt": "2026-01-02T14:00:00.000Z"
     },
     {
       "id": "note-hieu-nang-va-render-lai",
@@ -882,8 +1041,8 @@
       "order": 6,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-02T07:00:00.000Z",
-      "updatedAt": "2026-01-02T07:00:00.000Z"
+      "createdAt": "2026-01-02T15:00:00.000Z",
+      "updatedAt": "2026-01-02T15:00:00.000Z"
     },
     {
       "id": "note-form-va-xu-ly-loi",
@@ -901,8 +1060,8 @@
       "order": 7,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-02T08:00:00.000Z",
-      "updatedAt": "2026-01-02T08:00:00.000Z"
+      "createdAt": "2026-01-02T16:00:00.000Z",
+      "updatedAt": "2026-01-02T16:00:00.000Z"
     },
     {
       "id": "note-app-router-va-cau-truc-file",
@@ -919,8 +1078,8 @@
       "order": 1,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-02T09:00:00.000Z",
-      "updatedAt": "2026-01-02T09:00:00.000Z"
+      "createdAt": "2026-01-02T17:00:00.000Z",
+      "updatedAt": "2026-01-02T17:00:00.000Z"
     },
     {
       "id": "note-server-component-va-client-component",
@@ -937,8 +1096,8 @@
       "order": 2,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-02T10:00:00.000Z",
-      "updatedAt": "2026-01-02T10:00:00.000Z"
+      "createdAt": "2026-01-02T18:00:00.000Z",
+      "updatedAt": "2026-01-02T18:00:00.000Z"
     },
     {
       "id": "note-tai-du-lieu-va-streaming",
@@ -956,8 +1115,8 @@
       "order": 3,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-02T11:00:00.000Z",
-      "updatedAt": "2026-01-02T11:00:00.000Z"
+      "createdAt": "2026-01-02T19:00:00.000Z",
+      "updatedAt": "2026-01-02T19:00:00.000Z"
     },
     {
       "id": "note-server-actions",
@@ -974,8 +1133,8 @@
       "order": 4,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-02T12:00:00.000Z",
-      "updatedAt": "2026-01-02T12:00:00.000Z"
+      "createdAt": "2026-01-02T20:00:00.000Z",
+      "updatedAt": "2026-01-02T20:00:00.000Z"
     },
     {
       "id": "note-route-handler-va-middleware",
@@ -992,8 +1151,8 @@
       "order": 5,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-02T13:00:00.000Z",
-      "updatedAt": "2026-01-02T13:00:00.000Z"
+      "createdAt": "2026-01-02T21:00:00.000Z",
+      "updatedAt": "2026-01-02T21:00:00.000Z"
     },
     {
       "id": "note-toi-uu-anh-font-va-metadata",
@@ -1011,8 +1170,8 @@
       "order": 6,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-02T14:00:00.000Z",
-      "updatedAt": "2026-01-02T14:00:00.000Z"
+      "createdAt": "2026-01-02T22:00:00.000Z",
+      "updatedAt": "2026-01-02T22:00:00.000Z"
     },
     {
       "id": "note-caching-va-revalidate",
@@ -1030,8 +1189,8 @@
       "order": 7,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-02T15:00:00.000Z",
-      "updatedAt": "2026-01-02T15:00:00.000Z"
+      "createdAt": "2026-01-02T23:00:00.000Z",
+      "updatedAt": "2026-01-02T23:00:00.000Z"
     },
     {
       "id": "note-cu-phap-va-kieu-du-lieu-python",
@@ -1048,8 +1207,8 @@
       "order": 1,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-02T16:00:00.000Z",
-      "updatedAt": "2026-01-02T16:00:00.000Z"
+      "createdAt": "2026-01-03T00:00:00.000Z",
+      "updatedAt": "2026-01-03T00:00:00.000Z"
     },
     {
       "id": "note-list-dict-va-comprehension",
@@ -1066,8 +1225,8 @@
       "order": 2,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-02T17:00:00.000Z",
-      "updatedAt": "2026-01-02T17:00:00.000Z"
+      "createdAt": "2026-01-03T01:00:00.000Z",
+      "updatedAt": "2026-01-03T01:00:00.000Z"
     },
     {
       "id": "note-ham-va-module-python",
@@ -1084,8 +1243,8 @@
       "order": 3,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-02T18:00:00.000Z",
-      "updatedAt": "2026-01-02T18:00:00.000Z"
+      "createdAt": "2026-01-03T02:00:00.000Z",
+      "updatedAt": "2026-01-03T02:00:00.000Z"
     },
     {
       "id": "note-xu-ly-loi-va-doc-ghi-file",
@@ -1103,8 +1262,8 @@
       "order": 4,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-02T19:00:00.000Z",
-      "updatedAt": "2026-01-02T19:00:00.000Z"
+      "createdAt": "2026-01-03T03:00:00.000Z",
+      "updatedAt": "2026-01-03T03:00:00.000Z"
     },
     {
       "id": "note-moi-truong-ao-va-quan-ly-goi",
@@ -1122,8 +1281,8 @@
       "order": 5,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-02T20:00:00.000Z",
-      "updatedAt": "2026-01-02T20:00:00.000Z"
+      "createdAt": "2026-01-03T04:00:00.000Z",
+      "updatedAt": "2026-01-03T04:00:00.000Z"
     },
     {
       "id": "note-class-dataclass-va-oop",
@@ -1141,8 +1300,8 @@
       "order": 6,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-02T21:00:00.000Z",
-      "updatedAt": "2026-01-02T21:00:00.000Z"
+      "createdAt": "2026-01-03T05:00:00.000Z",
+      "updatedAt": "2026-01-03T05:00:00.000Z"
     },
     {
       "id": "note-type-hint-trong-python",
@@ -1159,8 +1318,8 @@
       "order": 7,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-02T22:00:00.000Z",
-      "updatedAt": "2026-01-02T22:00:00.000Z"
+      "createdAt": "2026-01-03T06:00:00.000Z",
+      "updatedAt": "2026-01-03T06:00:00.000Z"
     },
     {
       "id": "note-async-trong-python",
@@ -1178,8 +1337,8 @@
       "order": 8,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-02T23:00:00.000Z",
-      "updatedAt": "2026-01-02T23:00:00.000Z"
+      "createdAt": "2026-01-03T07:00:00.000Z",
+      "updatedAt": "2026-01-03T07:00:00.000Z"
     },
     {
       "id": "note-mo-hinh-ba-vung-cua-git",
@@ -1196,8 +1355,8 @@
       "order": 1,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-03T00:00:00.000Z",
-      "updatedAt": "2026-01-03T00:00:00.000Z"
+      "createdAt": "2026-01-03T08:00:00.000Z",
+      "updatedAt": "2026-01-03T08:00:00.000Z"
     },
     {
       "id": "note-nhanh-va-merge",
@@ -1215,8 +1374,8 @@
       "order": 2,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-03T01:00:00.000Z",
-      "updatedAt": "2026-01-03T01:00:00.000Z"
+      "createdAt": "2026-01-03T09:00:00.000Z",
+      "updatedAt": "2026-01-03T09:00:00.000Z"
     },
     {
       "id": "note-rebase-va-lich-su-sach",
@@ -1233,8 +1392,8 @@
       "order": 3,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-03T02:00:00.000Z",
-      "updatedAt": "2026-01-03T02:00:00.000Z"
+      "createdAt": "2026-01-03T10:00:00.000Z",
+      "updatedAt": "2026-01-03T10:00:00.000Z"
     },
     {
       "id": "note-go-roi-khi-lo-tay",
@@ -1252,8 +1411,8 @@
       "order": 4,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-03T03:00:00.000Z",
-      "updatedAt": "2026-01-03T03:00:00.000Z"
+      "createdAt": "2026-01-03T11:00:00.000Z",
+      "updatedAt": "2026-01-03T11:00:00.000Z"
     },
     {
       "id": "note-quy-trinh-lam-viec-nhom",
@@ -1271,8 +1430,8 @@
       "order": 5,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-03T04:00:00.000Z",
-      "updatedAt": "2026-01-03T04:00:00.000Z"
+      "createdAt": "2026-01-03T12:00:00.000Z",
+      "updatedAt": "2026-01-03T12:00:00.000Z"
     },
     {
       "id": "note-stash-cherry-pick-va-worktree",
@@ -1290,8 +1449,8 @@
       "order": 6,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-03T05:00:00.000Z",
-      "updatedAt": "2026-01-03T05:00:00.000Z"
+      "createdAt": "2026-01-03T13:00:00.000Z",
+      "updatedAt": "2026-01-03T13:00:00.000Z"
     },
     {
       "id": "note-tag-release-va-danh-phien-ban",
@@ -1309,8 +1468,8 @@
       "order": 7,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-03T06:00:00.000Z",
-      "updatedAt": "2026-01-03T06:00:00.000Z"
+      "createdAt": "2026-01-03T14:00:00.000Z",
+      "updatedAt": "2026-01-03T14:00:00.000Z"
     },
     {
       "id": "note-cau-hinh-git-cho-du-an",
@@ -1328,8 +1487,8 @@
       "order": 8,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-03T07:00:00.000Z",
-      "updatedAt": "2026-01-03T07:00:00.000Z"
+      "createdAt": "2026-01-03T15:00:00.000Z",
+      "updatedAt": "2026-01-03T15:00:00.000Z"
     },
     {
       "id": "note-vong-doi-mot-lan-goi-http",
@@ -1347,8 +1506,8 @@
       "order": 1,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-03T08:00:00.000Z",
-      "updatedAt": "2026-01-03T08:00:00.000Z"
+      "createdAt": "2026-01-03T16:00:00.000Z",
+      "updatedAt": "2026-01-03T16:00:00.000Z"
     },
     {
       "id": "note-phuong-thuc-va-ma-trang-thai",
@@ -1366,8 +1525,8 @@
       "order": 2,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-03T09:00:00.000Z",
-      "updatedAt": "2026-01-03T09:00:00.000Z"
+      "createdAt": "2026-01-03T17:00:00.000Z",
+      "updatedAt": "2026-01-03T17:00:00.000Z"
     },
     {
       "id": "note-thiet-ke-endpoint-rest",
@@ -1384,8 +1543,8 @@
       "order": 3,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-03T10:00:00.000Z",
-      "updatedAt": "2026-01-03T10:00:00.000Z"
+      "createdAt": "2026-01-03T18:00:00.000Z",
+      "updatedAt": "2026-01-03T18:00:00.000Z"
     },
     {
       "id": "note-idempotency-va-thu-lai",
@@ -1403,8 +1562,8 @@
       "order": 4,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-03T11:00:00.000Z",
-      "updatedAt": "2026-01-03T11:00:00.000Z"
+      "createdAt": "2026-01-03T19:00:00.000Z",
+      "updatedAt": "2026-01-03T19:00:00.000Z"
     },
     {
       "id": "note-phan-trang-loc-va-sap-xep",
@@ -1422,8 +1581,8 @@
       "order": 5,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-03T12:00:00.000Z",
-      "updatedAt": "2026-01-03T12:00:00.000Z"
+      "createdAt": "2026-01-03T20:00:00.000Z",
+      "updatedAt": "2026-01-03T20:00:00.000Z"
     },
     {
       "id": "note-loi-versioning-va-tai-lieu",
@@ -1441,8 +1600,8 @@
       "order": 6,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-03T13:00:00.000Z",
-      "updatedAt": "2026-01-03T13:00:00.000Z"
+      "createdAt": "2026-01-03T21:00:00.000Z",
+      "updatedAt": "2026-01-03T21:00:00.000Z"
     },
     {
       "id": "note-test-de-lam-gi-va-test-cai-gi",
@@ -1458,8 +1617,8 @@
       "order": 1,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-03T14:00:00.000Z",
-      "updatedAt": "2026-01-03T14:00:00.000Z"
+      "createdAt": "2026-01-03T22:00:00.000Z",
+      "updatedAt": "2026-01-03T22:00:00.000Z"
     },
     {
       "id": "note-unit-test-dau-tien",
@@ -1476,8 +1635,8 @@
       "order": 2,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-03T15:00:00.000Z",
-      "updatedAt": "2026-01-03T15:00:00.000Z"
+      "createdAt": "2026-01-03T23:00:00.000Z",
+      "updatedAt": "2026-01-03T23:00:00.000Z"
     },
     {
       "id": "note-test-double-stub-mock-fake",
@@ -1495,8 +1654,8 @@
       "order": 3,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-03T16:00:00.000Z",
-      "updatedAt": "2026-01-03T16:00:00.000Z"
+      "createdAt": "2026-01-04T00:00:00.000Z",
+      "updatedAt": "2026-01-04T00:00:00.000Z"
     },
     {
       "id": "note-integration-test-va-tang-du-lieu",
@@ -1513,8 +1672,8 @@
       "order": 4,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-03T17:00:00.000Z",
-      "updatedAt": "2026-01-03T17:00:00.000Z"
+      "createdAt": "2026-01-04T01:00:00.000Z",
+      "updatedAt": "2026-01-04T01:00:00.000Z"
     },
     {
       "id": "note-e2e-va-kim-tu-thap-kiem-thu",
@@ -1531,8 +1690,8 @@
       "order": 5,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-03T18:00:00.000Z",
-      "updatedAt": "2026-01-03T18:00:00.000Z"
+      "createdAt": "2026-01-04T02:00:00.000Z",
+      "updatedAt": "2026-01-04T02:00:00.000Z"
     },
     {
       "id": "note-tdd-trong-thuc-te",
@@ -1549,8 +1708,8 @@
       "order": 6,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-03T19:00:00.000Z",
-      "updatedAt": "2026-01-03T19:00:00.000Z"
+      "createdAt": "2026-01-04T03:00:00.000Z",
+      "updatedAt": "2026-01-04T03:00:00.000Z"
     },
     {
       "id": "note-select-loc-va-sap-xep",
@@ -1568,8 +1727,8 @@
       "order": 1,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-03T20:00:00.000Z",
-      "updatedAt": "2026-01-03T20:00:00.000Z"
+      "createdAt": "2026-01-04T04:00:00.000Z",
+      "updatedAt": "2026-01-04T04:00:00.000Z"
     },
     {
       "id": "note-join-cac-loai",
@@ -1585,8 +1744,8 @@
       "order": 2,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-03T21:00:00.000Z",
-      "updatedAt": "2026-01-03T21:00:00.000Z"
+      "createdAt": "2026-01-04T05:00:00.000Z",
+      "updatedAt": "2026-01-04T05:00:00.000Z"
     },
     {
       "id": "note-group-by-va-ham-tong-hop",
@@ -1603,8 +1762,8 @@
       "order": 3,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-03T22:00:00.000Z",
-      "updatedAt": "2026-01-03T22:00:00.000Z"
+      "createdAt": "2026-01-04T06:00:00.000Z",
+      "updatedAt": "2026-01-04T06:00:00.000Z"
     },
     {
       "id": "note-subquery-va-cte",
@@ -1621,8 +1780,8 @@
       "order": 4,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-03T23:00:00.000Z",
-      "updatedAt": "2026-01-03T23:00:00.000Z"
+      "createdAt": "2026-01-04T07:00:00.000Z",
+      "updatedAt": "2026-01-04T07:00:00.000Z"
     },
     {
       "id": "note-transaction-va-acid",
@@ -1640,8 +1799,8 @@
       "order": 5,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-04T00:00:00.000Z",
-      "updatedAt": "2026-01-04T00:00:00.000Z"
+      "createdAt": "2026-01-04T08:00:00.000Z",
+      "updatedAt": "2026-01-04T08:00:00.000Z"
     },
     {
       "id": "note-index-va-hieu-nang-truy-van",
@@ -1658,8 +1817,8 @@
       "order": 6,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-04T01:00:00.000Z",
-      "updatedAt": "2026-01-04T01:00:00.000Z"
+      "createdAt": "2026-01-04T09:00:00.000Z",
+      "updatedAt": "2026-01-04T09:00:00.000Z"
     },
     {
       "id": "note-thay-doi-cau-truc-va-migration",
@@ -1676,8 +1835,8 @@
       "order": 7,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-04T02:00:00.000Z",
-      "updatedAt": "2026-01-04T02:00:00.000Z"
+      "createdAt": "2026-01-04T10:00:00.000Z",
+      "updatedAt": "2026-01-04T10:00:00.000Z"
     },
     {
       "id": "note-tu-yeu-cau-toi-bang",
@@ -1694,8 +1853,8 @@
       "order": 1,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-04T03:00:00.000Z",
-      "updatedAt": "2026-01-04T03:00:00.000Z"
+      "createdAt": "2026-01-04T11:00:00.000Z",
+      "updatedAt": "2026-01-04T11:00:00.000Z"
     },
     {
       "id": "note-chuan-hoa-va-khi-nao-pha-vo",
@@ -1712,8 +1871,8 @@
       "order": 2,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-04T04:00:00.000Z",
-      "updatedAt": "2026-01-04T04:00:00.000Z"
+      "createdAt": "2026-01-04T12:00:00.000Z",
+      "updatedAt": "2026-01-04T12:00:00.000Z"
     },
     {
       "id": "note-rang-buoc-va-toan-ven-du-lieu",
@@ -1730,8 +1889,8 @@
       "order": 3,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-04T05:00:00.000Z",
-      "updatedAt": "2026-01-04T05:00:00.000Z"
+      "createdAt": "2026-01-04T13:00:00.000Z",
+      "updatedAt": "2026-01-04T13:00:00.000Z"
     },
     {
       "id": "note-chon-kieu-du-lieu",
@@ -1748,8 +1907,8 @@
       "order": 4,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-04T06:00:00.000Z",
-      "updatedAt": "2026-01-04T06:00:00.000Z"
+      "createdAt": "2026-01-04T14:00:00.000Z",
+      "updatedAt": "2026-01-04T14:00:00.000Z"
     },
     {
       "id": "note-xoa-mem-va-vong-doi-ban-ghi",
@@ -1767,8 +1926,8 @@
       "order": 5,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-04T07:00:00.000Z",
-      "updatedAt": "2026-01-04T07:00:00.000Z"
+      "createdAt": "2026-01-04T15:00:00.000Z",
+      "updatedAt": "2026-01-04T15:00:00.000Z"
     },
     {
       "id": "note-mo-hinh-hoa-cac-tinh-huong-thuc-te",
@@ -1785,8 +1944,8 @@
       "order": 6,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-04T08:00:00.000Z",
-      "updatedAt": "2026-01-04T08:00:00.000Z"
+      "createdAt": "2026-01-04T16:00:00.000Z",
+      "updatedAt": "2026-01-04T16:00:00.000Z"
     },
     {
       "id": "note-truy-cap-dong-thoi-va-khoa",
@@ -1804,8 +1963,8 @@
       "order": 7,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-04T09:00:00.000Z",
-      "updatedAt": "2026-01-04T09:00:00.000Z"
+      "createdAt": "2026-01-04T17:00:00.000Z",
+      "updatedAt": "2026-01-04T17:00:00.000Z"
     },
     {
       "id": "note-vi-sao-chon-postgresql",
@@ -1821,8 +1980,8 @@
       "order": 1,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-04T10:00:00.000Z",
-      "updatedAt": "2026-01-04T10:00:00.000Z"
+      "createdAt": "2026-01-04T18:00:00.000Z",
+      "updatedAt": "2026-01-04T18:00:00.000Z"
     },
     {
       "id": "note-index-trong-postgresql",
@@ -1839,8 +1998,8 @@
       "order": 2,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-04T11:00:00.000Z",
-      "updatedAt": "2026-01-04T11:00:00.000Z"
+      "createdAt": "2026-01-04T19:00:00.000Z",
+      "updatedAt": "2026-01-04T19:00:00.000Z"
     },
     {
       "id": "note-doc-explain-analyze",
@@ -1857,8 +2016,8 @@
       "order": 3,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-04T12:00:00.000Z",
-      "updatedAt": "2026-01-04T12:00:00.000Z"
+      "createdAt": "2026-01-04T20:00:00.000Z",
+      "updatedAt": "2026-01-04T20:00:00.000Z"
     },
     {
       "id": "note-jsonb-va-tim-kiem-toan-van",
@@ -1875,8 +2034,8 @@
       "order": 4,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-04T13:00:00.000Z",
-      "updatedAt": "2026-01-04T13:00:00.000Z"
+      "createdAt": "2026-01-04T21:00:00.000Z",
+      "updatedAt": "2026-01-04T21:00:00.000Z"
     },
     {
       "id": "note-transaction-va-khoa-trong-postgres",
@@ -1894,8 +2053,8 @@
       "order": 5,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-04T14:00:00.000Z",
-      "updatedAt": "2026-01-04T14:00:00.000Z"
+      "createdAt": "2026-01-04T22:00:00.000Z",
+      "updatedAt": "2026-01-04T22:00:00.000Z"
     },
     {
       "id": "note-sao-luu-va-van-hanh-postgres",
@@ -1912,8 +2071,8 @@
       "order": 6,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-04T15:00:00.000Z",
-      "updatedAt": "2026-01-04T15:00:00.000Z"
+      "createdAt": "2026-01-04T23:00:00.000Z",
+      "updatedAt": "2026-01-04T23:00:00.000Z"
     },
     {
       "id": "note-nosql-va-mo-hinh-document",
@@ -1930,8 +2089,8 @@
       "order": 1,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-04T16:00:00.000Z",
-      "updatedAt": "2026-01-04T16:00:00.000Z"
+      "createdAt": "2026-01-05T00:00:00.000Z",
+      "updatedAt": "2026-01-05T00:00:00.000Z"
     },
     {
       "id": "note-document-collection-va-kieu-bson",
@@ -1948,8 +2107,8 @@
       "order": 2,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-04T17:00:00.000Z",
-      "updatedAt": "2026-01-04T17:00:00.000Z"
+      "createdAt": "2026-01-05T01:00:00.000Z",
+      "updatedAt": "2026-01-05T01:00:00.000Z"
     },
     {
       "id": "note-truy-van-va-cap-nhat",
@@ -1966,8 +2125,8 @@
       "order": 3,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-04T18:00:00.000Z",
-      "updatedAt": "2026-01-04T18:00:00.000Z"
+      "createdAt": "2026-01-05T02:00:00.000Z",
+      "updatedAt": "2026-01-05T02:00:00.000Z"
     },
     {
       "id": "note-thiet-ke-lang-nhau-hay-tham-chieu",
@@ -1984,8 +2143,8 @@
       "order": 4,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-04T19:00:00.000Z",
-      "updatedAt": "2026-01-04T19:00:00.000Z"
+      "createdAt": "2026-01-05T03:00:00.000Z",
+      "updatedAt": "2026-01-05T03:00:00.000Z"
     },
     {
       "id": "note-index-va-doc-explain",
@@ -2003,8 +2162,8 @@
       "order": 5,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-04T20:00:00.000Z",
-      "updatedAt": "2026-01-04T20:00:00.000Z"
+      "createdAt": "2026-01-05T04:00:00.000Z",
+      "updatedAt": "2026-01-05T04:00:00.000Z"
     },
     {
       "id": "note-aggregation-pipeline",
@@ -2021,8 +2180,8 @@
       "order": 6,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-04T21:00:00.000Z",
-      "updatedAt": "2026-01-04T21:00:00.000Z"
+      "createdAt": "2026-01-05T05:00:00.000Z",
+      "updatedAt": "2026-01-05T05:00:00.000Z"
     },
     {
       "id": "note-transaction-write-concern-va-van-hanh",
@@ -2040,8 +2199,8 @@
       "order": 7,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-04T22:00:00.000Z",
-      "updatedAt": "2026-01-04T22:00:00.000Z"
+      "createdAt": "2026-01-05T06:00:00.000Z",
+      "updatedAt": "2026-01-05T06:00:00.000Z"
     },
     {
       "id": "note-tong-quan-owasp-top-10",
@@ -2058,8 +2217,8 @@
       "order": 1,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-04T23:00:00.000Z",
-      "updatedAt": "2026-01-04T23:00:00.000Z"
+      "createdAt": "2026-01-05T07:00:00.000Z",
+      "updatedAt": "2026-01-05T07:00:00.000Z"
     },
     {
       "id": "note-broken-access-control",
@@ -2076,8 +2235,8 @@
       "order": 2,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-05T00:00:00.000Z",
-      "updatedAt": "2026-01-05T00:00:00.000Z"
+      "createdAt": "2026-01-05T08:00:00.000Z",
+      "updatedAt": "2026-01-05T08:00:00.000Z"
     },
     {
       "id": "note-sql-injection",
@@ -2094,8 +2253,8 @@
       "order": 3,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-05T01:00:00.000Z",
-      "updatedAt": "2026-01-05T01:00:00.000Z"
+      "createdAt": "2026-01-05T09:00:00.000Z",
+      "updatedAt": "2026-01-05T09:00:00.000Z"
     },
     {
       "id": "note-xss-cross-site-scripting",
@@ -2112,8 +2271,8 @@
       "order": 4,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-05T02:00:00.000Z",
-      "updatedAt": "2026-01-05T02:00:00.000Z"
+      "createdAt": "2026-01-05T10:00:00.000Z",
+      "updatedAt": "2026-01-05T10:00:00.000Z"
     },
     {
       "id": "note-csrf-va-clickjacking",
@@ -2130,8 +2289,8 @@
       "order": 5,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-05T03:00:00.000Z",
-      "updatedAt": "2026-01-05T03:00:00.000Z"
+      "createdAt": "2026-01-05T11:00:00.000Z",
+      "updatedAt": "2026-01-05T11:00:00.000Z"
     },
     {
       "id": "note-luu-mat-khau-va-ma-hoa",
@@ -2149,8 +2308,8 @@
       "order": 6,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-05T04:00:00.000Z",
-      "updatedAt": "2026-01-05T04:00:00.000Z"
+      "createdAt": "2026-01-05T12:00:00.000Z",
+      "updatedAt": "2026-01-05T12:00:00.000Z"
     },
     {
       "id": "note-quan-ly-secret-va-cau-hinh",
@@ -2168,8 +2327,8 @@
       "order": 7,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-05T05:00:00.000Z",
-      "updatedAt": "2026-01-05T05:00:00.000Z"
+      "createdAt": "2026-01-05T13:00:00.000Z",
+      "updatedAt": "2026-01-05T13:00:00.000Z"
     },
     {
       "id": "note-thu-vien-log-va-ssrf",
@@ -2187,8 +2346,8 @@
       "order": 8,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-05T06:00:00.000Z",
-      "updatedAt": "2026-01-05T06:00:00.000Z"
+      "createdAt": "2026-01-05T14:00:00.000Z",
+      "updatedAt": "2026-01-05T14:00:00.000Z"
     },
     {
       "id": "note-xac-thuc-va-phan-quyen-khac-nhau",
@@ -2205,8 +2364,8 @@
       "order": 1,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-05T07:00:00.000Z",
-      "updatedAt": "2026-01-05T07:00:00.000Z"
+      "createdAt": "2026-01-05T15:00:00.000Z",
+      "updatedAt": "2026-01-05T15:00:00.000Z"
     },
     {
       "id": "note-phien-dang-nhap-va-cookie",
@@ -2223,8 +2382,8 @@
       "order": 2,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-05T08:00:00.000Z",
-      "updatedAt": "2026-01-05T08:00:00.000Z"
+      "createdAt": "2026-01-05T16:00:00.000Z",
+      "updatedAt": "2026-01-05T16:00:00.000Z"
     },
     {
       "id": "note-gioi-han-tan-suat-va-chong-lam-dung",
@@ -2241,8 +2400,8 @@
       "order": 3,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-05T09:00:00.000Z",
-      "updatedAt": "2026-01-05T09:00:00.000Z"
+      "createdAt": "2026-01-05T17:00:00.000Z",
+      "updatedAt": "2026-01-05T17:00:00.000Z"
     },
     {
       "id": "note-dat-lai-mat-khau-va-xac-minh-email",
@@ -2260,8 +2419,8 @@
       "order": 4,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-05T10:00:00.000Z",
-      "updatedAt": "2026-01-05T10:00:00.000Z"
+      "createdAt": "2026-01-05T18:00:00.000Z",
+      "updatedAt": "2026-01-05T18:00:00.000Z"
     },
     {
       "id": "note-oauth-va-dang-nhap-mang-xa-hoi",
@@ -2278,8 +2437,8 @@
       "order": 5,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-05T11:00:00.000Z",
-      "updatedAt": "2026-01-05T11:00:00.000Z"
+      "createdAt": "2026-01-05T19:00:00.000Z",
+      "updatedAt": "2026-01-05T19:00:00.000Z"
     },
     {
       "id": "note-kiem-thu-va-danh-gia-bao-mat",
@@ -2297,8 +2456,8 @@
       "order": 6,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-05T12:00:00.000Z",
-      "updatedAt": "2026-01-05T12:00:00.000Z"
+      "createdAt": "2026-01-05T20:00:00.000Z",
+      "updatedAt": "2026-01-05T20:00:00.000Z"
     },
     {
       "id": "note-phan-quyen-theo-ban-ghi",
@@ -2316,8 +2475,8 @@
       "order": 7,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-05T13:00:00.000Z",
-      "updatedAt": "2026-01-05T13:00:00.000Z"
+      "createdAt": "2026-01-05T21:00:00.000Z",
+      "updatedAt": "2026-01-05T21:00:00.000Z"
     },
     {
       "id": "note-he-thong-file-va-duong-dan",
@@ -2334,8 +2493,8 @@
       "order": 1,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-05T14:00:00.000Z",
-      "updatedAt": "2026-01-05T14:00:00.000Z"
+      "createdAt": "2026-01-05T22:00:00.000Z",
+      "updatedAt": "2026-01-05T22:00:00.000Z"
     },
     {
       "id": "note-quyen-va-nguoi-dung",
@@ -2352,8 +2511,8 @@
       "order": 2,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-05T15:00:00.000Z",
-      "updatedAt": "2026-01-05T15:00:00.000Z"
+      "createdAt": "2026-01-05T23:00:00.000Z",
+      "updatedAt": "2026-01-05T23:00:00.000Z"
     },
     {
       "id": "note-tien-trinh-va-dich-vu",
@@ -2370,8 +2529,8 @@
       "order": 3,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-05T16:00:00.000Z",
-      "updatedAt": "2026-01-05T16:00:00.000Z"
+      "createdAt": "2026-01-06T00:00:00.000Z",
+      "updatedAt": "2026-01-06T00:00:00.000Z"
     },
     {
       "id": "note-viet-script-bash",
@@ -2388,8 +2547,8 @@
       "order": 4,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-05T17:00:00.000Z",
-      "updatedAt": "2026-01-05T17:00:00.000Z"
+      "createdAt": "2026-01-06T01:00:00.000Z",
+      "updatedAt": "2026-01-06T01:00:00.000Z"
     },
     {
       "id": "note-go-loi-tren-may-chu",
@@ -2406,8 +2565,8 @@
       "order": 5,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-05T18:00:00.000Z",
-      "updatedAt": "2026-01-05T18:00:00.000Z"
+      "createdAt": "2026-01-06T02:00:00.000Z",
+      "updatedAt": "2026-01-06T02:00:00.000Z"
     },
     {
       "id": "note-container-va-image",
@@ -2424,8 +2583,8 @@
       "order": 1,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-05T19:00:00.000Z",
-      "updatedAt": "2026-01-05T19:00:00.000Z"
+      "createdAt": "2026-01-06T03:00:00.000Z",
+      "updatedAt": "2026-01-06T03:00:00.000Z"
     },
     {
       "id": "note-viet-dockerfile",
@@ -2441,8 +2600,8 @@
       "order": 2,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-05T20:00:00.000Z",
-      "updatedAt": "2026-01-05T20:00:00.000Z"
+      "createdAt": "2026-01-06T04:00:00.000Z",
+      "updatedAt": "2026-01-06T04:00:00.000Z"
     },
     {
       "id": "note-volume-va-du-lieu",
@@ -2459,8 +2618,8 @@
       "order": 3,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-05T21:00:00.000Z",
-      "updatedAt": "2026-01-05T21:00:00.000Z"
+      "createdAt": "2026-01-06T05:00:00.000Z",
+      "updatedAt": "2026-01-06T05:00:00.000Z"
     },
     {
       "id": "note-mang-va-ket-noi",
@@ -2477,8 +2636,8 @@
       "order": 4,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-05T22:00:00.000Z",
-      "updatedAt": "2026-01-05T22:00:00.000Z"
+      "createdAt": "2026-01-06T06:00:00.000Z",
+      "updatedAt": "2026-01-06T06:00:00.000Z"
     },
     {
       "id": "note-docker-compose",
@@ -2495,8 +2654,8 @@
       "order": 5,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-05T23:00:00.000Z",
-      "updatedAt": "2026-01-05T23:00:00.000Z"
+      "createdAt": "2026-01-06T07:00:00.000Z",
+      "updatedAt": "2026-01-06T07:00:00.000Z"
     },
     {
       "id": "note-toi-uu-va-van-hanh-container",
@@ -2514,8 +2673,8 @@
       "order": 6,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-06T00:00:00.000Z",
-      "updatedAt": "2026-01-06T00:00:00.000Z"
+      "createdAt": "2026-01-06T08:00:00.000Z",
+      "updatedAt": "2026-01-06T08:00:00.000Z"
     },
     {
       "id": "note-cau-truc-mot-workflow",
@@ -2532,8 +2691,8 @@
       "order": 1,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-06T01:00:00.000Z",
-      "updatedAt": "2026-01-06T01:00:00.000Z"
+      "createdAt": "2026-01-06T09:00:00.000Z",
+      "updatedAt": "2026-01-06T09:00:00.000Z"
     },
     {
       "id": "note-cache-va-toc-do-ci",
@@ -2550,8 +2709,8 @@
       "order": 2,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-06T02:00:00.000Z",
-      "updatedAt": "2026-01-06T02:00:00.000Z"
+      "createdAt": "2026-01-06T10:00:00.000Z",
+      "updatedAt": "2026-01-06T10:00:00.000Z"
     },
     {
       "id": "note-secret-va-quyen-trong-ci",
@@ -2568,8 +2727,8 @@
       "order": 3,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-06T03:00:00.000Z",
-      "updatedAt": "2026-01-06T03:00:00.000Z"
+      "createdAt": "2026-01-06T11:00:00.000Z",
+      "updatedAt": "2026-01-06T11:00:00.000Z"
     },
     {
       "id": "note-kiem-thu-tu-dong-trong-ci",
@@ -2586,8 +2745,8 @@
       "order": 4,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-06T04:00:00.000Z",
-      "updatedAt": "2026-01-06T04:00:00.000Z"
+      "createdAt": "2026-01-06T12:00:00.000Z",
+      "updatedAt": "2026-01-06T12:00:00.000Z"
     },
     {
       "id": "note-trien-khai-tu-dong",
@@ -2604,8 +2763,8 @@
       "order": 5,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-06T05:00:00.000Z",
-      "updatedAt": "2026-01-06T05:00:00.000Z"
+      "createdAt": "2026-01-06T13:00:00.000Z",
+      "updatedAt": "2026-01-06T13:00:00.000Z"
     },
     {
       "id": "note-reverse-proxy-voi-nginx",
@@ -2622,8 +2781,8 @@
       "order": 1,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-06T06:00:00.000Z",
-      "updatedAt": "2026-01-06T06:00:00.000Z"
+      "createdAt": "2026-01-06T14:00:00.000Z",
+      "updatedAt": "2026-01-06T14:00:00.000Z"
     },
     {
       "id": "note-https-va-chung-chi",
@@ -2641,8 +2800,8 @@
       "order": 2,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-06T07:00:00.000Z",
-      "updatedAt": "2026-01-06T07:00:00.000Z"
+      "createdAt": "2026-01-06T15:00:00.000Z",
+      "updatedAt": "2026-01-06T15:00:00.000Z"
     },
     {
       "id": "note-bien-moi-truong-va-cau-hinh",
@@ -2659,8 +2818,8 @@
       "order": 3,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-06T08:00:00.000Z",
-      "updatedAt": "2026-01-06T08:00:00.000Z"
+      "createdAt": "2026-01-06T16:00:00.000Z",
+      "updatedAt": "2026-01-06T16:00:00.000Z"
     },
     {
       "id": "note-giam-sat-va-sao-luu",
@@ -2678,8 +2837,8 @@
       "order": 4,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-06T09:00:00.000Z",
-      "updatedAt": "2026-01-06T09:00:00.000Z"
+      "createdAt": "2026-01-06T17:00:00.000Z",
+      "updatedAt": "2026-01-06T17:00:00.000Z"
     },
     {
       "id": "note-uoc-luong-va-tim-diem-nghen",
@@ -2697,8 +2856,8 @@
       "order": 1,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-06T10:00:00.000Z",
-      "updatedAt": "2026-01-06T10:00:00.000Z"
+      "createdAt": "2026-01-06T18:00:00.000Z",
+      "updatedAt": "2026-01-06T18:00:00.000Z"
     },
     {
       "id": "note-mo-rong-va-can-bang-tai",
@@ -2716,8 +2875,8 @@
       "order": 2,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-06T11:00:00.000Z",
-      "updatedAt": "2026-01-06T11:00:00.000Z"
+      "createdAt": "2026-01-06T19:00:00.000Z",
+      "updatedAt": "2026-01-06T19:00:00.000Z"
     },
     {
       "id": "note-cache-nhieu-tang",
@@ -2735,8 +2894,8 @@
       "order": 3,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-06T12:00:00.000Z",
-      "updatedAt": "2026-01-06T12:00:00.000Z"
+      "createdAt": "2026-01-06T20:00:00.000Z",
+      "updatedAt": "2026-01-06T20:00:00.000Z"
     },
     {
       "id": "note-hang-doi-va-xu-ly-bat-dong-bo",
@@ -2754,8 +2913,8 @@
       "order": 4,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-06T13:00:00.000Z",
-      "updatedAt": "2026-01-06T13:00:00.000Z"
+      "createdAt": "2026-01-06T21:00:00.000Z",
+      "updatedAt": "2026-01-06T21:00:00.000Z"
     },
     {
       "id": "note-thiet-ke-cho-that-bai",
@@ -2773,8 +2932,8 @@
       "order": 1,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-06T14:00:00.000Z",
-      "updatedAt": "2026-01-06T14:00:00.000Z"
+      "createdAt": "2026-01-06T22:00:00.000Z",
+      "updatedAt": "2026-01-06T22:00:00.000Z"
     },
     {
       "id": "note-du-lieu-o-quy-mo",
@@ -2792,8 +2951,8 @@
       "order": 2,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-06T15:00:00.000Z",
-      "updatedAt": "2026-01-06T15:00:00.000Z"
+      "createdAt": "2026-01-06T23:00:00.000Z",
+      "updatedAt": "2026-01-06T23:00:00.000Z"
     },
     {
       "id": "note-ranh-gioi-service",
@@ -2811,8 +2970,8 @@
       "order": 3,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-06T16:00:00.000Z",
-      "updatedAt": "2026-01-06T16:00:00.000Z"
+      "createdAt": "2026-01-07T00:00:00.000Z",
+      "updatedAt": "2026-01-07T00:00:00.000Z"
     },
     {
       "id": "note-quan-sat-he-thong",
@@ -2831,8 +2990,8 @@
       "order": 1,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-06T17:00:00.000Z",
-      "updatedAt": "2026-01-06T17:00:00.000Z"
+      "createdAt": "2026-01-07T01:00:00.000Z",
+      "updatedAt": "2026-01-07T01:00:00.000Z"
     },
     {
       "id": "note-slo-va-error-budget",
@@ -2851,8 +3010,8 @@
       "order": 2,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-06T18:00:00.000Z",
-      "updatedAt": "2026-01-06T18:00:00.000Z"
+      "createdAt": "2026-01-07T02:00:00.000Z",
+      "updatedAt": "2026-01-07T02:00:00.000Z"
     },
     {
       "id": "note-su-co-va-hau-kiem",
@@ -2870,8 +3029,8 @@
       "order": 3,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-06T19:00:00.000Z",
-      "updatedAt": "2026-01-06T19:00:00.000Z"
+      "createdAt": "2026-01-07T03:00:00.000Z",
+      "updatedAt": "2026-01-07T03:00:00.000Z"
     },
     {
       "id": "note-trien-khai-an-toan",
@@ -2890,8 +3049,8 @@
       "order": 1,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-06T20:00:00.000Z",
-      "updatedAt": "2026-01-06T20:00:00.000Z"
+      "createdAt": "2026-01-07T04:00:00.000Z",
+      "updatedAt": "2026-01-07T04:00:00.000Z"
     },
     {
       "id": "note-hieu-nang-va-do-luong",
@@ -2910,8 +3069,8 @@
       "order": 2,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-06T21:00:00.000Z",
-      "updatedAt": "2026-01-06T21:00:00.000Z"
+      "createdAt": "2026-01-07T05:00:00.000Z",
+      "updatedAt": "2026-01-07T05:00:00.000Z"
     },
     {
       "id": "note-chi-phi-ha-tang",
@@ -2929,8 +3088,8 @@
       "order": 3,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-06T22:00:00.000Z",
-      "updatedAt": "2026-01-06T22:00:00.000Z"
+      "createdAt": "2026-01-07T06:00:00.000Z",
+      "updatedAt": "2026-01-07T06:00:00.000Z"
     },
     {
       "id": "note-ra-quyet-dinh-ky-thuat",
@@ -2948,8 +3107,8 @@
       "order": 1,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-06T23:00:00.000Z",
-      "updatedAt": "2026-01-06T23:00:00.000Z"
+      "createdAt": "2026-01-07T07:00:00.000Z",
+      "updatedAt": "2026-01-07T07:00:00.000Z"
     },
     {
       "id": "note-review-code-va-nang-nguoi",
@@ -2967,8 +3126,8 @@
       "order": 2,
       "level": "co-ban",
       "starred": false,
-      "createdAt": "2026-01-07T00:00:00.000Z",
-      "updatedAt": "2026-01-07T00:00:00.000Z"
+      "createdAt": "2026-01-07T08:00:00.000Z",
+      "updatedAt": "2026-01-07T08:00:00.000Z"
     },
     {
       "id": "note-no-ky-thuat-va-refactor",
@@ -2986,8 +3145,8 @@
       "order": 3,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-07T01:00:00.000Z",
-      "updatedAt": "2026-01-07T01:00:00.000Z"
+      "createdAt": "2026-01-07T09:00:00.000Z",
+      "updatedAt": "2026-01-07T09:00:00.000Z"
     },
     {
       "id": "note-uoc-luong-va-pham-vi",
@@ -3005,8 +3164,8 @@
       "order": 1,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-07T02:00:00.000Z",
-      "updatedAt": "2026-01-07T02:00:00.000Z"
+      "createdAt": "2026-01-07T10:00:00.000Z",
+      "updatedAt": "2026-01-07T10:00:00.000Z"
     },
     {
       "id": "note-giao-tiep-va-anh-huong",
@@ -3024,8 +3183,8 @@
       "order": 2,
       "level": "trung-cap",
       "starred": false,
-      "createdAt": "2026-01-07T03:00:00.000Z",
-      "updatedAt": "2026-01-07T03:00:00.000Z"
+      "createdAt": "2026-01-07T11:00:00.000Z",
+      "updatedAt": "2026-01-07T11:00:00.000Z"
     },
     {
       "id": "note-uy-quyen-va-dan-dat-nhom",
@@ -3044,8 +3203,8 @@
       "order": 3,
       "level": "nang-cao",
       "starred": false,
-      "createdAt": "2026-01-07T04:00:00.000Z",
-      "updatedAt": "2026-01-07T04:00:00.000Z"
+      "createdAt": "2026-01-07T12:00:00.000Z",
+      "updatedAt": "2026-01-07T12:00:00.000Z"
     }
   ],
   "exercises": [
@@ -3059,6 +3218,7 @@
         "bang-bam"
       ],
       "ham": "haiTong",
+      "hamPy": "hai_tong",
       "baiHoc": "bang-bam",
       "soSanh": "chinh-xac",
       "deBai": "Cho mảng số nguyên `nums` và một số `target`. Trả về **chỉ số của hai phần tử** có tổng bằng `target`.\n\nMỗi bộ dữ liệu bảo đảm có đúng một đáp án, và không được dùng cùng một phần tử hai lần. Trả về mảng hai chỉ số theo thứ tự tăng dần.\n\n```\nnums = [2, 7, 11, 15], target = 9   →  [0, 1]   (vì nums[0] + nums[1] = 9)\nnums = [3, 2, 4],      target = 6   →  [1, 2]\n```\n\n**Ràng buộc:** `2 ≤ nums.length ≤ 10⁴`, mảng có thể chứa số âm.\n\n> Cách hiển nhiên là hai vòng lặp lồng nhau — `O(n²)`. Nộp thử cách đó trước cho quen bộ chấm, rồi tìm cách `O(n)`. Gợi ý: khi đang đứng ở phần tử `x`, bạn cần biết *đã từng gặp* `target - x` chưa.",
@@ -3179,7 +3339,7 @@
           "an": true
         }
       ],
-      "loiGiai": "Ý tưởng: đổi câu hỏi \"có cặp nào cộng lại bằng target không\" thành \"số bù của phần tử này đã từng xuất hiện chưa\". Câu hỏi thứ hai là một phép **tra cứu**, và tra cứu là việc của bảng băm.\n\n```js\nfunction haiTong(nums, target) {\n  const daGap = new Map() // giá trị -> chỉ số\n\n  for (let i = 0; i < nums.length; i += 1) {\n    const bu = target - nums[i]\n    if (daGap.has(bu)) return [daGap.get(bu), i]\n    daGap.set(nums[i], i)\n  }\n  return []\n}\n```\n\nĐiểm tinh tế: **tra cứu trước rồi mới ghi vào bảng**. Làm ngược lại thì với `nums = [3, 3]` và `target = 6`, phần tử đầu sẽ tự khớp với chính nó.\n\nVì luôn tra trước khi ghi, chỉ số tìm được luôn nhỏ hơn `i` — nên `[daGap.get(bu), i]` đã tăng dần sẵn, không cần sắp xếp.\n\n| | Hai vòng lặp | Bảng băm |\n|---|---|---|\n| Thời gian | `O(n²)` | `O(n)` |\n| Bộ nhớ | `O(1)` | `O(n)` |\n\nVới `n = 10⁴`, hai vòng lặp là 100 triệu phép so sánh; bảng băm là 10 nghìn. Đây chính là đánh đổi bộ nhớ lấy thời gian nói ở [[danh-doi-bo-nho-va-thoi-gian]].",
+      "loiGiai": "Ý tưởng: đổi câu hỏi \"có cặp nào cộng lại bằng target không\" thành \"số bù của phần tử này đã từng xuất hiện chưa\". Câu hỏi thứ hai là một phép **tra cứu**, và tra cứu là việc của bảng băm.\n\n```js\nfunction haiTong(nums, target) {\n  const daGap = new Map() // giá trị -> chỉ số\n\n  for (let i = 0; i < nums.length; i += 1) {\n    const bu = target - nums[i]\n    if (daGap.has(bu)) return [daGap.get(bu), i]\n    daGap.set(nums[i], i)\n  }\n  return []\n}\n```\n\nĐiểm tinh tế: **tra cứu trước rồi mới ghi vào bảng**. Làm ngược lại thì với `nums = [3, 3]` và `target = 6`, phần tử đầu sẽ tự khớp với chính nó.\n\nVì luôn tra trước khi ghi, chỉ số tìm được luôn nhỏ hơn `i` — nên `[daGap.get(bu), i]` đã tăng dần sẵn, không cần sắp xếp.\n\nCùng ý tưởng bằng Python — `enumerate` cho cả chỉ số lẫn giá trị, nên không cần `range(len(...))`:\n\n```py\ndef hai_tong(nums, target):\n    da_gap = {}  # giá trị -> chỉ số\n\n    for i, x in enumerate(nums):\n        bu = target - x\n        if bu in da_gap:\n            return [da_gap[bu], i]\n        da_gap[x] = i\n    return []\n```\n\n| | Hai vòng lặp | Bảng băm |\n|---|---|---|\n| Thời gian | `O(n²)` | `O(n)` |\n| Bộ nhớ | `O(1)` | `O(n)` |\n\nVới `n = 10⁴`, hai vòng lặp là 100 triệu phép so sánh; bảng băm là 10 nghìn. Đây chính là đánh đổi bộ nhớ lấy thời gian nói ở [[danh-doi-bo-nho-va-thoi-gian]].",
       "order": 1
     },
     {
@@ -3192,6 +3352,7 @@
         "hai-con-tro"
       ],
       "ham": "daoNguoc",
+      "hamPy": "dao_nguoc",
       "soSanh": "chinh-xac",
       "deBai": "Cho một mảng ký tự `s`, đảo ngược thứ tự các phần tử và trả về chính mảng đó.\n\nYêu cầu: dùng bộ nhớ phụ `O(1)` — nghĩa là **không** tạo mảng mới, phải hoán đổi ngay trên mảng đầu vào.\n\n```\n[\"h\", \"e\", \"l\", \"l\", \"o\"]  →  [\"o\", \"l\", \"l\", \"e\", \"h\"]\n```\n\n> Đây là bài để làm quen với kỹ thuật **hai con trỏ**: một chạy từ đầu, một chạy từ cuối, gặp nhau ở giữa. `s.reverse()` giải xong trong một dòng nhưng bạn sẽ không học được gì — hãy viết vòng lặp.",
       "starter": {
@@ -3284,7 +3445,7 @@
           "mo_ta": "số lẻ phần tử"
         }
       ],
-      "loiGiai": "```js\nfunction daoNguoc(s) {\n  let trai = 0\n  let phai = s.length - 1\n\n  while (trai < phai) {\n    ;[s[trai], s[phai]] = [s[phai], s[trai]]\n    trai += 1\n    phai -= 1\n  }\n  return s\n}\n```\n\nĐiều kiện dừng là `trai < phai`, không phải `trai <= phai`. Với số lẻ phần tử, phần tử giữa không cần đổi chỗ với chính nó; viết `<=` thì nó vẫn chạy đúng nhưng thừa một lượt.\n\nVòng lặp chạy `n/2` lần ⇒ `O(n)` thời gian, `O(1)` bộ nhớ. Không có cách nào nhanh hơn: muốn đảo thì phải chạm vào mọi phần tử ít nhất một lần.\n\nHai con trỏ chạy ngược chiều là mẫu dùng lại được cho: kiểm tra chuỗi đối xứng, tìm cặp có tổng cho trước trong **mảng đã sắp xếp**, và bài chứa nước.",
+      "loiGiai": "```js\nfunction daoNguoc(s) {\n  let trai = 0\n  let phai = s.length - 1\n\n  while (trai < phai) {\n    ;[s[trai], s[phai]] = [s[phai], s[trai]]\n    trai += 1\n    phai -= 1\n  }\n  return s\n}\n```\n\n```py\ndef dao_nguoc(s):\n    trai, phai = 0, len(s) - 1\n\n    while trai < phai:\n        s[trai], s[phai] = s[phai], s[trai]\n        trai += 1\n        phai -= 1\n    return s\n```\n\nĐiều kiện dừng là `trai < phai`, không phải `trai <= phai`. Với số lẻ phần tử, phần tử giữa không cần đổi chỗ với chính nó; viết `<=` thì nó vẫn chạy đúng nhưng thừa một lượt.\n\nVòng lặp chạy `n/2` lần ⇒ `O(n)` thời gian, `O(1)` bộ nhớ. Không có cách nào nhanh hơn: muốn đảo thì phải chạm vào mọi phần tử ít nhất một lần.\n\nHai con trỏ chạy ngược chiều là mẫu dùng lại được cho: kiểm tra chuỗi đối xứng, tìm cặp có tổng cho trước trong **mảng đã sắp xếp**, và bài chứa nước.",
       "order": 2
     },
     {
@@ -3298,6 +3459,7 @@
         "bang-bam"
       ],
       "ham": "doDaiKhongLap",
+      "hamPy": "do_dai_khong_lap",
       "baiHoc": "bang-bam",
       "soSanh": "chinh-xac",
       "deBai": "Cho một chuỗi `s`, tìm **độ dài** của chuỗi con dài nhất không chứa ký tự lặp lại.\n\nChuỗi con phải **liên tiếp** — `\"abc\"` là chuỗi con của `\"abcde\"`, còn `\"ace\"` thì không.\n\n```\n\"abcabcbb\"  →  3   (\"abc\")\n\"bbbbb\"     →  1   (\"b\")\n\"pwwkew\"    →  3   (\"wke\", không phải \"pwke\" vì nó không liên tiếp)\n```\n\n**Ràng buộc:** `0 ≤ s.length ≤ 5·10⁴`.\n\n> Cách vét cạn là thử mọi chuỗi con — `O(n²)` hoặc tệ hơn. Kỹ thuật đúng là **cửa sổ trượt**: giữ một cửa sổ luôn hợp lệ, mở rộng bên phải, và khi gặp ký tự trùng thì kéo mép trái lên.",
@@ -3360,7 +3522,7 @@
           "an": true
         }
       ],
-      "loiGiai": "Giữ hai chỉ số `trai` và `phai` làm hai mép cửa sổ, và một bảng ghi lần cuối mỗi ký tự xuất hiện ở đâu.\n\n```js\nfunction doDaiKhongLap(s) {\n  const lanCuoi = new Map() // ký tự -> chỉ số gần nhất\n  let trai = 0\n  let daiNhat = 0\n\n  for (let phai = 0; phai < s.length; phai += 1) {\n    const c = s[phai]\n    // Chỉ kéo mép trái khi ký tự trùng nằm TRONG cửa sổ hiện tại.\n    if (lanCuoi.has(c) && lanCuoi.get(c) >= trai) {\n      trai = lanCuoi.get(c) + 1\n    }\n    lanCuoi.set(c, phai)\n    daiNhat = Math.max(daiNhat, phai - trai + 1)\n  }\n  return daiNhat\n}\n```\n\nCả bài nằm ở điều kiện `lanCuoi.get(c) >= trai`. Bỏ nó đi thì `\"abba\"` cho kết quả sai: khi `phai` tới `'a'` cuối, bảng nói `'a'` từng ở chỉ số 0, và mép trái bị **kéo lùi** về 1 trong khi nó đã ở 2. Mép trái chỉ được tiến, không bao giờ lùi — đó là bất biến của kỹ thuật cửa sổ trượt.\n\n`O(n)` thời gian: mỗi mép đi qua chuỗi đúng một lần. Bộ nhớ `O(k)` với `k` là số ký tự phân biệt.",
+      "loiGiai": "Giữ hai chỉ số `trai` và `phai` làm hai mép cửa sổ, và một bảng ghi lần cuối mỗi ký tự xuất hiện ở đâu.\n\n```js\nfunction doDaiKhongLap(s) {\n  const lanCuoi = new Map() // ký tự -> chỉ số gần nhất\n  let trai = 0\n  let daiNhat = 0\n\n  for (let phai = 0; phai < s.length; phai += 1) {\n    const c = s[phai]\n    // Chỉ kéo mép trái khi ký tự trùng nằm TRONG cửa sổ hiện tại.\n    if (lanCuoi.has(c) && lanCuoi.get(c) >= trai) {\n      trai = lanCuoi.get(c) + 1\n    }\n    lanCuoi.set(c, phai)\n    daiNhat = Math.max(daiNhat, phai - trai + 1)\n  }\n  return daiNhat\n}\n```\n\n```py\ndef do_dai_khong_lap(s):\n    lan_cuoi = {}  # ký tự -> chỉ số gần nhất\n    trai = 0\n    dai_nhat = 0\n\n    for phai, c in enumerate(s):\n        # Chỉ kéo mép trái khi ký tự trùng nằm TRONG cửa sổ hiện tại.\n        if c in lan_cuoi and lan_cuoi[c] >= trai:\n            trai = lan_cuoi[c] + 1\n        lan_cuoi[c] = phai\n        dai_nhat = max(dai_nhat, phai - trai + 1)\n    return dai_nhat\n```\n\nCả bài nằm ở điều kiện `lanCuoi.get(c) >= trai`. Bỏ nó đi thì `\"abba\"` cho kết quả sai: khi `phai` tới `'a'` cuối, bảng nói `'a'` từng ở chỉ số 0, và mép trái bị **kéo lùi** về 1 trong khi nó đã ở 2. Mép trái chỉ được tiến, không bao giờ lùi — đó là bất biến của kỹ thuật cửa sổ trượt.\n\n`O(n)` thời gian: mỗi mép đi qua chuỗi đúng một lần. Bộ nhớ `O(k)` với `k` là số ký tự phân biệt.",
       "order": 3
     },
     {
@@ -3373,6 +3535,7 @@
         "sap-xep"
       ],
       "ham": "gopKhoang",
+      "hamPy": "gop_khoang",
       "soSanh": "chinh-xac",
       "deBai": "Cho danh sách các khoảng `[[bat_dau, ket_thuc], ...]`, gộp mọi khoảng chồng lấn và trả về danh sách khoảng không chồng nhau, **sắp xếp tăng dần theo điểm bắt đầu**.\n\nHai khoảng chạm nhau ở đúng một điểm cũng được coi là chồng: `[1,4]` và `[4,5]` gộp thành `[1,5]`.\n\n```\n[[1,3], [2,6], [8,10], [15,18]]  →  [[1,6], [8,10], [15,18]]\n[[1,4], [4,5]]                   →  [[1,5]]\n```\n\nĐầu vào **không** bảo đảm đã sắp xếp.\n\n> Bài này là ví dụ đẹp của \"sắp xếp trước thì phần còn lại thành hiển nhiên\". Chưa sắp xếp thì phải so mọi khoảng với mọi khoảng; sắp xếp rồi thì chỉ cần so với khoảng liền trước.",
       "starter": {
@@ -3541,7 +3704,7 @@
           "an": true
         }
       ],
-      "loiGiai": "```js\nfunction gopKhoang(khoang) {\n  if (khoang.length === 0) return []\n\n  // Sao chép trước khi sắp xếp: sửa mảng của người gọi là tác dụng phụ không ai mong đợi.\n  const daSap = [...khoang].sort((a, b) => a[0] - b[0])\n  const ketQua = [daSap[0]]\n\n  for (const [bat, ket] of daSap.slice(1)) {\n    const cuoi = ketQua[ketQua.length - 1]\n    if (bat <= cuoi[1]) {\n      // Chồng nhau: nới mép phải. Phải lấy max — khoảng mới có thể nằm TRỌN bên trong.\n      cuoi[1] = Math.max(cuoi[1], ket)\n    } else {\n      ketQua.push([bat, ket])\n    }\n  }\n  return ketQua\n}\n```\n\nHai chỗ dễ sai:\n\n1. **`Math.max` ở bước nới mép phải.** Gán thẳng `cuoi[1] = ket` thì `[[1,4], [2,3]]` cho ra `[1,3]` — khoảng bị co lại.\n2. **`sort((a, b) => a[0] - b[0])`, không phải `sort()`.** `sort()` mặc định so sánh theo chuỗi, nên `[10, ...]` đứng trước `[9, ...]`.\n\nSắp xếp là `O(n log n)`, một lượt quét là `O(n)` ⇒ tổng `O(n log n)`, và đây là chặn dưới: không sắp xếp thì không biết khoảng nào kề khoảng nào.",
+      "loiGiai": "```js\nfunction gopKhoang(khoang) {\n  if (khoang.length === 0) return []\n\n  // Sao chép trước khi sắp xếp: sửa mảng của người gọi là tác dụng phụ không ai mong đợi.\n  const daSap = [...khoang].sort((a, b) => a[0] - b[0])\n  const ketQua = [daSap[0]]\n\n  for (const [bat, ket] of daSap.slice(1)) {\n    const cuoi = ketQua[ketQua.length - 1]\n    if (bat <= cuoi[1]) {\n      // Chồng nhau: nới mép phải. Phải lấy max — khoảng mới có thể nằm TRỌN bên trong.\n      cuoi[1] = Math.max(cuoi[1], ket)\n    } else {\n      ketQua.push([bat, ket])\n    }\n  }\n  return ketQua\n}\n```\n\n```py\ndef gop_khoang(khoang):\n    if not khoang:\n        return []\n\n    da_sap = sorted(khoang, key=lambda k: k[0])\n    ket_qua = [list(da_sap[0])]\n\n    for bat, ket in da_sap[1:]:\n        cuoi = ket_qua[-1]\n        if bat <= cuoi[1]:\n            cuoi[1] = max(cuoi[1], ket)\n        else:\n            ket_qua.append([bat, ket])\n    return ket_qua\n```\n\n`sorted` trả về list mới nên không sửa dữ liệu của người gọi; `list(da_sap[0])` cũng là bản sao, nếu không thì dòng `cuoi[1] = ...` sẽ sửa thẳng vào khoảng đầu vào.\n\nHai chỗ dễ sai:\n\n1. **`Math.max` ở bước nới mép phải.** Gán thẳng `cuoi[1] = ket` thì `[[1,4], [2,3]]` cho ra `[1,3]` — khoảng bị co lại.\n2. **`sort((a, b) => a[0] - b[0])`, không phải `sort()`.** `sort()` mặc định so sánh theo chuỗi, nên `[10, ...]` đứng trước `[9, ...]`.\n\nSắp xếp là `O(n log n)`, một lượt quét là `O(n)` ⇒ tổng `O(n log n)`, và đây là chặn dưới: không sắp xếp thì không biết khoảng nào kề khoảng nào.",
       "order": 4
     },
     {
@@ -3554,6 +3717,7 @@
         "chuoi"
       ],
       "ham": "ngoacCanDoi",
+      "hamPy": "ngoac_can_doi",
       "baiHoc": "ngan-xep-hang-doi-cay-do-thi",
       "soSanh": "chinh-xac",
       "deBai": "Cho chuỗi `s` chỉ gồm các ký tự `()[]{}`, kiểm tra chuỗi có cân đối không.\n\nCân đối nghĩa là: mỗi ngoặc mở được đóng bằng đúng loại ngoặc của nó, và đóng theo **đúng thứ tự lồng nhau**.\n\n```\n\"()\"        →  true\n\"()[]{}\"    →  true\n\"(]\"        →  false   (sai loại)\n\"([)]\"      →  false   (sai thứ tự lồng)\n\"{[]}\"      →  true\n```\n\n> Đây là bài tập kinh điển của ngăn xếp, và cũng chính là cách trình biên dịch kiểm tra dấu ngoặc trong code của bạn.",
@@ -3629,8 +3793,756 @@
           "an": true
         }
       ],
-      "loiGiai": "```js\nconst CAP = { ')': '(', ']': '[', '}': '{' }\n\nfunction ngoacCanDoi(s) {\n  const ngan = []\n\n  for (const c of s) {\n    if (c === '(' || c === '[' || c === '{') {\n      ngan.push(c)\n    } else {\n      // Đóng mà ngăn xếp rỗng, hoặc cái trên cùng không phải bạn của nó ⇒ hỏng ngay.\n      if (ngan.pop() !== CAP[c]) return false\n    }\n  }\n  // Còn ngoặc chưa đóng thì cũng không cân đối — đây là dòng hay bị quên nhất.\n  return ngan.length === 0\n}\n```\n\nBa trường hợp sai và ba chỗ bắt chúng:\n\n| Sai kiểu | Ví dụ | Bắt ở đâu |\n|---|---|---|\n| Đóng khi chưa mở | `\")\"` | `ngan.pop()` ra `undefined` ≠ `'('` |\n| Đóng nhầm loại | `\"(]\"` | `pop()` ra `'('` ≠ `CAP[']']` |\n| Mở mà không đóng | `\"(\"` | `ngan.length === 0` ở cuối |\n\n`O(n)` thời gian, `O(n)` bộ nhớ cho ngăn xếp — trường hợp xấu nhất là chuỗi toàn ngoặc mở.\n\nVì sao phải là ngăn xếp chứ không phải bộ đếm: chỉ đếm số ngoặc mở/đóng thì `\"([)]\"` vẫn cân bằng về số lượng. Cái cần nhớ là **thứ tự**, và \"lấy ra cái vào sau cùng\" chính là định nghĩa của ngăn xếp — xem [[ngan-xep-hang-doi-cay-do-thi]].",
+      "loiGiai": "```js\nconst CAP = { ')': '(', ']': '[', '}': '{' }\n\nfunction ngoacCanDoi(s) {\n  const ngan = []\n\n  for (const c of s) {\n    if (c === '(' || c === '[' || c === '{') {\n      ngan.push(c)\n    } else {\n      // Đóng mà ngăn xếp rỗng, hoặc cái trên cùng không phải bạn của nó ⇒ hỏng ngay.\n      if (ngan.pop() !== CAP[c]) return false\n    }\n  }\n  // Còn ngoặc chưa đóng thì cũng không cân đối — đây là dòng hay bị quên nhất.\n  return ngan.length === 0\n}\n```\n\n```py\nCAP = {\")\": \"(\", \"]\": \"[\", \"}\": \"{\"}\n\ndef ngoac_can_doi(s):\n    ngan = []\n\n    for c in s:\n        if c in \"([{\":\n            ngan.append(c)\n        elif not ngan or ngan.pop() != CAP[c]:\n            return False\n    return not ngan\n```\n\nBản Python phải kiểm `not ngan` TRƯỚC khi `pop()`: khác JavaScript, `pop()` trên list rỗng ném `IndexError` chứ không trả về `None`.\n\nBa trường hợp sai và ba chỗ bắt chúng:\n\n| Sai kiểu | Ví dụ | Bắt ở đâu |\n|---|---|---|\n| Đóng khi chưa mở | `\")\"` | `ngan.pop()` ra `undefined` ≠ `'('` |\n| Đóng nhầm loại | `\"(]\"` | `pop()` ra `'('` ≠ `CAP[']']` |\n| Mở mà không đóng | `\"(\"` | `ngan.length === 0` ở cuối |\n\n`O(n)` thời gian, `O(n)` bộ nhớ cho ngăn xếp — trường hợp xấu nhất là chuỗi toàn ngoặc mở.\n\nVì sao phải là ngăn xếp chứ không phải bộ đếm: chỉ đếm số ngoặc mở/đóng thì `\"([)]\"` vẫn cân bằng về số lượng. Cái cần nhớ là **thứ tự**, và \"lấy ra cái vào sau cùng\" chính là định nghĩa của ngăn xếp — xem [[ngan-xep-hang-doi-cay-do-thi]].",
       "order": 5
+    },
+    {
+      "id": "bt-vi-tri-chen",
+      "slug": "vi-tri-chen",
+      "title": "Vị trí chèn trong mảng đã sắp xếp",
+      "doKho": "de",
+      "chuDe": [
+        "tim-kiem-nhi-phan",
+        "mang"
+      ],
+      "ham": "viTriChen",
+      "hamPy": "vi_tri_chen",
+      "baiHoc": "sap-xep-va-tim-kiem-nhi-phan",
+      "soSanh": "chinh-xac",
+      "deBai": "Cho mảng `nums` **đã sắp xếp tăng dần** (không có phần tử trùng) và một giá trị `target`. Trả về chỉ số của `target` nếu nó có trong mảng; nếu không, trả về chỉ số mà nó **sẽ được chèn vào** để mảng vẫn sắp xếp.\n\nYêu cầu: `O(log n)`.\n\n```\nnums = [1, 3, 5, 6], target = 5   →  2   (đã có, ở chỉ số 2)\nnums = [1, 3, 5, 6], target = 2   →  1   (chèn vào giữa 1 và 3)\nnums = [1, 3, 5, 6], target = 7   →  4   (chèn vào cuối)\n```\n\n> Đây là bài để rèn viết tìm kiếm nhị phân **không lỗi lệch một**. Chọn một khuôn mẫu (khoảng đóng hay nửa mở) và giữ nhất quán cả ba chi tiết của nó.",
+      "starter": {
+        "js": "function viTriChen(nums, target) {\n  // Viết lời giải ở đây\n}",
+        "py": "def vi_tri_chen(nums, target):\n    # Viết lời giải ở đây\n    pass"
+      },
+      "boTest": [
+        {
+          "vao": [
+            [
+              1,
+              3,
+              5,
+              6
+            ],
+            5
+          ],
+          "ra": 2
+        },
+        {
+          "vao": [
+            [
+              1,
+              3,
+              5,
+              6
+            ],
+            2
+          ],
+          "ra": 1
+        },
+        {
+          "vao": [
+            [
+              1,
+              3,
+              5,
+              6
+            ],
+            7
+          ],
+          "ra": 4,
+          "mo_ta": "chèn vào cuối"
+        },
+        {
+          "vao": [
+            [
+              1,
+              3,
+              5,
+              6
+            ],
+            0
+          ],
+          "ra": 0,
+          "mo_ta": "chèn vào đầu"
+        },
+        {
+          "vao": [
+            [],
+            5
+          ],
+          "ra": 0,
+          "mo_ta": "mảng rỗng"
+        },
+        {
+          "vao": [
+            [
+              1
+            ],
+            1
+          ],
+          "ra": 0,
+          "mo_ta": "một phần tử, khớp"
+        },
+        {
+          "vao": [
+            [
+              1
+            ],
+            0
+          ],
+          "ra": 0,
+          "mo_ta": "một phần tử, nhỏ hơn"
+        },
+        {
+          "vao": [
+            [
+              -5,
+              -2,
+              0,
+              3
+            ],
+            -3
+          ],
+          "ra": 1,
+          "mo_ta": "có số âm"
+        },
+        {
+          "vao": [
+            [
+              1,
+              3,
+              5,
+              6,
+              9,
+              12,
+              20,
+              33,
+              41
+            ],
+            34
+          ],
+          "ra": 8,
+          "an": true
+        }
+      ],
+      "loiGiai": "Dùng khuôn mẫu **nửa mở** `[trai, phai)` — nó trả lời được cả hai câu hỏi (tìm thấy và vị trí chèn) bằng cùng một đoạn code.\n\n```js\nfunction viTriChen(nums, target) {\n  let trai = 0\n  let phai = nums.length // nửa mở: phai KHÔNG phải chỉ số hợp lệ\n\n  while (trai < phai) {\n    const giua = trai + Math.floor((phai - trai) / 2)\n    // < chứ không phải <=: giữ lại giua làm ứng viên khi nums[giua] === target\n    if (nums[giua] < target) trai = giua + 1\n    else phai = giua\n  }\n  return trai\n}\n```\n\n```py\ndef vi_tri_chen(nums, target):\n    trai, phai = 0, len(nums)\n\n    while trai < phai:\n        giua = (trai + phai) // 2\n        if nums[giua] < target:\n            trai = giua + 1\n        else:\n            phai = giua\n    return trai\n```\n\nVì sao vòng lặp luôn kết thúc: mỗi lượt, khoảng `[trai, phai)` co lại ít nhất một đơn vị — nhánh trái đẩy `trai` vượt qua `giua`, nhánh phải kéo `phai` về đúng `giua` (mà `giua < phai` luôn đúng vì phép chia làm tròn xuống).\n\nKhi thoát vòng lặp, `trai === phai`, và bất biến của thuật toán bảo đảm mọi phần tử bên trái đều `< target`, mọi phần tử từ đó trở đi đều `≥ target`. Đó đúng là định nghĩa của vị trí chèn — nên trả `trai` là xong, không cần xét riêng trường hợp \"không tìm thấy\".\n\n`O(log n)` thời gian, `O(1)` bộ nhớ. Với `n = 10⁹` thì chỉ khoảng 30 bước.",
+      "order": 6
+    },
+    {
+      "id": "bt-leo-cau-thang",
+      "slug": "leo-cau-thang",
+      "title": "Leo cầu thang",
+      "doKho": "de",
+      "chuDe": [
+        "quy-hoach-dong",
+        "de-quy"
+      ],
+      "ham": "leoCauThang",
+      "hamPy": "leo_cau_thang",
+      "baiHoc": "quy-hoach-dong",
+      "soSanh": "chinh-xac",
+      "deBai": "Bạn đang ở chân một cầu thang có `n` bậc. Mỗi bước leo được **1 hoặc 2 bậc**. Có bao nhiêu cách khác nhau để lên tới đỉnh?\n\n```\nn = 2  →  2   (1+1, hoặc 2)\nn = 3  →  3   (1+1+1, 1+2, 2+1)\nn = 5  →  8\n```\n\n**Ràng buộc:** `1 ≤ n ≤ 45`.\n\n> Ràng buộc `n ≤ 45` là một gợi ý: đáp án lớn dần rất nhanh (đây là dãy Fibonacci), và đệ quy thuần sẽ mất vài giây ở `n = 45`. Hãy tìm cách không tính lại.",
+      "starter": {
+        "js": "function leoCauThang(n) {\n  // Viết lời giải ở đây\n}",
+        "py": "def leo_cau_thang(n):\n    # Viết lời giải ở đây\n    pass"
+      },
+      "boTest": [
+        {
+          "vao": [
+            1
+          ],
+          "ra": 1
+        },
+        {
+          "vao": [
+            2
+          ],
+          "ra": 2
+        },
+        {
+          "vao": [
+            3
+          ],
+          "ra": 3
+        },
+        {
+          "vao": [
+            5
+          ],
+          "ra": 8
+        },
+        {
+          "vao": [
+            10
+          ],
+          "ra": 89
+        },
+        {
+          "vao": [
+            30
+          ],
+          "ra": 1346269,
+          "mo_ta": "đệ quy thuần bắt đầu chậm ở đây"
+        },
+        {
+          "vao": [
+            45
+          ],
+          "ra": 1836311903,
+          "an": true
+        }
+      ],
+      "loiGiai": "Câu hỏi sinh ra lời giải: **ở bước cuối cùng, tôi có những lựa chọn nào?** Đúng hai — từ bậc `n-1` leo 1 bậc, hoặc từ bậc `n-2` leo 2 bậc. Hai nhóm cách này không giao nhau và phủ hết mọi khả năng, nên:\n\n```\ndp[n] = dp[n-1] + dp[n-2],  dp[1] = 1, dp[2] = 2\n```\n\nChỉ cần hai giá trị gần nhất nên không cần bảng — `O(1)` bộ nhớ:\n\n```js\nfunction leoCauThang(n) {\n  if (n <= 2) return n\n\n  let truoc = 1 // dp[1]\n  let hienTai = 2 // dp[2]\n  for (let i = 3; i <= n; i += 1) {\n    ;[truoc, hienTai] = [hienTai, truoc + hienTai]\n  }\n  return hienTai\n}\n```\n\n```py\ndef leo_cau_thang(n):\n    if n <= 2:\n        return n\n\n    truoc, hien_tai = 1, 2\n    for _ in range(3, n + 1):\n        truoc, hien_tai = hien_tai, truoc + hien_tai\n    return hien_tai\n```\n\n| Cách | Thời gian | Bộ nhớ | `n = 45` |\n|---|---|---|---|\n| Đệ quy thuần | `O(2ⁿ)` | `O(n)` ngăn xếp | vài giây |\n| Đệ quy + ghi nhớ | `O(n)` | `O(n)` | tức thì |\n| Lặp, hai biến | `O(n)` | `O(1)` | tức thì |\n\nĐây là bài quy hoạch động đơn giản nhất, và nó đáng làm kỹ vì cả ba bước — định nghĩa trạng thái, tìm truy hồi, nén bộ nhớ — đều hiện ra rõ ràng ở quy mô nhỏ. Bài tiếp theo cùng khuôn mẫu là [[tong-doan-lon-nhat]].",
+      "order": 7
+    },
+    {
+      "id": "bt-tong-doan-lon-nhat",
+      "slug": "tong-doan-lon-nhat",
+      "title": "Đoạn con có tổng lớn nhất",
+      "doKho": "trung-binh",
+      "chuDe": [
+        "quy-hoach-dong",
+        "mang"
+      ],
+      "ham": "tongDoanLonNhat",
+      "hamPy": "tong_doan_lon_nhat",
+      "baiHoc": "quy-hoach-dong",
+      "soSanh": "chinh-xac",
+      "deBai": "Cho mảng số nguyên `nums` (có thể có số âm), tìm **tổng lớn nhất** của một đoạn con liên tiếp không rỗng.\n\n```\n[-2, 1, -3, 4, -1, 2, 1, -5, 4]  →  6    (đoạn [4, -1, 2, 1])\n[1]                              →  1\n[-3, -1, -2]                     →  -1   (buộc phải chọn ít nhất một phần tử)\n```\n\n**Ràng buộc:** `1 ≤ nums.length ≤ 10⁵`. Yêu cầu `O(n)`.\n\n> Ca thứ ba là chỗ phần lớn lời giải sai: khởi tạo kết quả bằng `0` thì mảng toàn số âm sẽ cho ra `0` — một đoạn rỗng, mà đề không cho phép.",
+      "starter": {
+        "js": "function tongDoanLonNhat(nums) {\n  // Viết lời giải ở đây\n}",
+        "py": "def tong_doan_lon_nhat(nums):\n    # Viết lời giải ở đây\n    pass"
+      },
+      "boTest": [
+        {
+          "vao": [
+            [
+              -2,
+              1,
+              -3,
+              4,
+              -1,
+              2,
+              1,
+              -5,
+              4
+            ]
+          ],
+          "ra": 6
+        },
+        {
+          "vao": [
+            [
+              1
+            ]
+          ],
+          "ra": 1,
+          "mo_ta": "một phần tử"
+        },
+        {
+          "vao": [
+            [
+              -3,
+              -1,
+              -2
+            ]
+          ],
+          "ra": -1,
+          "mo_ta": "toàn số âm"
+        },
+        {
+          "vao": [
+            [
+              5,
+              4,
+              -1,
+              7,
+              8
+            ]
+          ],
+          "ra": 23,
+          "mo_ta": "gần như toàn dương"
+        },
+        {
+          "vao": [
+            [
+              -1
+            ]
+          ],
+          "ra": -1,
+          "mo_ta": "một phần tử âm"
+        },
+        {
+          "vao": [
+            [
+              -2,
+              -1
+            ]
+          ],
+          "ra": -1
+        },
+        {
+          "vao": [
+            [
+              8,
+              -19,
+              5,
+              -4,
+              20
+            ]
+          ],
+          "ra": 21,
+          "an": true
+        }
+      ],
+      "loiGiai": "Thuật toán Kadane. Định nghĩa trạng thái phải có cụm **\"kết thúc tại i\"**:\n\n```\ndp[i] = tổng lớn nhất của đoạn con KẾT THÚC TẠI i\ndp[i] = max(nums[i], dp[i-1] + nums[i])\nđáp án = max(dp)\n```\n\nTruy hồi đọc thành một câu: ở vị trí `i`, hoặc tôi nối tiếp đoạn trước đó, hoặc tôi vứt nó đi và bắt đầu lại từ đây. Vứt đi có lợi đúng khi `dp[i-1]` âm — mang theo một tổng âm chỉ làm kết quả nhỏ đi.\n\n```js\nfunction tongDoanLonNhat(nums) {\n  let tot = nums[0]\n  let hienTai = nums[0] // KHÔNG khởi tạo bằng 0: mảng toàn âm sẽ cho ra 0 sai\n\n  for (let i = 1; i < nums.length; i += 1) {\n    hienTai = Math.max(nums[i], hienTai + nums[i])\n    tot = Math.max(tot, hienTai)\n  }\n  return tot\n}\n```\n\n```py\ndef tong_doan_lon_nhat(nums):\n    tot = hien_tai = nums[0]\n\n    for x in nums[1:]:\n        hien_tai = max(x, hien_tai + x)\n        tot = max(tot, hien_tai)\n    return tot\n```\n\nVì sao phải là hai biến chứ không phải một: `hienTai` là đoạn đang mở, `tot` là kỷ lục đã lập. Một đoạn tốt có thể xuất hiện ở giữa mảng rồi bị các số âm phía sau kéo xuống — không giữ `tot` riêng thì kỷ lục đó mất.\n\n`O(n)` thời gian, `O(1)` bộ nhớ, một lượt duyệt. Đây là dạng nén của bảng `dp` — cùng ý tưởng với [[leo-cau-thang]], chỉ khác ở chỗ truy hồi có một phép `max` thay vì phép cộng.",
+      "order": 8
+    },
+    {
+      "id": "bt-sinh-tap-con",
+      "slug": "sinh-tap-con",
+      "title": "Sinh mọi tập con",
+      "doKho": "trung-binh",
+      "chuDe": [
+        "quay-lui",
+        "de-quy",
+        "mang"
+      ],
+      "ham": "tapCon",
+      "hamPy": "tap_con",
+      "baiHoc": "de-quy-va-quay-lui",
+      "soSanh": "tap-hop",
+      "deBai": "Cho mảng `nums` gồm các số **phân biệt**, trả về **mọi tập con** của nó (tập lũy thừa).\n\nThứ tự các tập con và thứ tự phần tử trong mỗi tập **không quan trọng** — bộ chấm so sánh theo tập hợp.\n\n```\n[1, 2, 3]  →  [[], [1], [2], [3], [1,2], [1,3], [2,3], [1,2,3]]\n[]         →  [[]]\n```\n\n**Ràng buộc:** `0 ≤ nums.length ≤ 10`.\n\n> Ràng buộc `n ≤ 10` nói thẳng rằng lời giải mũ là chấp nhận được — có `2ⁿ` tập con nên không thể nhanh hơn. Đừng cố tối ưu; hãy viết cho đúng và sạch.",
+      "starter": {
+        "js": "function tapCon(nums) {\n  // Viết lời giải ở đây\n}",
+        "py": "def tap_con(nums):\n    # Viết lời giải ở đây\n    pass"
+      },
+      "boTest": [
+        {
+          "vao": [
+            [
+              1,
+              2,
+              3
+            ]
+          ],
+          "ra": [
+            [],
+            [
+              1
+            ],
+            [
+              2
+            ],
+            [
+              3
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              1,
+              3
+            ],
+            [
+              2,
+              3
+            ],
+            [
+              1,
+              2,
+              3
+            ]
+          ]
+        },
+        {
+          "vao": [
+            []
+          ],
+          "ra": [
+            []
+          ],
+          "mo_ta": "mảng rỗng có đúng một tập con"
+        },
+        {
+          "vao": [
+            [
+              0
+            ]
+          ],
+          "ra": [
+            [],
+            [
+              0
+            ]
+          ],
+          "mo_ta": "một phần tử"
+        },
+        {
+          "vao": [
+            [
+              1,
+              2
+            ]
+          ],
+          "ra": [
+            [],
+            [
+              1
+            ],
+            [
+              2
+            ],
+            [
+              1,
+              2
+            ]
+          ]
+        },
+        {
+          "vao": [
+            [
+              9,
+              0,
+              3,
+              5,
+              7
+            ]
+          ],
+          "ra": [
+            [],
+            [
+              9
+            ],
+            [
+              0
+            ],
+            [
+              3
+            ],
+            [
+              5
+            ],
+            [
+              7
+            ],
+            [
+              9,
+              0
+            ],
+            [
+              9,
+              3
+            ],
+            [
+              9,
+              5
+            ],
+            [
+              9,
+              7
+            ],
+            [
+              0,
+              3
+            ],
+            [
+              0,
+              5
+            ],
+            [
+              0,
+              7
+            ],
+            [
+              3,
+              5
+            ],
+            [
+              3,
+              7
+            ],
+            [
+              5,
+              7
+            ],
+            [
+              9,
+              0,
+              3
+            ],
+            [
+              9,
+              0,
+              5
+            ],
+            [
+              9,
+              0,
+              7
+            ],
+            [
+              9,
+              3,
+              5
+            ],
+            [
+              9,
+              3,
+              7
+            ],
+            [
+              9,
+              5,
+              7
+            ],
+            [
+              0,
+              3,
+              5
+            ],
+            [
+              0,
+              3,
+              7
+            ],
+            [
+              0,
+              5,
+              7
+            ],
+            [
+              3,
+              5,
+              7
+            ],
+            [
+              9,
+              0,
+              3,
+              5
+            ],
+            [
+              9,
+              0,
+              3,
+              7
+            ],
+            [
+              9,
+              0,
+              5,
+              7
+            ],
+            [
+              9,
+              3,
+              5,
+              7
+            ],
+            [
+              0,
+              3,
+              5,
+              7
+            ],
+            [
+              9,
+              0,
+              3,
+              5,
+              7
+            ]
+          ],
+          "an": true
+        }
+      ],
+      "loiGiai": "Khuôn mẫu quay lui: ở mỗi phần tử có đúng hai lựa chọn — lấy hoặc không lấy.\n\n```js\nfunction tapCon(nums) {\n  const ketQua = []\n  const hienTai = []\n\n  function lui(batDau) {\n    // Ghi nhận ở MỌI nút, không chỉ ở lá: mỗi trạng thái của `hienTai` là một tập con.\n    ketQua.push([...hienTai]) // sao chép — nếu không, mọi phần tử trỏ chung một mảng\n\n    for (let i = batDau; i < nums.length; i += 1) {\n      hienTai.push(nums[i]) // chọn\n      lui(i + 1) // đi tiếp, chỉ xét các phần tử PHÍA SAU\n      hienTai.pop() // bỏ chọn\n    }\n  }\n\n  lui(0)\n  return ketQua\n}\n```\n\n```py\ndef tap_con(nums):\n    ket_qua = []\n    hien_tai = []\n\n    def lui(bat_dau):\n        ket_qua.append(list(hien_tai))  # list(...) là bản sao, giống [...hienTai]\n\n        for i in range(bat_dau, len(nums)):\n            hien_tai.append(nums[i])\n            lui(i + 1)\n            hien_tai.pop()\n\n    lui(0)\n    return ket_qua\n```\n\nHai chi tiết quyết định tính đúng:\n\n**`lui(i + 1)` chứ không phải `lui(batDau + 1)`.** Tham số `batDau` giữ cho mỗi phần tử chỉ được xét một lần ở mỗi nhánh — nhờ vậy `[1,2]` và `[2,1]` không cùng xuất hiện. Viết `batDau + 1` sẽ sinh ra tập con lặp.\n\n**Ghi nhận ở mọi nút.** Khác bài sinh hoán vị (chỉ ghi ở lá khi đã đủ độ dài), mọi trạng thái trung gian ở đây đều là một tập con hợp lệ.\n\nCó `2ⁿ` tập con, mỗi cái tốn `O(n)` để sao chép ⇒ `O(n · 2ⁿ)`. Với `n = 10` là khoảng 10.000 thao tác — tức thì.\n\nCách thứ hai, không đệ quy, đáng biết vì nó ngắn đến bất ngờ: mỗi số từ `0` tới `2ⁿ - 1` là một mặt nạ bit, bit thứ `i` bật nghĩa là lấy `nums[i]`.",
+      "order": 9
+    },
+    {
+      "id": "bt-dem-dao",
+      "slug": "dem-dao",
+      "title": "Đếm số hòn đảo",
+      "doKho": "kho",
+      "chuDe": [
+        "do-thi",
+        "dfs",
+        "mang"
+      ],
+      "ham": "demDao",
+      "hamPy": "dem_dao",
+      "baiHoc": "duyet-do-thi-bfs-va-dfs",
+      "soSanh": "chinh-xac",
+      "deBai": "Cho lưới hai chiều gồm `1` (đất) và `0` (nước), đếm số **hòn đảo**.\n\nMột hòn đảo là nhóm ô đất nối nhau theo **bốn hướng** (trên, dưới, trái, phải — không tính chéo). Rìa lưới coi như bao quanh bởi nước.\n\n```\n[[1,1,0,0],        [[1,1,0,0],\n [1,1,0,0],   → 1   [0,0,1,0],   → 3\n [0,0,1,0]]         [0,0,0,1]]\n```\n\n**Ràng buộc:** lưới tối đa 300×300.\n\n> Đây là bài đồ thị mà đề không dùng chữ \"đồ thị\": mỗi ô là một đỉnh, mỗi cặp ô kề nhau là một cạnh. Đếm số hòn đảo chính là đếm số **thành phần liên thông**.",
+      "starter": {
+        "js": "function demDao(luoi) {\n  // Viết lời giải ở đây\n}",
+        "py": "def dem_dao(luoi):\n    # Viết lời giải ở đây\n    pass"
+      },
+      "boTest": [
+        {
+          "vao": [
+            [
+              [
+                1,
+                1,
+                0,
+                0
+              ],
+              [
+                1,
+                1,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                1,
+                0
+              ]
+            ]
+          ],
+          "ra": 2
+        },
+        {
+          "vao": [
+            [
+              [
+                1,
+                1,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                1,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                1
+              ]
+            ]
+          ],
+          "ra": 3
+        },
+        {
+          "vao": [
+            [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          ],
+          "ra": 0,
+          "mo_ta": "toàn nước"
+        },
+        {
+          "vao": [
+            [
+              [
+                1,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ]
+          ],
+          "ra": 1,
+          "mo_ta": "một đảo phủ kín"
+        },
+        {
+          "vao": [
+            []
+          ],
+          "ra": 0,
+          "mo_ta": "lưới rỗng"
+        },
+        {
+          "vao": [
+            [
+              [
+                1
+              ]
+            ]
+          ],
+          "ra": 1,
+          "mo_ta": "một ô đất"
+        },
+        {
+          "vao": [
+            [
+              [
+                1,
+                0,
+                1
+              ],
+              [
+                0,
+                1,
+                0
+              ],
+              [
+                1,
+                0,
+                1
+              ]
+            ]
+          ],
+          "ra": 5,
+          "mo_ta": "chéo KHÔNG tính là nối"
+        },
+        {
+          "vao": [
+            [
+              [
+                1,
+                1,
+                1,
+                1,
+                0
+              ],
+              [
+                1,
+                1,
+                0,
+                1,
+                0
+              ],
+              [
+                1,
+                1,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                0,
+                1
+              ]
+            ]
+          ],
+          "ra": 2,
+          "an": true
+        }
+      ],
+      "loiGiai": "Quét cả lưới. Gặp một ô đất chưa thăm thì tăng bộ đếm lên một, rồi **nhấn chìm cả hòn đảo đó** bằng DFS để nó không bị đếm lại.\n\n```js\nconst HUONG = [\n  [-1, 0],\n  [1, 0],\n  [0, -1],\n  [0, 1],\n]\n\nfunction demDao(luoi) {\n  if (luoi.length === 0) return 0\n  const cao = luoi.length\n  const rong = luoi[0].length\n  let dem = 0\n\n  function nhanChim(r, c) {\n    // Gộp kiểm biên và kiểm ô nước vào một câu: tách ra là mời gọi lỗi thiếu nhánh.\n    if (r < 0 || r >= cao || c < 0 || c >= rong || luoi[r][c] !== 1) return\n    luoi[r][c] = 0 // đánh dấu đã thăm ngay trên lưới\n    for (const [dr, dc] of HUONG) nhanChim(r + dr, c + dc)\n  }\n\n  for (let r = 0; r < cao; r += 1) {\n    for (let c = 0; c < rong; c += 1) {\n      if (luoi[r][c] === 1) {\n        dem += 1\n        nhanChim(r, c)\n      }\n    }\n  }\n  return dem\n}\n```\n\n```py\nHUONG = ((-1, 0), (1, 0), (0, -1), (0, 1))\n\ndef dem_dao(luoi):\n    if not luoi:\n        return 0\n    cao, rong = len(luoi), len(luoi[0])\n    dem = 0\n\n    def nhan_chim(r, c):\n        # Lưới 300x300 có thể sâu tới 90.000 tầng đệ quy — vượt giới hạn mặc định của\n        # Python. Dùng ngăn xếp tường minh thay vì đệ quy.\n        ngan = [(r, c)]\n        while ngan:\n            y, x = ngan.pop()\n            if y < 0 or y >= cao or x < 0 or x >= rong or luoi[y][x] != 1:\n                continue\n            luoi[y][x] = 0\n            for dy, dx in HUONG:\n                ngan.append((y + dy, x + dx))\n\n    for r in range(cao):\n        for c in range(rong):\n            if luoi[r][c] == 1:\n                dem += 1\n                nhan_chim(r, c)\n    return dem\n```\n\nBa điểm đáng chú ý:\n\n**Đánh dấu bằng cách sửa thẳng lưới** tiết kiệm `O(cao × rong)` bộ nhớ cho tập `daTham`. Cái giá là **phá dữ liệu đầu vào** — chấp nhận được ở bài tập, nhưng trong code thật phải sao chép lưới hoặc dùng tập riêng.\n\n**Bản Python dùng ngăn xếp tường minh.** Giới hạn đệ quy mặc định của Python là 1000; một hòn đảo phủ kín lưới 300×300 sẽ vượt xa. JavaScript chịu được sâu hơn nhưng cũng có giới hạn — với lưới lớn hơn nữa thì bản JS cũng nên đổi sang ngăn xếp.\n\n**Độ phức tạp `O(cao × rong)`.** Mỗi ô được thăm nhiều nhất hai lần: một lần bởi vòng quét ngoài, một lần bởi `nhanChim`. Vòng lặp lồng nhau ở đây *không* làm nó thành bậc hai — nhìn tổng số lần chạm vào ô, không nhìn số vòng lặp.\n\nĐổi DFS thành BFS (hàng đợi thay ngăn xếp) cho cùng kết quả: bài này chỉ hỏi *có nối nhau không*, không hỏi khoảng cách — nên cách duyệt không quan trọng.",
+      "order": 10
     }
   ]
 }

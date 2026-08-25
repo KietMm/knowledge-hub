@@ -152,3 +152,17 @@ export function tachBaiTap(body: string): BaiTapDaTach {
     loiGiai,
   }
 }
+
+/**
+ * Tên hàm phía Python, suy ra từ tên hàm JavaScript: `haiTong` -> `hai_tong`.
+ *
+ * Vì sao suy ra chứ không bắt khai hai lần: hai tên luôn là cùng một cái tên viết theo
+ * hai quy ước, nên khai tay là mở đường cho chúng lệch nhau. File nào cần tên khác quy
+ * ước thì khai `ham_py` trong frontmatter để ghi đè.
+ */
+export function tenHamPython(hamJs: string): string {
+  return hamJs
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .toLowerCase()
+}

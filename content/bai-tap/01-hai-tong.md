@@ -66,6 +66,20 @@ function haiTong(nums, target) {
 
 Vì luôn tra trước khi ghi, chỉ số tìm được luôn nhỏ hơn `i` — nên `[daGap.get(bu), i]` đã tăng dần sẵn, không cần sắp xếp.
 
+Cùng ý tưởng bằng Python — `enumerate` cho cả chỉ số lẫn giá trị, nên không cần `range(len(...))`:
+
+```py
+def hai_tong(nums, target):
+    da_gap = {}  # giá trị -> chỉ số
+
+    for i, x in enumerate(nums):
+        bu = target - x
+        if bu in da_gap:
+            return [da_gap[bu], i]
+        da_gap[x] = i
+    return []
+```
+
 | | Hai vòng lặp | Bảng băm |
 |---|---|---|
 | Thời gian | `O(n²)` | `O(n)` |

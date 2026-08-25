@@ -7,6 +7,7 @@ import { DoKhoBadge } from '@/components/exercise/DoKhoBadge'
 import { NoteContent } from '@/components/notes/NoteContent'
 import * as exercisesRepo from '@/lib/db/exercises.repo'
 import { nhanTag } from '@/lib/tag-label'
+import { buildDichLink } from '@/lib/db/link-index'
 import * as notesRepo from '@/lib/db/notes.repo'
 import { renderMarkdown } from '@/lib/markdown'
 
@@ -24,13 +25,12 @@ export default async function ExercisePage({ params }: { params: Params }) {
   const bt = await exercisesRepo.findBySlug(slug)
   if (bt === null) notFound()
 
-  const allNotes = await notesRepo.listAll()
-  const titles = new Map(allNotes.map((n) => [n.slug, n.title]))
+  const dich = await buildDichLink()
   const [de, loiGiai] = await Promise.all([
-    renderMarkdown(bt.deBai, titles),
-    bt.loiGiai === '' ? Promise.resolve(null) : renderMarkdown(bt.loiGiai, titles),
+    renderMarkdown(bt.deBai, dich),
+    bt.loiGiai === '' ? Promise.resolve(null) : renderMarkdown(bt.loiGiai, dich),
   ])
-  const baiHoc = bt.baiHoc === undefined ? null : (titles.get(bt.baiHoc) ?? null)
+  const baiHoc = bt.baiHoc === undefined ? null : (dich.get(bt.baiHoc)?.tieuDe ?? null)
 
   return (
     <article className="mx-auto max-w-[78ch] space-y-6">
@@ -57,6 +57,7 @@ export default async function ExercisePage({ params }: { params: Params }) {
       <ExerciseRunner
         slug={bt.slug}
         ham={bt.ham}
+        hamPy={bt.hamPy}
         starter={bt.starter}
         boTest={bt.boTest}
         soSanh={bt.soSanh}

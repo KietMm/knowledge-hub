@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import { parseFrontmatter } from '../src/lib/frontmatter'
-import { tachBaiTap } from '../src/lib/exercise/parse'
+import { tachBaiTap, tenHamPython } from '../src/lib/exercise/parse'
 import {
   CategorySchema,
   NoteLevelSchema,
@@ -69,6 +69,7 @@ const ExerciseFrontmatterSchema = z.object({
   do_kho: z.enum(['de', 'trung-binh', 'kho']),
   chu_de: z.array(z.string().trim().min(1)).min(1),
   ham: z.string().trim().min(1, 'Phải khai tên hàm người học cần viết'),
+  ham_py: z.string().trim().min(1).optional(),
   bai_hoc: SlugSchema.optional(),
   so_sanh: KieuSoSanhSchema.optional(),
 })
@@ -150,6 +151,7 @@ function buildExercises(): Exercise[] {
         doKho: parsed.data.do_kho,
         chuDe: parsed.data.chu_de,
         ham: parsed.data.ham,
+        hamPy: parsed.data.ham_py ?? tenHamPython(parsed.data.ham),
         ...(parsed.data.bai_hoc === undefined ? {} : { baiHoc: parsed.data.bai_hoc }),
         soSanh: parsed.data.so_sanh ?? 'chinh-xac',
         deBai: tach.deBai,
@@ -231,36 +233,33 @@ function build(): { categories: Category[]; topics: Topic[]; notes: Note[]; exer
 
   // Liên kết chéo [[slug]] phải trỏ tới bài có thật. Kiểm tra ở đây (sau khi đã đọc hết
   // giáo trình) vì lúc đọc từng file thì chưa biết bài về sau có slug gì.
-  const slugCoThat = new Set(notes.map((n) => n.slug))
+  const exercises = buildExercises()
+
+  // Đích hợp lệ của `[[...]]` gồm CẢ bài học lẫn bài tập: một bài học giới thiệu kỹ thuật
+  // rồi trỏ sang bài tập luyện nó là liên kết tự nhiên nhất trong giáo trình này.
+  const slugBaiHoc = new Set(notes.map((n) => n.slug))
+  const slugCoThat = new Set([...slugBaiHoc, ...exercises.map((bt) => bt.slug)])
+
   const linkSai: string[] = []
-  for (const note of notes) {
-    for (const match of note.content.matchAll(/\[\[([a-z0-9-]+)\]\]/g)) {
+  const kiemLink = (nguon: string, van: string) => {
+    for (const match of van.matchAll(/\[\[([a-z0-9-]+)\]\]/g)) {
       const dich = match[1]
       if (dich !== undefined && !slugCoThat.has(dich)) {
-        linkSai.push(`  - ${note.slug} trỏ tới "${dich}" (không có bài nào mang slug này)`)
+        linkSai.push(`  - ${nguon} trỏ tới "${dich}" (không có bài học hay bài tập nào mang slug này)`)
       }
     }
   }
+  for (const note of notes) kiemLink(note.slug, note.content)
+  for (const bt of exercises) kiemLink(`bài tập ${bt.slug}`, `${bt.deBai}\n${bt.loiGiai}`)
   if (linkSai.length > 0) {
     throw new Error(`Liên kết chéo [[...]] trỏ sai:\n${linkSai.join('\n')}`)
   }
 
-  const exercises = buildExercises()
-
-  // `bai_hoc` phải trỏ tới bài có thật: danh sách "bài tập luyện phần này" ở cuối bài học
-  // được suy ra từ chính trường này, nên trỏ sai nghĩa là bài tập biến mất khỏi bài học
-  // mà không ai nhận ra.
-  for (const bt of exercises) {
-    for (const match of `${bt.deBai}\n${bt.loiGiai}`.matchAll(/\[\[([a-z0-9-]+)\]\]/g)) {
-      const dich = match[1]
-      if (dich !== undefined && !slugCoThat.has(dich)) {
-        throw new Error(`Bài tập ${bt.slug} trỏ tới "[[${dich}]]" — không có bài nào mang slug này`)
-      }
-    }
-  }
-
+  // `bai_hoc` phải trỏ tới BÀI HỌC có thật (không phải bài tập): danh sách "luyện tập phần
+  // này" ở cuối bài học được suy ra từ chính trường này, nên trỏ sai nghĩa là bài tập biến
+  // mất khỏi bài học mà không ai nhận ra.
   const baiHocSai = exercises
-    .filter((bt) => bt.baiHoc !== undefined && !slugCoThat.has(bt.baiHoc))
+    .filter((bt) => bt.baiHoc !== undefined && !slugBaiHoc.has(bt.baiHoc))
     .map((bt) => `  - bài tập ${bt.slug} trỏ tới bài học "${bt.baiHoc}" (không tồn tại)`)
   if (baiHocSai.length > 0) {
     throw new Error(`Liên kết bài tập → bài học trỏ sai:\n${baiHocSai.join('\n')}`)

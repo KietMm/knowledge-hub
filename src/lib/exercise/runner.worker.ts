@@ -22,9 +22,16 @@ export type YeuCauChay = {
   soSanh: KieuSoSanh
 }
 
+/**
+ * Giao thức dùng chung cho cả hai bộ chấm (JavaScript và Python), nên giao diện chỉ
+ * phải hiểu một hình dạng tin nhắn. `dang-tai`/`san-sang` chỉ Python dùng tới — nó có
+ * ~8MB runtime phải tải lần đầu, còn JavaScript thì chạy ngay.
+ */
 export type TinNhanKetQua =
   | { loai: 'ca'; chiSo: number; dat: boolean; thucNhan: string; ms: number; loi?: string }
   | { loai: 'loi-nap'; thongDiep: string }
+  | { loai: 'dang-tai' }
+  | { loai: 'san-sang' }
   | { loai: 'xong' }
 
 function thongDiepLoi(loi: unknown): string {

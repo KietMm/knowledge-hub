@@ -56,6 +56,17 @@ function daoNguoc(s) {
 }
 ```
 
+```py
+def dao_nguoc(s):
+    trai, phai = 0, len(s) - 1
+
+    while trai < phai:
+        s[trai], s[phai] = s[phai], s[trai]
+        trai += 1
+        phai -= 1
+    return s
+```
+
 Điều kiện dừng là `trai < phai`, không phải `trai <= phai`. Với số lẻ phần tử, phần tử giữa không cần đổi chỗ với chính nó; viết `<=` thì nó vẫn chạy đúng nhưng thừa một lượt.
 
 Vòng lặp chạy `n/2` lần ⇒ `O(n)` thời gian, `O(1)` bộ nhớ. Không có cách nào nhanh hơn: muốn đảo thì phải chạm vào mọi phần tử ít nhất một lần.

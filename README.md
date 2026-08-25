@@ -70,7 +70,8 @@ Ràng buộc (script kiểm và báo lỗi rõ nếu sai):
 - `slug` duy nhất trên **toàn bộ** giáo trình, không chỉ trong một công nghệ.
 - `level` là một trong `co-ban` / `trung-cap` / `nang-cao`.
 - Trong mỗi công nghệ, độ khó phải **tăng dần** theo số thứ tự — có test kiểm điều này.
-- Liên kết chéo viết `[[slug-bai-khac]]`; slug phải trỏ tới một bài có thật.
+- Liên kết chéo viết `[[slug-bai-khac]]`; slug phải trỏ tới một bài học **hoặc bài tập** có
+  thật (hai loại dùng chung một không gian tên slug, url được suy ra: `/n/…` hay `/bt/…`).
 
 Sửa xong chạy `pnpm content:sync` rồi tải lại trang. Lệnh này ghi đè `data/` nhưng giữ
 nguyên trạng thái ghim; bài nào đổi slug thì mất ghim và script sẽ in ra danh sách đó.
@@ -115,10 +116,20 @@ một ca test là object lồng nhau.
 - **Liên kết là một chiều:** chỉ bài tập khai `bai_hoc`; danh sách "luyện tập phần này" ở cuối
   bài học được suy ra ngược lúc build, nên không có gì để lệch.
 - Có test chạy **chính lời giải trong file** qua **chính bộ test của nó** — một giá trị `ra`
-  gõ sai sẽ làm test đỏ, thay vì âm thầm báo sai cho người học đúng.
+  gõ sai sẽ làm test đỏ, thay vì âm thầm báo sai cho người học đúng. Lời giải JavaScript
+  chạy trong vitest; lời giải Python chạy bằng `python3` thật, tự bỏ qua nếu máy không có.
 
-Code chạy trong **Web Worker** ở máy người học, timeout 3 giây. Không có gì gửi lên máy chủ;
-bài làm và tiến độ nằm trong `localStorage` (bản triển khai công khai chỉ đọc, xem bên dưới).
+Người học giải bằng **JavaScript hoặc Python**. Khối `py starter` là tuỳ chọn — không có
+thì bài đó chỉ hiện JavaScript. Tên hàm Python suy ra từ `ham` theo snake_case
+(`haiTong` → `hai_tong`), khai `ham_py` để ghi đè.
+
+Code chạy trong **Web Worker** ở máy người học, timeout 3 giây; Python chạy bằng Pyodide
+(CPython trên WebAssembly, tải ~8MB lần đầu). Không có gì gửi lên máy chủ; bài làm và tiến
+độ nằm trong `localStorage` (bản triển khai công khai chỉ đọc, xem bên dưới).
+
+Vì sao Web Worker chứ không chạy thẳng trên trang: `while (true) {}` của người học chặn
+luôn cả `setTimeout`, nên chỉ `terminate()` từ luồng chính mới dừng được. Đây là cơ chế
+timeout duy nhất hoạt động thật trong trình duyệt.
 
 ## Dữ liệu
 

@@ -24,6 +24,14 @@
     "order": 3
   },
   {
+    "id": "topic-thuat-toan",
+    "name": "Thuật toán & luyện tập",
+    "slug": "thuat-toan-va-luyen-tap",
+    "description": "Các kỹ thuật giải bài lặp đi lặp lại trong phỏng vấn và trong việc thật, kèm bài tập chấm ngay trên web.",
+    "categoryId": "cat-nen-tang",
+    "order": 4
+  },
+  {
     "id": "topic-typescript",
     "name": "JavaScript / TypeScript",
     "slug": "javascript-typescript",

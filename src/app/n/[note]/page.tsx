@@ -10,6 +10,7 @@ import { TagBadge } from '@/components/notes/TagBadge'
 import { Toc } from '@/components/notes/Toc'
 import { TocMobile } from '@/components/notes/TocMobile'
 import * as exercisesRepo from '@/lib/db/exercises.repo'
+import { buildDichLink } from '@/lib/db/link-index'
 import { laReadOnly } from '@/lib/db/mode'
 import * as notesRepo from '@/lib/db/notes.repo'
 import * as topicsRepo from '@/lib/db/topics.repo'
@@ -33,17 +34,14 @@ export default async function NotePage({ params }: { params: Promise<{ note: str
   const note = await notesRepo.findBySlug(slug)
   if (note === null) notFound()
 
-  // Bảng slug → tiêu đề để `[[slug]]` trong bài thành link mang đúng tiêu đề bài đích.
-  const [topic, neighbors, allNotes, baiTap] = await Promise.all([
+  // Bảng slug → đích để `[[slug]]` trong bài thành link mang đúng tiêu đề bài đích.
+  const [topic, neighbors, dich, baiTap] = await Promise.all([
     topicsRepo.findById(note.topicId),
     notesRepo.findNeighbors(note.id),
-    notesRepo.listAll(),
+    buildDichLink(),
     exercisesRepo.listByBaiHoc(note.slug),
   ])
-  const { html, toc } = await renderMarkdown(
-    note.content,
-    new Map(allNotes.map((n) => [n.slug, n.title])),
-  )
+  const { html, toc } = await renderMarkdown(note.content, dich)
 
   return (
     <>

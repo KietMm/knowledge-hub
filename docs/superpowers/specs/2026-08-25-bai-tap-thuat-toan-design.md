@@ -23,9 +23,18 @@ kiểu LeetCode, chấm bài tự động ngay trên web.
 
 | Mảnh | Nội dung | Trạng thái |
 |---|---|---|
-| 1 | Loại nội dung bài tập + pipeline build + runner JavaScript + trang `/bt/[slug]` + 5 bài mẫu | Đang làm |
-| 2 | Python qua Pyodide, chuyển ngôn ngữ | Sau |
-| 3 | Kho bài tập `/bt` có lọc + mảng bài học lý thuyết "Thuật toán & luyện tập" | Sau |
+| 1 | Loại nội dung bài tập + pipeline build + runner JavaScript + trang `/bt/[slug]` + 5 bài mẫu | Xong |
+| 2 | Python qua Pyodide, chuyển ngôn ngữ | Xong |
+| 3 | Kho bài tập `/bt` có lọc + mảng bài học lý thuyết "Thuật toán & luyện tập" (8 bài) + 5 bài tập nữa | Xong |
+
+Hai điều phát sinh trong lúc làm, khác với thiết kế ban đầu:
+
+- **Worker Python không bị dựng lại mỗi lần chạy.** Pyodide mất vài giây để khởi động nên
+  dựng mới mỗi lượt là không dùng được. Cách ly chuyển vào bên trong: mỗi lần `exec` chạy
+  trong một namespace mới. Worker chỉ bị bỏ đi khi nó treo.
+- **`[[slug]]` mở rộng cho cả bài tập.** Bảng tra đổi từ `slug → tiêu đề` thành
+  `slug → {tiêu đề, url}`, gộp ở `src/lib/db/link-index.ts`. Không có nó thì bài học không
+  trỏ sang bài tập được, mà đó là liên kết tự nhiên nhất trong giáo trình này.
 
 ## Mô hình dữ liệu
 

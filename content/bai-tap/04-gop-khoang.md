@@ -67,6 +67,25 @@ function gopKhoang(khoang) {
 }
 ```
 
+```py
+def gop_khoang(khoang):
+    if not khoang:
+        return []
+
+    da_sap = sorted(khoang, key=lambda k: k[0])
+    ket_qua = [list(da_sap[0])]
+
+    for bat, ket in da_sap[1:]:
+        cuoi = ket_qua[-1]
+        if bat <= cuoi[1]:
+            cuoi[1] = max(cuoi[1], ket)
+        else:
+            ket_qua.append([bat, ket])
+    return ket_qua
+```
+
+`sorted` trả về list mới nên không sửa dữ liệu của người gọi; `list(da_sap[0])` cũng là bản sao, nếu không thì dòng `cuoi[1] = ...` sẽ sửa thẳng vào khoảng đầu vào.
+
 Hai chỗ dễ sai:
 
 1. **`Math.max` ở bước nới mép phải.** Gán thẳng `cuoi[1] = ket` thì `[[1,4], [2,3]]` cho ra `[1,3]` — khoảng bị co lại.

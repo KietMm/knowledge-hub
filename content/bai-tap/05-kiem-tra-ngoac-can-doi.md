@@ -70,6 +70,22 @@ function ngoacCanDoi(s) {
 }
 ```
 
+```py
+CAP = {")": "(", "]": "[", "}": "{"}
+
+def ngoac_can_doi(s):
+    ngan = []
+
+    for c in s:
+        if c in "([{":
+            ngan.append(c)
+        elif not ngan or ngan.pop() != CAP[c]:
+            return False
+    return not ngan
+```
+
+Bản Python phải kiểm `not ngan` TRƯỚC khi `pop()`: khác JavaScript, `pop()` trên list rỗng ném `IndexError` chứ không trả về `None`.
+
 Ba trường hợp sai và ba chỗ bắt chúng:
 
 | Sai kiểu | Ví dụ | Bắt ở đâu |

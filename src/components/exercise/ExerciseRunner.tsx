@@ -9,18 +9,21 @@ import type { TinNhanKetQua, YeuCauChay } from '@/lib/exercise/runner.worker'
 import { CodeEditor } from './CodeEditor'
 
 /**
- * Ô soạn + nút chạy + bảng kết quả.
+ * Ô soạn + nút chạy + bảng kết quả, cho cả JavaScript lẫn Python.
  *
- * Ba quyết định đáng nói:
+ * Bốn quyết định đáng nói:
  *
  * 1. **Timeout do luồng chính giữ, không phải worker.** Worker đang kẹt trong
  *    `while (true) {}` thì không chạy nổi timer của chính nó — chỉ `terminate()` từ
  *    bên ngoài mới dừng được. Nên đồng hồ nằm ở đây.
- * 2. **Worker dựng mới cho mỗi lần chạy.** Dùng lại một worker thì lần chạy trước để
- *    lại biến toàn cục và hàm cũ; người học xoá một hàm đi mà bài vẫn "đạt" là lỗi
- *    tệ nhất một bộ chấm có thể mắc.
- * 3. **Code lưu ở localStorage.** Bản deploy công khai chạy chế độ chỉ đọc (xem
- *    `src/lib/db/mode.ts`), không có chỗ nào trên máy chủ để ghi bài làm.
+ * 2. **Worker JavaScript dựng mới mỗi lần chạy; worker Python thì không.** Dựng mới là
+ *    cách cách ly rẻ nhất, nhưng Pyodide mất vài giây để khởi động nên với Python phải
+ *    giữ worker sống; việc cách ly chuyển vào bên trong (mỗi lần `exec` một namespace
+ *    mới). Worker Python chỉ bị bỏ đi khi nó treo.
+ * 3. **Đồng hồ chỉ bắt đầu tính sau khi Python báo sẵn sàng.** Lần đầu phải tải ~8MB;
+ *    tính cả thời gian tải vào hạn 3 giây thì bài nào cũng "quá thời gian".
+ * 4. **Code lưu ở localStorage, tách theo ngôn ngữ.** Bản deploy công khai chạy chế độ
+ *    chỉ đọc (xem `src/lib/db/mode.ts`), không có chỗ nào trên máy chủ để ghi bài làm.
  */
 
 const HAN_MS = 3000
@@ -32,114 +35,175 @@ type KetQuaCa = {
   loi?: string
 }
 
+const TEN_NGON_NGU: Record<NgonNgu, string> = { js: 'JavaScript', py: 'Python' }
+
 function khoaLuu(slug: string, ngonNgu: NgonNgu): string {
   return `kh:bt:${slug}:${ngonNgu}`
 }
 
 const KHOA_DA_GIAI = 'kh:bt:da-giai'
 
-function danhDauDaGiai(slug: string): void {
+/** Đọc/ghi tập bài đã giải. Hỏng localStorage thì mất tiến độ, không được làm hỏng gì khác. */
+function themDaGiai(slug: string): void {
   try {
     const raw = localStorage.getItem(KHOA_DA_GIAI)
     const daCo: unknown = raw === null ? [] : JSON.parse(raw)
     const tap = new Set(Array.isArray(daCo) ? daCo.filter((x) => typeof x === 'string') : [])
     tap.add(slug)
     localStorage.setItem(KHOA_DA_GIAI, JSON.stringify([...tap]))
+    // Trang danh sách đang mở ở tab khác cần biết — `storage` không tự bắn trong cùng tab.
+    window.dispatchEvent(new Event('kh:da-giai'))
   } catch {
-    // localStorage đầy hoặc bị chặn (chế độ riêng tư): mất tiến độ thì tiếc, nhưng
-    // không có lý do gì để làm hỏng việc chấm bài đang chạy.
+    // localStorage đầy hoặc bị chặn (chế độ riêng tư): bỏ qua, việc chấm bài vẫn chạy.
   }
 }
 
 export function ExerciseRunner({
   slug,
   ham,
+  hamPy,
   starter,
   boTest,
   soSanh,
 }: {
   slug: string
   ham: string
+  hamPy: string
   starter: Record<NgonNgu, string>
   boTest: CaTest[]
   soSanh: 'chinh-xac' | 'tap-hop'
 }) {
-  const [ma, setMa] = useState(starter.js)
+  const coPython = starter.py !== ''
+  const [ngonNgu, setNgonNgu] = useState<NgonNgu>('js')
+  const [ma, setMa] = useState<Record<NgonNgu, string>>({ js: starter.js, py: starter.py })
   const [dangChay, setDangChay] = useState(false)
+  const [dangTaiPython, setDangTaiPython] = useState(false)
   const [ketQua, setKetQua] = useState<KetQuaCa[] | null>(null)
   const [loiNap, setLoiNap] = useState<string | null>(null)
-  const worker = useRef<Worker | null>(null)
+
+  const workerJs = useRef<Worker | null>(null)
+  const workerPy = useRef<Worker | null>(null)
   const dongHo = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Nạp bài làm đang dở. Chạy trong effect chứ không phải giá trị khởi tạo của useState:
-  // localStorage không tồn tại lúc render ở máy chủ, và đọc nó khi khởi tạo sẽ làm
-  // HTML hai bên lệch nhau.
+  // localStorage không tồn tại lúc render ở máy chủ, và đọc nó khi khởi tạo sẽ làm HTML
+  // hai bên lệch nhau.
   useEffect(() => {
-    try {
-      const luu = localStorage.getItem(khoaLuu(slug, 'js'))
-      if (luu !== null && luu.trim() !== '') setMa(luu)
-    } catch {
-      // Không đọc được thì dùng starter — không cần báo gì.
-    }
+    setMa((truoc) => {
+      const moi = { ...truoc }
+      for (const nn of ['js', 'py'] as const) {
+        try {
+          const luu = localStorage.getItem(khoaLuu(slug, nn))
+          if (luu !== null && luu.trim() !== '') moi[nn] = luu
+        } catch {
+          // Không đọc được thì giữ starter.
+        }
+      }
+      return moi
+    })
   }, [slug])
 
   const doiMa = useCallback(
     (moi: string) => {
-      setMa(moi)
+      setMa((truoc) => ({ ...truoc, [ngonNgu]: moi }))
       try {
-        localStorage.setItem(khoaLuu(slug, 'js'), moi)
+        localStorage.setItem(khoaLuu(slug, ngonNgu), moi)
       } catch {
-        // Xem chú thích ở danhDauDaGiai.
+        // Xem chú thích ở themDaGiai.
       }
     },
-    [slug],
+    [slug, ngonNgu],
   )
 
-  const dungLai = useCallback(() => {
-    worker.current?.terminate()
-    worker.current = null
+  const tatDongHo = useCallback(() => {
     if (dongHo.current !== null) clearTimeout(dongHo.current)
     dongHo.current = null
   }, [])
 
-  useEffect(() => dungLai, [dungLai])
+  const dungHet = useCallback(() => {
+    tatDongHo()
+    workerJs.current?.terminate()
+    workerJs.current = null
+    workerPy.current?.terminate()
+    workerPy.current = null
+  }, [tatDongHo])
+
+  useEffect(() => dungHet, [dungHet])
 
   function chay() {
-    dungLai()
+    tatDongHo()
+    workerJs.current?.terminate()
+    workerJs.current = null
     setLoiNap(null)
     setDangChay(true)
     setKetQua(boTest.map(() => ({ trangThai: 'cho' })))
 
-    const w = new Worker(new URL('@/lib/exercise/runner.worker.ts', import.meta.url))
-    worker.current = w
+    const laPy = ngonNgu === 'py'
+    const w = laPy
+      ? (workerPy.current ??
+        new Worker(new URL('@/lib/exercise/python.worker.ts', import.meta.url)))
+      : new Worker(new URL('@/lib/exercise/runner.worker.ts', import.meta.url))
 
-    const xong = (quaHan: boolean) => {
-      dungLai()
+    if (laPy) workerPy.current = w
+    else workerJs.current = w
+
+    const ketThuc = (quaHan: boolean) => {
+      tatDongHo()
       setDangChay(false)
-      if (quaHan) {
-        // Ca nào chưa có kết quả lúc hết giờ thì chính nó (hoặc một ca trước đó) đang treo.
-        setKetQua((truoc) =>
-          (truoc ?? []).map((k) => (k.trangThai === 'cho' ? { trangThai: 'qua-han' } : k)),
-        )
+      setDangTaiPython(false)
+      if (!quaHan) {
+        // Worker JavaScript chỉ dùng một lần: giữ lại là giữ luôn hàm của lần chạy trước.
+        if (!laPy) {
+          w.terminate()
+          workerJs.current = null
+        }
+        return
       }
+      // Treo: bỏ hẳn worker. Với Python nghĩa là lần chạy sau phải tải lại runtime —
+      // chậm, nhưng một worker đang kẹt thì không còn dùng được nữa.
+      w.terminate()
+      if (laPy) workerPy.current = null
+      else workerJs.current = null
+      setKetQua((truoc) =>
+        (truoc ?? []).map((k) => (k.trangThai === 'cho' ? { trangThai: 'qua-han' } : k)),
+      )
+    }
+
+    const hen = () => {
+      tatDongHo()
+      dongHo.current = setTimeout(() => ketThuc(true), HAN_MS)
     }
 
     w.onmessage = (e: MessageEvent<TinNhanKetQua>) => {
       const tin = e.data
+
+      if (tin.loai === 'dang-tai') {
+        // Đang tải Pyodide: dừng đồng hồ, việc này có thể mất vài giây và không phải
+        // lỗi của người học.
+        tatDongHo()
+        setDangTaiPython(true)
+        return
+      }
+      if (tin.loai === 'san-sang') {
+        setDangTaiPython(false)
+        hen()
+        return
+      }
       if (tin.loai === 'loi-nap') {
         setLoiNap(tin.thongDiep)
         setKetQua(null)
-        xong(false)
+        ketThuc(false)
         return
       }
       if (tin.loai === 'xong') {
-        xong(false)
+        ketThuc(false)
         setKetQua((truoc) => {
-          if (truoc !== null && truoc.every((k) => k.trangThai === 'dat')) danhDauDaGiai(slug)
+          if (truoc !== null && truoc.every((k) => k.trangThai === 'dat')) themDaGiai(slug)
           return truoc
         })
         return
       }
+
       setKetQua((truoc) => {
         const moi = [...(truoc ?? [])]
         moi[tin.chiSo] = {
@@ -154,20 +218,27 @@ export function ExerciseRunner({
 
     w.onerror = (e) => {
       setLoiNap(e.message === '' ? 'Không chạy được code' : e.message)
-      xong(false)
+      ketThuc(false)
     }
 
-    const yeuCau: YeuCauChay = { ma, ham, boTest, soSanh }
+    const yeuCau: YeuCauChay = { ma: ma[ngonNgu], ham: laPy ? hamPy : ham, boTest, soSanh }
     w.postMessage(yeuCau)
-    dongHo.current = setTimeout(() => xong(true), HAN_MS)
+    hen()
   }
 
   function lamLai() {
-    dungLai()
+    tatDongHo()
     setDangChay(false)
     setKetQua(null)
     setLoiNap(null)
-    doiMa(starter.js)
+    doiMa(starter[ngonNgu])
+  }
+
+  function doiNgonNgu(nn: NgonNgu) {
+    if (nn === ngonNgu || dangChay) return
+    setNgonNgu(nn)
+    setKetQua(null)
+    setLoiNap(null)
   }
 
   const soDat = (ketQua ?? []).filter((k) => k.trangThai === 'dat').length
@@ -176,19 +247,48 @@ export function ExerciseRunner({
 
   return (
     <section className="space-y-3" aria-label="Ô luyện tập">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button onClick={chay} disabled={dangChay} size="sm">
           {dangChay ? <Loader2 className="animate-spin" /> : <Play />}
-          {dangChay ? 'Đang chạy…' : 'Chạy thử'}
+          {dangTaiPython ? 'Đang tải Python…' : dangChay ? 'Đang chạy…' : 'Chạy thử'}
         </Button>
         <Button onClick={lamLai} variant="ghost" size="sm" disabled={dangChay}>
           <RotateCcw />
           Làm lại từ đầu
         </Button>
-        <span className="ml-auto font-mono text-xs text-muted-foreground">JavaScript</span>
+
+        {coPython && (
+          <div
+            role="tablist"
+            aria-label="Ngôn ngữ"
+            className="ml-auto flex overflow-hidden rounded-md border border-border"
+          >
+            {(['js', 'py'] as const).map((nn) => (
+              <button
+                key={nn}
+                role="tab"
+                aria-selected={ngonNgu === nn}
+                onClick={() => doiNgonNgu(nn)}
+                disabled={dangChay}
+                className={`px-3 py-1 font-mono text-xs transition-colors disabled:opacity-50 ${
+                  ngonNgu === nn ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent/50'
+                }`}
+              >
+                {TEN_NGON_NGU[nn]}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      <CodeEditor value={ma} ngonNgu="js" onChange={doiMa} />
+      {dangTaiPython && (
+        <p className="text-xs text-muted-foreground">
+          Lần đầu chạy Python phải tải khoảng 8MB runtime về máy bạn. Những lần sau lấy từ
+          bộ nhớ đệm của trình duyệt.
+        </p>
+      )}
+
+      <CodeEditor key={ngonNgu} value={ma[ngonNgu]} ngonNgu={ngonNgu} onChange={doiMa} />
 
       {loiNap !== null && (
         <p className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 font-mono text-xs text-destructive">

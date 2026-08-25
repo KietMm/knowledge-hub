@@ -48,8 +48,10 @@ describe('renderMarkdown', () => {
 
 describe('liên kết chéo [[slug]]', () => {
   const titles = new Map([
-    ['sql-injection', 'SQL Injection'],
-    ['index-va-hieu-nang', 'Index và hiệu năng truy vấn'],
+    ['sql-injection', { tieuDe: 'SQL Injection', url: '/n/sql-injection' }],
+    ['index-va-hieu-nang', { tieuDe: 'Index và hiệu năng truy vấn', url: '/n/index-va-hieu-nang' }],
+    // Bài tập cũng là đích hợp lệ, và nó nằm ở tiền tố url khác.
+    ['hai-tong', { tieuDe: 'Hai tổng', url: '/bt/hai-tong' }],
   ])
 
   it('thành link mang tiêu đề của bài đích, không phải slug', async () => {
@@ -80,6 +82,12 @@ describe('liên kết chéo [[slug]]', () => {
   it('không tạo link lồng nhau khi [[...]] nằm trong một link sẵn có', async () => {
     const { html } = await renderMarkdown('[[[sql-injection]]](/khac)', titles)
     expect(html).not.toContain('<a href="/n/sql-injection"><a')
+  })
+
+  it('trỏ được sang bài tập, đúng tiền tố /bt', async () => {
+    const { html } = await renderMarkdown('Luyện ở [[hai-tong]].', titles)
+    expect(html).toContain('href="/bt/hai-tong"')
+    expect(html).toContain('Hai tổng')
   })
 
   it('không truyền bảng tiêu đề thì để nguyên văn', async () => {

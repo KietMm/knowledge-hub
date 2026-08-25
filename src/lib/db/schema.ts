@@ -131,6 +131,8 @@ export const ExerciseSchema = z.object({
   chuDe: z.array(z.string().trim().min(1)).min(1, 'Bài tập phải có ít nhất một chủ đề'),
   /** Tên hàm người học phải định nghĩa — bộ chấm gọi đúng tên này. */
   ham: z.string().trim().min(1),
+  /** Tên hàm phía Python (snake_case). Suy ra từ `ham` lúc build, khai tay được. */
+  hamPy: z.string().trim().min(1),
   /** Slug bài học liên quan. Liên kết MỘT chiều: danh sách ngược được suy ra lúc build. */
   baiHoc: SlugSchema.optional(),
   soSanh: KieuSoSanhSchema.default('chinh-xac'),

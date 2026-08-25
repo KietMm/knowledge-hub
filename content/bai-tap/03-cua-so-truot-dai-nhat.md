@@ -70,6 +70,21 @@ function doDaiKhongLap(s) {
 }
 ```
 
+```py
+def do_dai_khong_lap(s):
+    lan_cuoi = {}  # ký tự -> chỉ số gần nhất
+    trai = 0
+    dai_nhat = 0
+
+    for phai, c in enumerate(s):
+        # Chỉ kéo mép trái khi ký tự trùng nằm TRONG cửa sổ hiện tại.
+        if c in lan_cuoi and lan_cuoi[c] >= trai:
+            trai = lan_cuoi[c] + 1
+        lan_cuoi[c] = phai
+        dai_nhat = max(dai_nhat, phai - trai + 1)
+    return dai_nhat
+```
+
 Cả bài nằm ở điều kiện `lanCuoi.get(c) >= trai`. Bỏ nó đi thì `"abba"` cho kết quả sai: khi `phai` tới `'a'` cuối, bảng nói `'a'` từng ở chỉ số 0, và mép trái bị **kéo lùi** về 1 trong khi nó đã ở 2. Mép trái chỉ được tiến, không bao giờ lùi — đó là bất biến của kỹ thuật cửa sổ trượt.
 
 `O(n)` thời gian: mỗi mép đi qua chuỗi đúng một lần. Bộ nhớ `O(k)` với `k` là số ký tự phân biệt.
