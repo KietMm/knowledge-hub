@@ -4,182 +4,236 @@ slug: hieu-nang-va-do-luong
 summary: Profiling trước khi sửa, kiểm thử tải cho ra số đáng tin, và Core Web Vitals của phía người dùng.
 level: nang-cao
 tags: [van-hanh, hieu-nang, profiling, load-test, web-vitals]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** tìm ra chỗ thật sự chậm bằng số liệu, và chạy được một bài kiểm thử tải không tự lừa mình.
+> **Sau bài này bạn sẽ:** đo trước khi sửa, thiết kế được một bài kiểm thử tải cho ra số đáng tin, và biết ba chỉ số phía người dùng.
 
-## Quy trình, và nó chỉ có một
+## Ý tưởng chính
 
-```
-Đo → tìm điểm nghẽn lớn nhất → sửa MỘT thứ → đo lại → lặp
-```
+Trực giác về hiệu năng gần như luôn sai. Kể cả người viết ra đoạn mã đó.
 
-Nghe hiển nhiên, nhưng gần như ai cũng phá vỡ nó ở bước đầu: đọc code, thấy một vòng lặp trông chậm, tối ưu nó, rồi không đo lại. Kết quả thường gặp là tối ưu một chỗ chiếm 3% thời gian và làm code khó đọc hơn.
+Nguyên nhân: điểm nghẽn thường nằm ở chỗ **không có gì để nhìn** — một truy vấn thiếu index, một lời gọi mạng lặp lại, một lần tuần tự hoá dữ liệu lớn. Còn chỗ mã trông "phức tạp" thì thường chạy trong micro giây.
 
-**Định luật Amdahl** nói rõ giới hạn: nếu một phần chiếm 20% thời gian, tối ưu nó nhanh vô hạn cũng chỉ giảm được 20% tổng thời gian. Nên câu hỏi đầu tiên luôn là *"phần này chiếm bao nhiêu phần trăm?"*, không phải *"phần này có tối ưu được không?"*.
+## Mental model
 
-## Profiling phía server
+Hãy nghĩ tới **tìm chỗ rò trong đường ống nước**.
 
-```bash
-# CPU profile của tiến trình Node đang chạy — không cần restart, không cần sửa code
-node --cpu-prof --cpu-prof-dir=./prof server.js
+> Hoá đơn nước tăng gấp ba. Bạn có thể đi thay từng đoạn ống — tốn kém, mất thời gian, và có thể vẫn rò.
+>
+> Hoặc bạn khoá từng nhánh và **xem đồng hồ**. Vài phút là biết rò ở nhánh nào.
+>
+> Người thợ giỏi không đoán chỗ rò. Họ đo.
 
-# Hoặc gắn vào tiến trình production đang chạy
-kill -USR1 <pid>          # bật inspector
-# rồi mở chrome://inspect, tab Profiler
-```
+Profiler là cái đồng hồ nước. Và như đồng hồ nước, nó thường chỉ vào chỗ bạn không ngờ tới.
 
-Đọc flame graph theo hai chiều, và chúng trả lời hai câu khác nhau:
+## Ví dụ nhỏ
 
-- **Bề rộng** = tổng thời gian ở hàm đó (kể cả hàm con). Rộng nhất = đáng xem nhất.
-- **Self time** = thời gian ở chính hàm đó, không tính hàm con. Cao = chính hàm này chậm.
+```text
+Trang mất 2,3 giây:
+  1.800ms  một truy vấn CSDL      ← 78%
+    300ms  render
+    150ms  tuần tự hoá JSON
+     50ms  các thứ khác
 
-Một hàm rất rộng nhưng self time thấp không phải vấn đề — nó chỉ đang chờ hàm con. Đi xuống sâu hơn.
-
-Với ứng dụng web, đa số thời gian **không** ở CPU mà ở chờ I/O. Nên xem async trước:
-
-```bash
-# Node 22+: theo dõi hoạt động async, tìm chỗ chờ lâu
-node --experimental-async-context-frame --trace-events-enabled server.js
+⇒ Tối ưu render giỏi lắm cứu 300ms. Sửa truy vấn cứu 1.800ms.
 ```
 
-Thực tế thì trace phân tán (xem [[quan-sat-he-thong]]) hữu ích hơn CPU profile cho ứng dụng web, vì nó chỉ ra ngay chặng nào chờ lâu.
+## Code chạy thế nào
 
-## Truy vấn chậm: nơi nên tìm trước
+**Quy trình bốn bước, không bỏ bước nào:**
 
-```sql
--- Bật ghi log truy vấn chậm (Postgres)
-ALTER SYSTEM SET log_min_duration_statement = '200ms';
-
--- Xem truy vấn tốn tổng thời gian nhiều nhất — KHÔNG phải chậm nhất một lần
-SELECT
-  substring(query, 1, 70) AS truy_van,
-  calls,
-  round(mean_exec_time::numeric, 1) AS tb_ms,
-  round(total_exec_time::numeric / 1000, 1) AS tong_giay
-FROM pg_stat_statements
-ORDER BY total_exec_time DESC
-LIMIT 15;
+```text
+① ĐO       profiler, APM, EXPLAIN ANALYZE
+           → tìm ra 20% gây 80% chi phí
+② SỬA      chỉ chỗ đó
+③ ĐO LẠI   xác nhận cải thiện thật, và không làm hỏng chỗ khác
+④ ĐẶT MỐC  thêm test/cảnh báo để nó không tụt lại
 ```
 
-`ORDER BY total_exec_time` là điểm quan trọng: một truy vấn 5ms chạy 100.000 lần/phút tốn nhiều thời gian hơn một truy vấn 2 giây chạy 10 lần. Sắp theo `mean_exec_time` sẽ dẫn bạn tới sai chỗ.
+Bước ④ hay bị bỏ, và hậu quả là bạn tối ưu lại đúng chỗ đó sau sáu tháng.
 
-Xem [[doc-explain-analyze]] và [[index-va-hieu-nang-truy-van]].
+**Bốn nguyên nhân chiếm gần hết các vấn đề hiệu năng backend:**
 
-## Kiểm thử tải: bốn cách tự lừa mình
+```text
+① N+1 QUERY                     ← phổ biến nhất
+   Lấy 100 đơn hàng → 1 truy vấn
+   Lặp và lấy user từng đơn → 100 truy vấn nữa
+   ⇒ 101 truy vấn thay vì 2.
+   Sửa: eager loading / JOIN / DataLoader.
 
-**1. Chạy từ máy cá nhân.** Bạn đo mạng nhà mình, không đo hệ thống. Chạy từ cùng vùng với server.
+② TRUY VẤN THIẾU INDEX
+   EXPLAIN ANALYZE thấy Seq Scan trên bảng lớn.
+   Sửa: thêm index đúng cột và đúng thứ tự ([[index-va-hieu-nang-truy-van]]).
 
-**2. Dùng cùng một dữ liệu cho mọi request.** Mọi thứ hit cache ở mọi tầng → kết quả đẹp và hoàn toàn vô nghĩa.
+③ LỜI GỌI MẠNG TUẦN TỰ
+   5 lời gọi × 100ms tuần tự = 500ms
+   Promise.all ⇒ ~100ms. Cùng số lời gọi, khác cách chờ.
 
-```js
-// ❌ Một user, một sản phẩm
-http.get('https://api/products/p-1')
-
-// ✅ Phân bố như thật, gồm cả trường hợp nặng
-const ids = JSON.parse(open('./product-ids.json'))
-http.get(`https://api/products/${ids[Math.floor(Math.random() * ids.length)]}`)
+④ LÀM VIỆC KHÔNG CẦN THIẾT TRONG REQUEST
+   Gửi email, tạo PDF, cập nhật báo cáo
+   ⇒ đẩy ra hàng đợi ([[hang-doi-va-xu-ly-bat-dong-bo]]).
 ```
 
-**3. Dữ liệu test nhỏ hơn thật.** Bảng 1.000 dòng thì seq scan cũng nhanh; không có vấn đề index nào bộc lộ. Cần dữ liệu **cỡ thật**.
+Kiểm bốn cái này trước khi nghĩ tới bất kỳ tối ưu vi mô nào — chúng chiếm phần lớn các trường hợp thực tế.
 
-**4. Không có thời gian khởi động (ramp-up).** Đổ 1.000 người dùng vào giây thứ nhất đo được khả năng chịu sốc, không đo được thông lượng bền.
+## Cú pháp
 
-```js
-// k6: tăng dần rồi giữ — mô hình gần thực tế
-export const options = {
-  stages: [
-    { duration: '2m', target: 100 },   // tăng dần
-    { duration: '5m', target: 100 },   // giữ — đây là đoạn số liệu đáng tin
-    { duration: '2m', target: 400 },   // tăng tới điểm vỡ
-    { duration: '3m', target: 400 },
-    { duration: '2m', target: 0 },
-  ],
-  thresholds: {
-    // Ngưỡng làm bài test TỰ kết luận đạt/không, thay vì để người đọc số rồi đoán
-    http_req_duration: ['p(95)<500', 'p(99)<1500'],
-    http_req_failed: ['rate<0.01'],
-  },
-}
+**Kiểm thử tải — bốn loại, mục đích khác nhau:**
+
+```text
+Load test    tải dự kiến, thời gian dài   → "chịu được bình thường không?"
+Stress test  tăng dần tới khi vỡ          → "trần ở đâu, VỠ NHƯ THẾ NÀO?"
+Spike test   tăng đột ngột                → "chịu được cú sốc không?"
+Soak test    tải vừa, nhiều giờ           → "có RÒ RỈ BỘ NHỚ không?"
 ```
 
-Điều cần tìm không phải "hệ thống chịu được bao nhiêu" mà **hệ thống vỡ thế nào**: nó chậm dần đều (tốt), hay đổ sập đột ngột (xấu)? Ở điểm vỡ, chỉ số nào bão hoà trước — pool kết nối, CPU, hay hàng đợi?
+Soak test là loại hay bị bỏ nhất và bắt được loại lỗi khó chịu nhất: hệ thống chạy tốt hai tiếng đầu rồi chết vào giờ thứ sáu.
 
-## Phía người dùng: Core Web Vitals
+**Làm kiểm thử tải cho ra số đáng tin:**
 
-Backend 50ms mà trang mất 6 giây mới dùng được thì người dùng không quan tâm backend.
+```text
+□ Môi trường GIỐNG production (dữ liệu, cấu hình, tài nguyên)
+  → CSDL 1.000 bản ghi không nói gì về CSDL 10 triệu bản ghi
+□ Dữ liệu thật về kích thước và phân bố
+□ Có giai đoạn khởi động (warm-up) — cache lạnh cho số sai
+□ Mô phỏng hành vi thật, không chỉ đập vào một endpoint
+□ Đo cả phía SERVER (CPU, CSDL) lẫn phía CLIENT (độ trễ)
+```
 
-| | Đo gì | Ngưỡng tốt |
+Và quan trọng nhất: **quan sát cách nó vỡ**, không chỉ ghi lại con số trần.
+
+```text
+Vỡ có kiểm soát:  quá tải → trả 503 nhanh → hồi phục ngay khi tải giảm
+Vỡ thảm hoạ:      quá tải → chậm dần → timeout hàng loạt
+                  → retry storm → không hồi phục kể cả khi tải đã hết
+```
+
+Hệ thống thứ hai nguy hiểm hơn nhiều, vì nó không tự đứng dậy được ([[thiet-ke-cho-that-bai]]).
+
+**Core Web Vitals — hiệu năng phía người dùng:**
+
+```text
+LCP  Largest Contentful Paint   nội dung chính hiện ra   < 2,5s
+INP  Interaction to Next Paint  phản hồi khi bấm         < 200ms
+CLS  Cumulative Layout Shift    nội dung nhảy            < 0,1
+```
+
+```text
+Cải thiện thường gặp:
+  LCP  → tối ưu ảnh, preload font, giảm chặn render, SSR
+  INP  → chia nhỏ tác vụ JS dài, giảm JS gửi xuống
+  CLS  → đặt width/height cho ảnh, chừa chỗ cho quảng cáo/banner
+```
+
+**RUM khác synthetic — và bạn cần cả hai:**
+
+```text
+Synthetic (Lighthouse):  môi trường cố định, so sánh được, chạy trong CI.
+RUM (người dùng thật):   thiết bị thật, mạng thật, phân bố thật.
+
+Lighthouse 95 điểm mà p75 LCP của người dùng thật là 4 giây
+⇒ Lighthouse chạy trên máy nhanh, mạng nhanh. Người dùng thì không.
+```
+
+Luôn tin RUM hơn khi hai bên mâu thuẫn.
+
+## Tại sao cần nó
+
+Vì tối ưu sai chỗ tốn thời gian mà không đổi được gì cho người dùng:
+
+```text
+Bỏ hai ngày tối ưu một hàm chạy 5ms
+⇒ tiết kiệm 2ms trên tổng 2.300ms.
+⇒ Người dùng không cảm nhận được gì.
+⇒ Và mã giờ khó đọc hơn.
+```
+
+**Định luật Amdahl, dùng như một phép tính nhanh:**
+
+```text
+Phần A chiếm 5% thời gian. Tối ưu nó nhanh vô hạn
+⇒ tổng cải thiện tối đa 5%.
+
+⇒ Trước khi tối ưu, hỏi: "phần này chiếm bao nhiêu % tổng?"
+  Dưới 10% ⇒ giới hạn trên của nỗ lực này đã dưới 10%.
+```
+
+**Đặt mốc để không tụt lại:**
+
+```text
+□ Ngân sách hiệu năng trong CI: bundle không vượt X KB,
+  Lighthouse không dưới Y điểm
+□ Cảnh báo khi p95 tăng quá ngưỡng
+□ Kiểm thử tải trước mỗi phát hành lớn
+```
+
+Không có mốc thì hiệu năng luôn **trôi dần** — mỗi PR làm chậm thêm một chút, không PR nào đáng bị chặn, và sáu tháng sau trang chậm gấp đôi.
+
+## So sánh
+
+| Loại test | Trả lời | Bỏ qua thì |
 |---|---|---|
-| **LCP** | Khối nội dung lớn nhất hiện ra | < 2,5 s |
-| **INP** | Độ trễ phản hồi tương tác | < 200 ms |
-| **CLS** | Bố cục nhảy | < 0,1 |
+| Load | chịu được tải dự kiến? | vỡ vào ngày cao điểm |
+| Stress | trần ở đâu, vỡ ra sao? | không biết còn dư bao nhiêu |
+| Spike | chịu cú sốc? | chiến dịch marketing làm sập |
+| Soak | có rò rỉ? | chết vào giờ thứ sáu |
 
-Nguyên nhân thường gặp và cách sửa:
+## Dễ nhầm
 
-```tsx
-// LCP: ảnh hero phải được ưu tiên. Không có priority thì nó bị tải sau
-// mọi thứ khác và LCP luôn xấu.
-<Image src="/hero.jpg" priority sizes="100vw" />
+**1. Tối ưu trước khi đo.** Sửa 5%, bỏ qua 80%.
 
-// CLS: luôn khai báo kích thước để trình duyệt chừa chỗ trước
-<Image src="/anh.jpg" width={800} height={450} />
+**2. Không kiểm N+1.** Nguyên nhân phổ biến nhất.
 
-// INP: việc nặng chặn luồng chính. Cắt nhỏ và nhường quyền.
-for (const [i, item] of items.entries()) {
-  xuLy(item)
-  if (i % 50 === 0) await scheduler.yield()
-}
+**3. Load test trên môi trường không giống production.** Số vô nghĩa.
+
+**4. Không warm-up.** Cache lạnh cho ra số sai.
+
+**5. Chỉ ghi trần, không xem cách vỡ.** Bỏ sót vỡ thảm hoạ.
+
+**6. Tin Lighthouse hơn RUM.** Máy của bạn nhanh hơn máy người dùng.
+
+**7. Dùng trung bình.** Che mất đuôi.
+
+**8. Không đặt ngân sách hiệu năng.** Trôi dần không ai chặn.
+
+**9. Bỏ soak test.** Rò rỉ bộ nhớ chỉ lộ ra sau nhiều giờ.
+
+**10. Tối ưu vi mô trước khi sửa kiến trúc.** Đổi thuật toán thắng mọi tinh chỉnh.
+
+## Mẹo nhớ
+
+> **ĐO trước, sửa sau, đo lại, rồi ĐẶT MỐC.**
+>
+> **Bốn nguyên nhân: N+1, thiếu index, gọi mạng tuần tự, việc nặng trong request.**
+>
+> **Quan trọng không phải trần ở đâu, mà là VỠ NHƯ THẾ NÀO.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Bốn bước của quy trình tối ưu, bước nào hay bị bỏ?
+2. Bốn nguyên nhân hiệu năng phổ biến nhất ở backend?
+3. Bốn loại kiểm thử tải, mỗi loại trả lời gì?
+4. Vỡ có kiểm soát khác vỡ thảm hoạ thế nào?
+5. Vì sao tin RUM hơn Lighthouse?
+
+## Tự viết lại
+
+Trang danh sách sản phẩm mất 3 giây. Không nhìn lại, viết kế hoạch:
+
+```text
+① đo bằng công cụ nào, theo thứ tự nào
+② bốn nguyên nhân, kiểm từng cái ra sao
+③ sau khi sửa, xác nhận thế nào
+④ đặt mốc gì để không tụt lại
 ```
 
-Và điều quan trọng nhất: **đo dữ liệu thật (RUM), không chỉ Lighthouse**. Lighthouse chạy trên máy bạn với mạng mô phỏng; người dùng thật dùng máy yếu hơn và mạng tệ hơn.
+Tự kiểm: bước ① của bạn có bao gồm cả phía server lẫn phía trình duyệt không?
 
-```ts
-import { onLCP, onINP, onCLS } from 'web-vitals'
-// Gửi về server để có phân vị của người dùng THẬT
-const gui = (m) => navigator.sendBeacon('/api/vitals', JSON.stringify(m))
-onLCP(gui); onINP(gui); onCLS(gui)
-```
+## Thử sức
 
-Với app này, phần lớn công đã nằm ở kiến trúc: highlight code ở server nên client gần như không có JS — xem [[server-component-va-client-component]].
+Sếp nói: *"Website chậm quá, tối ưu đi."* Không có số liệu, không có APM.
 
-## Chống hồi quy hiệu năng trong CI
-
-Tối ưu xong rồi để nó tự chậm lại là chuyện thường xảy ra. Chốt lại bằng ngân sách:
-
-```yaml
-- name: Ngân sách kích thước bundle
-  run: npx size-limit          # thất bại nếu bundle vượt mức đã chốt
-
-- name: Kiểm thử tải nhanh
-  run: k6 run --quiet smoke.js  # thresholds trong file làm bước này đỏ khi hồi quy
-```
-
-Ngân sách quan trọng hơn một lần tối ưu: nó biến hiệu năng từ một dự án thành một ràng buộc thường trực.
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Tối ưu trước khi đo | Mất công vào chỗ chiếm 3% | Profile trước |
-| Sửa nhiều thứ rồi mới đo | Không biết cái nào có tác dụng | Một thay đổi một lần đo |
-| Sắp truy vấn theo thời gian trung bình | Bỏ qua truy vấn nhanh nhưng chạy triệu lần | `ORDER BY total_exec_time` |
-| Load test từ máy cá nhân | Đo mạng nhà mình | Chạy cùng vùng với server |
-| Load test một URL cố định | Mọi thứ hit cache, số liệu vô nghĩa | Dữ liệu ngẫu nhiên như thật |
-| Test trên dữ liệu nhỏ | Không lộ vấn đề index | Dữ liệu cỡ thật |
-| Không có ramp-up | Đo chịu sốc, không đo thông lượng bền | Tăng dần rồi giữ |
-| Chỉ tin Lighthouse | Người dùng thật có máy và mạng tệ hơn | Thu RUM |
-| Không có ngân sách trong CI | Hiệu năng tự trôi về mức cũ | `size-limit`, k6 thresholds |
-
-## Ghi nhớ
-
-- Amdahl: câu hỏi đầu tiên là "chiếm bao nhiêu %", không phải "có tối ưu được không".
-- Flame graph: bề rộng chỉ chỗ đáng xem, self time chỉ chỗ thật sự chậm.
-- Sắp truy vấn theo **tổng** thời gian, không theo trung bình.
-- Load test dễ tự lừa mình: cùng vùng, dữ liệu thật, cỡ thật, có ramp-up.
-
-## Tự kiểm tra
-
-1. Một phần chiếm 20% thời gian. Tối ưu nó nhanh gấp 10 thì tổng giảm bao nhiêu?
-2. Vì sao sắp `pg_stat_statements` theo `mean_exec_time` dẫn tới sai chỗ?
-3. Kể bốn cách một bài kiểm thử tải có thể cho số liệu đẹp mà vô nghĩa.
+Ba câu để trả lời: bạn làm gì **trong ngày đầu tiên** để có số; bạn báo cáo kết quả thế nào cho một người không phải kỹ thuật; và bạn ưu tiên sửa cái gì trước dựa trên số đó. Câu khó nhất: nếu hoá ra trang **không** chậm ở phía server mà chậm ở trình duyệt của một nhóm người dùng cụ thể, bạn tìm ra điều đó bằng cách nào?

@@ -4,154 +4,227 @@ slug: chi-phi-ha-tang
 summary: Đọc hoá đơn cloud, tìm chỗ đốt tiền, và coi chi phí là một yêu cầu kỹ thuật thay vì việc của kế toán.
 level: nang-cao
 tags: [van-hanh, chi-phi, cloud, finops]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** biết chi phí của mình đi đâu, và nhận ra những quyết định kỹ thuật làm hoá đơn tăng gấp nhiều lần.
+> **Sau bài này bạn sẽ:** đọc được hoá đơn cloud, tìm ra chỗ đốt tiền, và coi chi phí là một ràng buộc thiết kế.
 
-## Vì sao đây là việc của tech lead
+## Ý tưởng chính
 
-Chi phí hạ tầng là **hệ quả trực tiếp của quyết định kỹ thuật**, và người duy nhất hiểu được nhân quả đó là người thiết kế hệ thống. Kế toán thấy "hoá đơn AWS tăng 40%"; chỉ bạn biết nó là do một truy vấn mới đọc cross-AZ.
+Chi phí hạ tầng là **hệ quả của các quyết định kỹ thuật**, không phải một dòng trong bảng kế toán.
 
-Chi phí cũng là một **ràng buộc thiết kế** ngang với độ trễ. "Kiến trúc này chạy được" và "kiến trúc này chạy được với giá 3.000 đô/tháng thay vì 300" là hai kết luận khác nhau, và phương án thứ hai thường không tệ hơn về mặt kỹ thuật.
+Chọn kiểu máy, thiết kế truy vấn, đặt TTL cache, quyết định lưu log bao lâu — mỗi cái đều là một quyết định về tiền. Người kỹ sư ra quyết định đó, nên người kỹ sư phải nhìn thấy giá của nó.
 
-## Chi phí thường nằm ở đâu
+## Mental model
 
-Với ứng dụng web điển hình, theo thứ tự:
+Hãy nghĩ tới **hoá đơn điện nhà bạn**.
 
-1. **Compute** — instance/container chạy 24/7, thường **cấp phát quá mức**
-2. **Truyền dữ liệu ra ngoài (egress)** — đắt hơn nhiều so với cảm nhận
-3. **Database** — nhất là bản có quản lý và có replica
-4. **Lưu trữ** — snapshot, log, backup **không có hạn lưu**
-5. **Công cụ quan sát** — hoá đơn Datadog vượt hoá đơn AWS là chuyện có thật
+> Hoá đơn chỉ có một con số. Nó không nói cho bạn biết máy lạnh chiếm bao nhiêu, tủ lạnh bao nhiêu, bình nóng lạnh bao nhiêu.
+>
+> Cho tới khi bạn **gắn công tơ riêng cho từng nhánh**. Lúc đó thường có một bất ngờ: cái tốn nhất không phải cái bạn nghĩ.
+>
+> Và một chi tiết nữa: cái đèn hành lang bạn quên tắt suốt sáu tháng vẫn đang tính tiền, dù không ai đi qua đó.
 
-Điểm 4 và 5 là hai chỗ hay bị bỏ quên nhất, vì chúng tăng âm thầm theo thời gian chứ không nhảy vọt.
+Gắn thẻ (tag) tài nguyên chính là gắn công tơ riêng. Còn cái đèn quên tắt là tài nguyên mồ côi — hạng mục lãng phí lớn nhất ở gần như mọi tài khoản cloud.
 
-## Egress: cái bẫy đắt nhất
+## Ví dụ nhỏ
 
-Giá tham khảo (khác nhau theo nhà cung cấp, nhưng **tỉ lệ** thì giống nhau):
-
-```
-Trong cùng AZ                    miễn phí
-Giữa hai AZ cùng region          ~0,01 $/GB   mỗi chiều
-Giữa hai region                  ~0,02 $/GB
-Ra internet                      ~0,09 $/GB
-Qua CDN ra internet              ~0,02–0,05 $/GB
-```
-
-Con số "giữa hai AZ" nhỏ nhưng nhân với lưu lượng nội bộ thì không nhỏ:
-
-```
-App ở AZ-a, database ở AZ-b
-Mỗi request đọc 50 KB từ database
-1.000 req/s × 50 KB = 50 MB/s = 4,3 TB/ngày = 130 TB/tháng
-130.000 GB × 0,01 $ × 2 chiều = 2.600 $/tháng
+```text
+Hoá đơn tháng: 8.400 USD
+  Compute       3.200   (38%)
+  CSDL          2.100   (25%)
+  Truyền dữ liệu 1.800  (21%)   ← thường bị bỏ qua
+  Lưu trữ       1.100   (13%)
+  Khác            200
 ```
 
-**2.600 đô mỗi tháng chỉ để dữ liệu đi giữa hai tủ rack.** Sửa bằng cách đặt app và database cùng AZ (và có replica ở AZ khác để chịu lỗi). Đây là loại chi phí không ai thấy trên dashboard hiệu năng.
+## Code chạy thế nào
 
-Hai cách giảm egress ra internet:
+**Bốn nguồn lãng phí lớn nhất, theo thứ tự:**
 
-- **CDN cho mọi tài sản tĩnh** — rẻ hơn 2–4 lần và nhanh hơn cho người dùng
-- **Nén** — `gzip`/`br` giảm 60–80% payload JSON, giảm cả tiền lẫn độ trễ
+```text
+① TÀI NGUYÊN MỒ CÔI                thường 10–30% hoá đơn
+   Đĩa của máy đã xoá, snapshot cũ, IP tĩnh không gắn vào đâu,
+   load balancer không có backend, môi trường test của dự án đã đóng.
+   ⇒ Không ai dùng, vẫn tính tiền hằng giờ.
 
-## Cấp phát quá mức: chỗ dễ cắt nhất
+② CẤP DƯ NHIỀU
+   Máy 16 CPU dùng 8% CPU. Đặt cỡ theo "phòng khi cần" chứ không theo đo.
+   ⇒ Xem biểu đồ 30 ngày, hạ cấp theo p95 chứ không theo đỉnh tuyệt đối.
 
-```
-Instance 8 vCPU / 32 GB, dùng thực tế: CPU 6%, RAM 20%
-→ giảm xuống 2 vCPU / 8 GB, tiết kiệm 75%
-```
+③ MÔI TRƯỜNG KHÔNG SẢN XUẤT CHẠY 24/7
+   Dev và staging chạy cả đêm, cả cuối tuần.
+   Tắt ngoài giờ ⇒ tiết kiệm ~70% phần đó.
 
-Nghe hiển nhiên nhưng rất phổ biến, vì kích thước được chọn một lần lúc dựng hệ thống rồi không ai xem lại. Rà lại theo quý, dựa trên **p95 của mức sử dụng** (không phải trung bình — trung bình che mất đỉnh, và cắt theo trung bình sẽ làm hệ thống chết lúc đỉnh).
-
-Ba đòn bẩy khác, sắp theo tỉ lệ hoàn vốn:
-
-**Tự động co giãn theo lịch.** Môi trường dev/staging tắt ngoài giờ làm: 12 giờ × 5 ngày thay vì 24 × 7 là **tiết kiệm 70%** cho toàn bộ hạ tầng phi production.
-
-**Cam kết dài hạn.** Reserved/savings plan giảm 30–60% cho phần tải nền ổn định. Chỉ cam kết phần **nền**, để phần đỉnh dùng on-demand.
-
-**Spot instance** cho việc chịu được bị ngắt: worker hàng đợi, CI runner, xử lý theo lô. Giảm 60–90%. Không dùng cho thứ phục vụ request trực tiếp.
-
-## Chi phí lưu trữ và quan sát tự tăng
-
-```
-Log 5 GB/ngày, giữ vô hạn
-→ sau 1 năm: 1,8 TB, và vẫn tăng mãi
+④ TRUYỀN DỮ LIỆU
+   Vào thường miễn phí. RA và LIÊN VÙNG rất đắt.
+   ⇒ Dòng này hay là bất ngờ lớn nhất khi đọc hoá đơn lần đầu.
 ```
 
-Đặt vòng đời cho mọi thứ ghi ra:
+Thứ tự này quan trọng: nhiều đội bắt đầu bằng việc tối ưu mã, trong khi hai mục đầu thường cho mức tiết kiệm lớn hơn với ít công hơn nhiều.
 
-| Loại | Giữ nóng | Sau đó |
-|---|---|---|
-| Log ứng dụng | 7–14 ngày | Nén, chuyển sang lưu trữ lạnh 90 ngày, rồi xoá |
-| Metric | 15 ngày ở độ phân giải cao | Gộp xuống 5 phút, giữ 13 tháng |
-| Trace | Lấy mẫu 1% (giữ 100% lỗi) | 7 ngày |
-| Snapshot database | 7 ngày hằng ngày | 4 tuần hằng tuần, 12 tháng hằng tháng |
+**Truyền dữ liệu — vì sao nó đắt bất ngờ:**
 
-Với công cụ quan sát trả tiền, ba thứ đốt tiền nhiều nhất: **cardinality metric cao** (xem [[quan-sat-he-thong]]), **log ở mức `debug` bật trên production**, và **trace lấy mẫu 100%**.
+```text
+Trong cùng một vùng khả dụng      thường miễn phí
+Giữa các vùng khả dụng            có phí
+Giữa các vùng địa lý              đắt
+Ra Internet                       đắt nhất
 
-## Đưa chi phí vào việc hằng ngày
-
-**1. Gắn thẻ mọi tài nguyên.** Không có thẻ thì không biết tiền đi đâu, và mọi cuộc thảo luận về chi phí thành đoán.
-
-```
-service=orders  env=prod  team=platform  cost-center=engineering
+Kịch bản thật:
+  Ứng dụng ở vùng A, CSDL ở vùng B "cho an toàn"
+  ⇒ MỌI truy vấn đều là truyền liên vùng
+  ⇒ vừa chậm hơn, vừa tốn tiền, mỗi ngày.
 ```
 
-**2. Báo động khi chi phí bất thường**, không phải xem hoá đơn cuối tháng. Phát hiện sau 30 ngày là đã trả tiền cho 30 ngày.
+Và cách giảm hiệu quả nhất thường không phải đổi kiến trúc mà là **CDN**: đẩy dữ liệu tĩnh ra biên, giảm cả chi phí lẫn độ trễ ([[cache-nhieu-tang]]).
 
-**3. Đưa chi phí vào quyết định thiết kế.** Trong ADR nên có một dòng về chi phí — xem [[ra-quyet-dinh-ky-thuat]]:
+## Cú pháp
 
-```markdown
-## Chi phí dự kiến
-- Redis có quản lý: ~120 $/tháng
-- Egress thêm: ~40 $/tháng
-- Tổng: ~160 $/tháng ở tải hiện tại, ~600 $ ở tải gấp 5
+**Đọc hoá đơn theo ba câu hỏi:**
+
+```text
+① Dòng nào LỚN NHẤT?          → chỗ đáng tối ưu
+② Dòng nào TĂNG NHANH NHẤT?   → chỗ sắp thành vấn đề
+③ Dòng nào KHÔNG GIẢI THÍCH ĐƯỢC?  → thường là tài nguyên mồ côi
 ```
 
-**4. Biết chi phí đơn vị.** Con số đáng theo dõi nhất không phải tổng hoá đơn mà là **chi phí mỗi đơn vị nghiệp vụ**:
+Câu ② đáng chú ý: một dòng nhỏ tăng 40% mỗi tháng sẽ vượt dòng lớn nhất trong nửa năm — và lúc đó sửa khó hơn nhiều.
 
-```
-chi phí / đơn hàng     hoặc     chi phí / người dùng hoạt động
-```
+**Gắn thẻ — điều kiện để mọi phân tích khác có nghĩa:**
 
-Tổng hoá đơn tăng 30% trong khi lượng đơn hàng tăng 50% nghĩa là bạn đang **hiệu quả hơn**. Không có chi phí đơn vị, mọi lần hoá đơn tăng đều trông như một vấn đề.
+```text
+Mọi tài nguyên phải có:
+  team, service, environment, owner
 
-## Đừng tối ưu quá xa
-
-Kỹ sư mất một tuần để tiết kiệm 50 đô/tháng là một quyết định lỗ. Ước lượng trước:
-
-```
-Tiết kiệm/năm  vs  Thời gian bỏ ra × chi phí kỹ sư
-600 $/năm      vs  1 tuần ≈ 2.000 $   → không đáng
-30.000 $/năm   vs  1 tuần ≈ 2.000 $   → làm ngay
+Không có thẻ ⇒ hoá đơn là MỘT con số ⇒ không ai chịu trách nhiệm
+⇒ và không ai biết cái gì xoá được.
 ```
 
-Và cảnh giác với việc đánh đổi độ tin cậy lấy chi phí: bỏ replica để tiết kiệm 200 đô/tháng, rồi một sự cố 4 giờ làm mất doanh thu nhiều hơn cả năm tiết kiệm.
+**Mô hình mua — chọn theo tính chất tải:**
 
-## Lỗi hay gặp
+```text
+On-demand     linh hoạt, đắt nhất       → tải thất thường, mới bắt đầu
+Reserved/Savings Plan  cam kết 1–3 năm, rẻ hơn 30–70%
+              → tải nền ỔN ĐỊNH, đã biết rõ
+Spot          rẻ hơn tới 90%, CÓ THỂ BỊ THU HỒI
+              → job xử lý lô, CI, thứ chịu được gián đoạn
+Serverless    trả theo lần dùng          → tải không đều, ít
+```
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| App và database khác AZ | Hàng nghìn đô egress nội bộ | Cùng AZ, replica ở AZ khác |
-| Không dùng CDN cho tài sản tĩnh | Egress đắt gấp 2–4 lần | CDN |
-| Kích thước instance chọn một lần rồi quên | Trả tiền cho 90% tài nguyên không dùng | Rà theo quý, theo p95 |
-| Dev/staging chạy 24/7 | Trả gấp 3 phần cần thiết | Tắt theo lịch |
-| Log/snapshot không có hạn lưu | Chi phí tăng mãi | Chính sách vòng đời |
-| `debug` bật trên production | Hoá đơn quan sát vượt hoá đơn hạ tầng | `info` ở production |
-| Cardinality metric cao | Nổ hoá đơn công cụ quan sát | Bỏ label có id |
-| Không gắn thẻ tài nguyên | Không biết tiền đi đâu | Gắn thẻ bắt buộc |
-| Chỉ xem tổng hoá đơn | Tăng vì tăng trưởng bị hiểu là vấn đề | Theo dõi chi phí đơn vị |
-| Cắt replica để tiết kiệm | Một sự cố xoá sạch tiền tiết kiệm cả năm | Đừng đổi độ tin cậy lấy tiền lẻ |
+Mẫu thường đúng: **reserved cho phần tải nền, on-demand cho phần đỉnh, spot cho job nền**.
 
-## Ghi nhớ
+**Quy tắc kiểm tra nhanh trước khi tối ưu:**
 
-- Egress giữa hai AZ nhỏ trên giấy nhưng cực đắt khi nhân với lưu lượng nội bộ.
-- Cắt theo p95 mức sử dụng, không theo trung bình.
-- Mọi thứ ghi ra phải có hạn lưu trữ, kể cả log và snapshot.
-- Chi phí **đơn vị** là con số đáng theo dõi, không phải tổng hoá đơn.
+```text
+Chi phí hạ tầng < 20% lương đội  → tối ưu chi phí thường không đáng
+                                    thời gian kỹ sư.
+Chi phí > lương đội              → đây là vấn đề kỹ thuật ưu tiên cao.
+```
 
-## Tự kiểm tra
+Con số này giữ cho việc tối ưu chi phí không trở thành một dạng tối ưu sớm. Hai ngày kỹ sư để tiết kiệm 50 USD/tháng là một khoản lỗ.
 
-1. App ở AZ-a, database ở AZ-b, 1.000 req/s × 50 KB. Tính egress mỗi tháng.
-2. Vì sao cắt kích thước instance theo mức sử dụng trung bình là nguy hiểm?
-3. Hoá đơn tăng 30%, đơn hàng tăng 50%. Đây là vấn đề hay không?
+## Tại sao cần nó
+
+Vì chi phí nên là một **ràng buộc thiết kế**, giống như độ trễ hay tính đúng đắn:
+
+```text
+Khi thiết kế, hỏi luôn:
+  "Chỗ này tốn bao nhiêu ở quy mô 10 lần hiện tại?"
+
+Ví dụ:
+  Lưu mọi log DEBUG ⇒ 50 USD/tháng hôm nay, 5.000 USD khi lớn gấp 100.
+  Lấy mẫu 1% log DEBUG ⇒ vẫn đủ để điều tra, rẻ hơn 100 lần.
+```
+
+**Chi phí "vô hình" hay bị bỏ sót:**
+
+```text
+□ Snapshot và bản sao lưu tích tụ nhiều năm
+□ Log giữ 365 ngày trong khi chỉ cần 30
+□ Chỉ mục tìm kiếm cho dữ liệu không ai tìm
+□ CSDL cấp dư "cho chắc"
+□ Môi trường của dự án đã đóng, không ai nhớ để xoá
+□ Truy vấn N+1 làm CSDL phải to hơn cần thiết  ← chi phí gián tiếp
+```
+
+Dòng cuối nối chi phí với hiệu năng: **tối ưu truy vấn thường là cách giảm chi phí hiệu quả nhất**, vì nó cho phép hạ cấp máy chứ không chỉ tiết kiệm vài phần trăm ([[hieu-nang-va-do-luong]]).
+
+**Đưa chi phí vào tầm nhìn của đội:**
+
+```text
+□ Bảng chi phí theo service, hiển thị hằng tuần
+□ Cảnh báo khi vượt ngân sách hoặc tăng bất thường
+□ Ước lượng chi phí trong ADR cho quyết định lớn
+□ Một người phụ trách rà soát mỗi tháng
+```
+
+Điểm mấu chốt: đội **không nhìn thấy** chi phí thì không tối ưu được nó, dù có muốn.
+
+## So sánh
+
+| Mô hình | Giá | Rủi ro | Dùng cho |
+|---|---|---|---|
+| On-demand | cao nhất | không | tải thất thường |
+| Reserved | −30–70% | cam kết dài | tải nền ổn định |
+| Spot | −90% | bị thu hồi | job lô, CI |
+| Serverless | theo lần dùng | cold start | tải ít, không đều |
+
+## Dễ nhầm
+
+**1. Không gắn thẻ tài nguyên.** Hoá đơn là một con số, không ai chịu trách nhiệm.
+
+**2. Bỏ qua tài nguyên mồ côi.** Thường 10–30% hoá đơn.
+
+**3. Quên chi phí truyền dữ liệu.** Bất ngờ lớn nhất khi đọc hoá đơn.
+
+**4. Đặt cỡ theo cảm giác.** Máy 16 CPU dùng 8%.
+
+**5. Dev/staging chạy 24/7.**
+
+**6. Mua reserved cho tải chưa ổn định.** Cam kết sai thì mất tiền chắc chắn.
+
+**7. Giữ log và snapshot vĩnh viễn.**
+
+**8. Tối ưu chi phí khi nó nhỏ hơn nhiều so với lương đội.** Lỗ thời gian kỹ sư.
+
+**9. Không cảnh báo ngân sách.** Phát hiện vào cuối tháng.
+
+**10. Coi chi phí là việc của tài chính.** Người ra quyết định kỹ thuật mới sửa được.
+
+## Mẹo nhớ
+
+> **Chi phí là HỆ QUẢ của quyết định kỹ thuật. Kỹ sư phải nhìn thấy nó.**
+>
+> **Bốn nguồn lãng phí: mồ côi, cấp dư, môi trường 24/7, truyền dữ liệu.**
+>
+> **Không gắn thẻ thì không phân tích được gì.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Bốn nguồn lãng phí lớn nhất, theo thứ tự?
+2. Vì sao chi phí truyền dữ liệu hay gây bất ngờ?
+3. Ba câu hỏi khi đọc hoá đơn?
+4. Bốn mô hình mua, mỗi cái hợp với tải nào?
+5. Khi nào tối ưu chi phí **không** đáng làm?
+
+## Tự viết lại
+
+Hoá đơn 12.000 USD/tháng, tăng 15% mỗi tháng, đội 6 người. Không nhìn lại, viết kế hoạch:
+
+```text
+① điều tra gì trước
+② ba biện pháp có tác động nhanh nhất
+③ ba biện pháp dài hạn
+④ ngăn nó tăng lại bằng cách nào
+```
+
+Tự kiểm: với đội 6 người, mức 12.000 USD/tháng có đáng ưu tiên không — bạn dựa vào đâu để nói vậy?
+
+## Thử sức
+
+Hoá đơn tháng này **gấp đôi** tháng trước, không ai biết vì sao.
+
+Ba câu để trả lời: bạn điều tra thế nào **ngay hôm nay**; ba nguyên nhân khả dĩ nhất và cách kiểm từng cái; và bạn ngăn "bất ngờ hoá đơn" tái diễn bằng cách nào. Câu khó nhất: nếu nguyên nhân hoá ra là một tính năng mới **hợp lệ** và đang được dùng nhiều, bạn báo cáo điều đó thế nào — và đề xuất gì?
