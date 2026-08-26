@@ -3374,6 +3374,106 @@
     "updatedAt": "2026-01-08T03:00:00.000Z"
   },
   {
+    "id": "note-mo-hinh-dich-vu-cloud",
+    "topicId": "topic-cloud",
+    "title": "Các mô hình dịch vụ cloud",
+    "slug": "mo-hinh-dich-vu-cloud",
+    "summary": "IaaS, PaaS, serverless, dịch vụ quản lý sẵn — bạn nhận gì và mất quyền kiểm soát gì ở mỗi mức.",
+    "content": "> **Sau bài này bạn sẽ:** chọn được mức trừu tượng phù hợp, và biết mình đang đánh đổi quyền kiểm soát lấy cái gì.\n\n## Ý tưởng chính\n\nCloud không phải \"máy chủ của người khác\". Nó là một **thang trừu tượng**: mỗi bước lên, bạn giao thêm một phần trách nhiệm cho nhà cung cấp, và mất thêm một phần quyền kiểm soát.\n\nCâu hỏi không phải \"mức nào tốt nhất\", mà **\"phần trách nhiệm này có phải lợi thế cạnh tranh của chúng ta không?\"** Nếu không, giao đi.\n\n## Mental model\n\nHãy nghĩ tới **các cách có một bữa ăn**.\n\n> **Tự trồng, tự nấu** — kiểm soát hoàn toàn, tốn nhiều thời gian nhất. Đó là máy chủ tự quản (on-premise).\n>\n> **Mua nguyên liệu, tự nấu** — không phải trồng, vẫn chọn được gia vị. Đó là **IaaS**: bạn có máy ảo, tự cài mọi thứ.\n>\n> **Bộ nguyên liệu sơ chế kèm công thức** — nhanh hơn nhiều, nhưng nấu theo cách của họ. Đó là **PaaS**.\n>\n> **Gọi món ở nhà hàng** — trả tiền theo món ăn, không quan tâm bếp. Đó là **serverless**.\n>\n> Nhà hàng nhanh và tiện. Nhưng **bạn không đổi được công thức**, và nếu quán đóng cửa thì bạn phải tìm chỗ khác — có thể món đó không nơi nào khác có.\n\nVế cuối là **vendor lock-in**, và nó là cái giá thật của việc lên cao trên thang này.\n\n## Ví dụ nhỏ\n\n```text\nTự quản     bạn lo: phần cứng, mạng, OS, runtime, app\nIaaS        bạn lo: OS, runtime, app\nPaaS        bạn lo: app, cấu hình\nServerless  bạn lo: một hàm\n```\n\n## Code chạy thế nào\n\n**Bốn mức và trách nhiệm cụ thể:**\n\n```text\nIaaS (máy ảo: EC2, Droplet, Compute Engine)\n  Bạn lo: hệ điều hành, bản vá bảo mật, runtime, triển khai,\n          scaling, giám sát, sao lưu\n  Được:   kiểm soát hoàn toàn; chạy được mọi thứ\n  Trả:    công vận hành liên tục, và nó không bao giờ hết\n\nPaaS (Heroku, Render, App Service, Cloud Run)\n  Bạn lo: mã và cấu hình\n  Được:   deploy bằng một lệnh, scaling sẵn có, HTTPS sẵn có\n  Trả:    ít quyền tuỳ chỉnh; đắt hơn IaaS ở quy mô lớn;\n          \"chạy được ở đây\" gắn với nền tảng đó\n\nSERVERLESS (Lambda, Cloud Functions, Vercel Functions)\n  Bạn lo: một hàm và các biến môi trường\n  Được:   trả theo lần dùng; tự mở rộng về 0 và lên rất cao\n  Trả:    cold start; giới hạn thời gian chạy;\n          gỡ lỗi khó hơn; khó chạy tác vụ dài;\n          KHÔNG giữ được trạng thái giữa các lần gọi\n\nDỊCH VỤ QUẢN LÝ SẴN (RDS, ElastiCache, S3, SQS)\n  Bạn lo: schema và truy vấn\n  Được:   sao lưu, bản vá, chuyển đổi dự phòng, replica — sẵn có\n  Trả:    đắt hơn tự dựng; ít tinh chỉnh sâu\n```\n\n**Serverless — hai giới hạn quyết định nó có phù hợp không:**\n\n```text\n① CỐ ĐỊNH TRẠNG THÁI KHÔNG GIỮ ĐƯỢC\n   Mỗi lần gọi có thể ở một container khác.\n   ⇒ Không cache trong tiến trình, không giữ kết nối WebSocket,\n     không dùng biến toàn cục làm bộ đếm.\n\n② KẾT NỐI CSDL\n   1.000 lần gọi đồng thời ⇒ có thể 1.000 kết nối tới Postgres.\n   ⇒ Postgres mặc định max_connections = 100 ⇒ vỡ.\n   ⇒ Bắt buộc cần connection pooler ở giữa\n     ([[mo-rong-va-can-bang-tai]]).\n```\n\nGiới hạn ② là bất ngờ phổ biến nhất khi chuyển sang serverless: mọi thứ chạy đúng ở tải thấp và vỡ đúng lúc thành công.\n\n## Cú pháp\n\n**Mô hình trách nhiệm chung — chỗ hay hiểu sai nhất về bảo mật:**\n\n```text\nNHÀ CUNG CẤP lo: bảo mật CỦA cloud\n  trung tâm dữ liệu, phần cứng, ảo hoá, mạng vật lý\n\nBẠN lo: bảo mật TRONG cloud\n  □ Ai được truy cập gì (IAM)\n  □ Nhóm bảo mật, tường lửa\n  □ Mã hoá dữ liệu\n  □ Bản vá hệ điều hành (ở IaaS)\n  □ Cấu hình của dịch vụ quản lý sẵn\n\n⇒ \"Dùng cloud nên an toàn\" là một câu sai.\n  Phần lớn vụ rò rỉ dữ liệu trên cloud đến từ CẤU HÌNH SAI\n  của người dùng: một bucket lưu trữ để công khai, một security\n  group mở 0.0.0.0/0 ([[tuong-lua-nat-va-vpn]]).\n```\n\n**Vùng và vùng khả dụng — hai khái niệm khác nhau:**\n\n```text\nREGION (vùng)            khu vực địa lý: ap-southeast-1 (Singapore)\nAVAILABILITY ZONE (AZ)   trung tâm dữ liệu độc lập TRONG một vùng\n\nChọn region theo: gần người dùng (độ trễ), yêu cầu pháp lý\n                  về nơi lưu dữ liệu, và giá (khác nhau đáng kể)\n\nDùng nhiều AZ:    chống mất một trung tâm dữ liệu.\n                  Chi phí thấp, hầu như luôn nên làm.\nDùng nhiều REGION: chống mất cả một vùng.\n                  Chi phí và độ phức tạp CAO — dữ liệu phải\n                  đồng bộ qua khoảng cách địa lý.\n                  ⇒ Chỉ khi thật sự cần.\n```\n\nVà nhớ: **truyền dữ liệu giữa các AZ và giữa các region đều có phí**, thường là dòng gây bất ngờ nhất trên hoá đơn ([[chi-phi-ha-tang]]).\n\n**Vendor lock-in — đo bằng chi phí rời đi:**\n\n```text\nMức thấp:  máy ảo, container, Postgres quản lý sẵn\n           ⇒ chuyển đi được, chủ yếu là công\nMức vừa:   hàng đợi, lưu trữ đối tượng của nhà cung cấp\n           ⇒ API riêng, nhưng có thể bọc lại sau một interface\nMức cao:   dịch vụ độc quyền không có tương đương\n           ⇒ chuyển đi = viết lại phần đó\n\n⇒ Đừng cố tránh lock-in bằng mọi giá — nó thường tốn nhiều hơn\n  lợi ích. Nhưng hãy BIẾT mình đang ở mức nào, và đừng đặt\n  phần cốt lõi nhất của hệ thống ở mức cao.\n```\n\n## Tại sao cần nó\n\nVì mức đúng phụ thuộc vào **quy mô đội**, không chỉ quy mô hệ thống:\n\n```text\nĐội 3 người:\n  Vận hành máy ảo tiêu một phần lớn thời gian của một người.\n  ⇒ PaaS + dịch vụ quản lý sẵn gần như luôn đúng, dù đắt hơn\n    trên hoá đơn. Bạn đang mua thời gian.\n\nĐội 30 người, có người vận hành chuyên trách:\n  Kiểm soát và chi phí trở nên quan trọng hơn.\n  ⇒ IaaS hoặc container có thể rẻ hơn đáng kể.\n\n⇒ So sánh phải là: giá hoá đơn + THỜI GIAN NGƯỜI.\n  Bỏ vế thứ hai thì mọi so sánh đều nghiêng về IaaS,\n  và kết luận đó thường sai với đội nhỏ.\n```\n\n**Nguyên tắc chọn:**\n\n```text\n① Phần nào KHÔNG phải lợi thế cạnh tranh của bạn ⇒ giao cho\n  nhà cung cấp. Vận hành Postgres không làm sản phẩm bạn tốt hơn.\n② Bắt đầu ở mức trừu tượng CAO. Đi xuống khi có lý do đo được\n  (chi phí, hoặc một giới hạn cụ thể đang cản).\n③ Đừng dựng Kubernetes cho ba dịch vụ.\n④ Đừng tự quản CSDL nếu chưa có người biết khôi phục nó\n  ([[giam-sat-va-sao-luu]]).\n```\n\n## So sánh\n\n| | IaaS | PaaS | Serverless |\n|---|---|---|---|\n| Bạn quản OS | ✅ | ❌ | ❌ |\n| Kiểm soát | cao | vừa | thấp |\n| Tốc độ khởi đầu | chậm | nhanh | nhanh nhất |\n| Giá ở tải thấp | cao (chạy 24/7) | vừa | **rất thấp** |\n| Giá ở tải rất cao | thấp | cao | cao |\n| Giữ trạng thái | ✅ | ✅ | ❌ |\n| Tác vụ dài | ✅ | ✅ | giới hạn |\n\n## Dễ nhầm\n\n**1. Tin \"dùng cloud nên an toàn\".** Cấu hình sai là nguyên nhân chính của rò rỉ.\n\n**2. So sánh chỉ bằng giá hoá đơn.** Bỏ mất thời gian người.\n\n**3. Serverless mà không có connection pooler.** Vỡ khi tải lên.\n\n**4. Cache trong tiến trình ở serverless.** Mỗi lần gọi một container.\n\n**5. Dựng Kubernetes cho ba dịch vụ.**\n\n**6. Tự quản CSDL mà chưa từng thử khôi phục.**\n\n**7. Quên phí truyền dữ liệu giữa AZ và giữa region.**\n\n**8. Đặt ứng dụng và CSDL ở hai region khác nhau \"cho an toàn\".** Chậm hơn và tốn hơn.\n\n**9. Cố tránh lock-in bằng mọi giá.** Thường tốn hơn lợi ích.\n\n**10. Không biết mình đang lock-in ở mức nào.**\n\n## Mẹo nhớ\n\n> **Mỗi bước lên thang: giao thêm TRÁCH NHIỆM, mất thêm KIỂM SOÁT.**\n>\n> **Phần nào không phải lợi thế cạnh tranh ⇒ giao cho nhà cung cấp.**\n>\n> **Bảo mật CỦA cloud là của họ. Bảo mật TRONG cloud là của bạn.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Bốn mức, mỗi mức bạn lo gì?\n2. Hai giới hạn quyết định của serverless?\n3. Mô hình trách nhiệm chung chia thế nào?\n4. Region khác AZ ra sao, dùng nhiều cái nào thì đáng?\n5. Vì sao so sánh chi phí phải tính cả thời gian người?\n\n## Tự viết lại\n\nKhông nhìn lại, chọn mức và giải thích cho từng trường hợp:\n\n```text\n① Startup 3 người, một ứng dụng web + Postgres\n② API xử lý webhook, lưu lượng rất thất thường\n③ Dịch vụ xử lý video, mỗi job 20 phút\n④ Sàn thương mại 30 kỹ sư, tải cao và đều\n⑤ Cron chạy mỗi đêm, 5 phút mỗi lần\n```\n\nTự kiểm: ở ③, vì sao serverless thường không phù hợp — và giới hạn cụ thể nào?\n\n## Thử sức\n\nĐội bạn đang chạy trên PaaS, hoá đơn 4.000 USD/tháng. Có người đề xuất chuyển sang máy ảo tự quản để \"tiết kiệm một nửa\".\n\nBa câu để trả lời: bạn tính chi phí thật của cả hai phương án như thế nào; những gì đội phải nhận thêm trách nhiệm; và bạn cần điều kiện gì để đồng ý. Câu khó nhất: nếu tiết kiệm được 2.000 USD/tháng nhưng cần thêm 20% thời gian của một kỹ sư, đó là lãi hay lỗ — và câu trả lời phụ thuộc vào điều gì?",
+    "tags": [
+      "cloud",
+      "devops",
+      "kien-truc",
+      "chi-phi"
+    ],
+    "order": 1,
+    "level": "co-ban",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-08T04:00:00.000Z",
+    "updatedAt": "2026-01-08T04:00:00.000Z"
+  },
+  {
+    "id": "note-iam-va-quyen-truy-cap",
+    "topicId": "topic-cloud",
+    "title": "IAM và quyền truy cập trên cloud",
+    "slug": "iam-va-quyen-truy-cap",
+    "summary": "Vai, chính sách, đặc quyền tối thiểu — và vì sao khoá truy cập dài hạn là thứ nên biến mất khỏi hệ thống.",
+    "content": "> **Sau bài này bạn sẽ:** viết được chính sách theo đặc quyền tối thiểu, và thay khoá dài hạn bằng vai.\n\n## Ý tưởng chính\n\nTrên cloud, **danh tính là ranh giới bảo mật chính**. Không phải tường lửa, không phải mạng — mà là câu hỏi *\"ai được gọi API nào, trên tài nguyên nào\".*\n\nVà sai ở đây khác sai ở tầng khác: một chính sách quá rộng không gây lỗi gì, không hiện trong log, và chỉ lộ ra khi có người khai thác nó.\n\n## Mental model\n\nHãy nghĩ tới **thẻ từ trong một toà nhà lớn**.\n\n> Cách tệ: mỗi người một chùm chìa khoá vật lý. Ai vào đội thì làm thêm chìa; ai nghỉ thì... hy vọng họ trả lại. **Chìa đã sao thì không thu hồi được.**\n>\n> Cách tốt: thẻ từ. Quyền gắn với **vai** (\"nhân viên kho\", \"quản lý tầng 3\"), không gắn với người. Vào đội thì gán vai; nghỉ thì rút thẻ, và **mọi cửa biết ngay**.\n>\n> Và thẻ khách chỉ có hiệu lực **trong ngày**, không phải mãi mãi.\n\nChùm chìa khoá là **access key dài hạn**. Thẻ từ theo vai là **role**. Thẻ khách hết hạn trong ngày là **thông tin đăng nhập tạm thời** — và đó là thứ nên dùng ở gần như mọi nơi.\n\n## Ví dụ nhỏ\n\n```json\n{\n  \"Effect\": \"Allow\",\n  \"Action\": [\"s3:GetObject\", \"s3:PutObject\"],\n  \"Resource\": \"arn:aws:s3:::anh-san-pham/*\"\n}\n```\n\n## Code chạy thế nào\n\n**Bốn thành phần của một quyết định cho phép:**\n\n```text\n① AI          (principal) — người dùng, vai, hoặc một dịch vụ\n② LÀM GÌ      (action)    — s3:GetObject, rds:DeleteDBInstance\n③ TRÊN CÁI GÌ (resource)  — bucket nào, bảng nào, máy nào\n④ ĐIỀU KIỆN   (condition) — từ IP nào, có MFA chưa, thẻ nào\n\nThiếu ③ là lỗi phổ biến nhất: `\"Resource\": \"*\"` nghĩa là\n\"trên MỌI tài nguyên\", kể cả những thứ tạo ra năm sau.\n```\n\n**Bốn mức chính sách, từ tệ tới tốt:**\n\n```text\n❌ TỆ NHẤT\n   { \"Action\": \"*\", \"Resource\": \"*\" }\n   ⇒ Toàn quyền. Một khoá rò rỉ = mất toàn bộ hạ tầng.\n\n⚠️ VẪN RỘNG\n   { \"Action\": \"s3:*\", \"Resource\": \"*\" }\n   ⇒ Đọc, ghi, XOÁ mọi bucket — kể cả bucket sao lưu.\n\n⚠️ TỐT HƠN\n   { \"Action\": [\"s3:GetObject\",\"s3:PutObject\"], \"Resource\": \"arn:...:anh/*\" }\n\n✅ ĐẶC QUYỀN TỐI THIỂU\n   Như trên, cộng điều kiện: chỉ từ VPC của bạn, chỉ khi có MFA,\n   chỉ trên tài nguyên có thẻ đúng môi trường.\n```\n\n**Nguyên tắc thứ tự đánh giá — hai điều phải nhớ:**\n\n```text\n① Mặc định là TỪ CHỐI. Không có chính sách nào cho phép ⇒ từ chối.\n② DENY luôn thắng ALLOW, bất kể thứ tự.\n\n⇒ Hệ quả hữu ích: một chính sách chặn ở cấp tổ chức\n  (\"không ai được xoá log kiểm toán\", \"không ai được tạo tài\n  nguyên ngoài region cho phép\") KHÔNG THỂ bị ghi đè bởi\n  chính sách cấp dưới.\n  ⇒ Đây là cách đặt lan can an toàn cho cả tổ chức.\n```\n\n## Cú pháp\n\n**Khoá dài hạn — vì sao nên biến mất:**\n\n```text\nAccess key dài hạn:\n  □ Không tự hết hạn\n  □ Nằm trong file cấu hình, biến môi trường, CI secret,\n    và trong lịch sử shell của người ta\n  □ Rò rỉ ⇒ dùng được cho tới khi có người phát hiện và thu hồi\n  □ Bot quét GitHub tìm chúng liên tục, và tìm thấy trong vài phút\n\nThay bằng:\n  □ Máy ảo / container       → gán VAI cho máy, SDK tự lấy\n                               thông tin đăng nhập tạm\n  □ CI/CD                    → OIDC ([[secret-va-quyen-trong-ci]])\n  □ Người dùng               → đăng nhập một lần (SSO) + MFA\n  □ Dịch vụ nói với dịch vụ  → vai, không phải khoá\n\n⇒ Mục tiêu thực tế: KHÔNG CÓ access key dài hạn nào trong hệ thống.\n  Nghe cực đoan, nhưng đạt được ở phần lớn kiến trúc hiện nay.\n```\n\n**Assume role — cách một danh tính lấy quyền tạm:**\n\n```text\n① Danh tính gốc (người, hoặc máy) yêu cầu \"cho tôi nhận vai X\"\n② Cloud kiểm: danh tính này có được phép nhận vai X không?\n③ Trả về thông tin đăng nhập TẠM (thường 1 giờ)\n④ Hết hạn ⇒ tự lấy lại\n\n⇒ Rò rỉ thông tin tạm chỉ có giá trị trong một giờ.\n⇒ Và mọi lần nhận vai đều được GHI LOG — bạn biết ai, lúc nào,\n  từ đâu.\n```\n\n**Tách môi trường bằng tài khoản, không bằng tên:**\n\n```text\n❌ Một tài khoản, phân biệt dev/prod bằng tiền tố tên tài nguyên\n   ⇒ Một chính sách quá rộng chạm được cả hai.\n   ⇒ Một lệnh gõ sai xoá tài nguyên production.\n\n✅ Tài khoản riêng cho mỗi môi trường\n   ⇒ Ranh giới CỨNG. Không có chính sách nào \"vô tình\" vượt qua.\n   ⇒ Và tách được hoá đơn theo môi trường.\n```\n\nĐây là biện pháp có tỉ lệ lợi ích trên công sức cao nhất trong bài, và nó gần như miễn phí nếu làm từ đầu.\n\n## Tại sao cần nó\n\nVì cấu hình IAM sai là **nguyên nhân hàng đầu** của các vụ rò rỉ dữ liệu trên cloud — và nó hỏng theo cách âm thầm nhất:\n\n```text\nTường lửa cấu hình sai   ⇒ thường có ai đó không truy cập được ⇒ phát hiện\nIAM cấu hình quá rộng    ⇒ mọi thứ CHẠY BÌNH THƯỜNG\n                          ⇒ không ai báo lỗi\n                          ⇒ chỉ lộ ra khi bị khai thác\n```\n\n**Bốn thứ nên rà soát định kỳ:**\n\n```text\n□ Chính sách có \"Action\": \"*\" hoặc \"Resource\": \"*\"\n□ Access key dài hạn còn tồn tại — và lần cuối dùng là khi nào\n□ Danh tính không dùng trong 90 ngày\n□ Bucket lưu trữ và snapshot đang ở chế độ công khai\n```\n\n```text\nVà một điều hay bị bỏ: THU HỒI khi người rời đội.\n  Xoá tài khoản là bước rõ ràng.\n  Nhưng còn: khoá họ tạo ra, vai họ có thể nhận, token trong CI,\n  và các dịch vụ bên thứ ba họ đã kết nối.\n  ⇒ Cần một danh sách kiểm, không dựa vào trí nhớ.\n```\n\n**Bắt đầu từ đâu nếu đang lộn xộn:**\n\n```text\n① Bật ghi log mọi lời gọi API (CloudTrail và tương đương) — trước tiên\n② Tách tài khoản theo môi trường\n③ Xoá access key dài hạn, thay bằng vai và OIDC\n④ Rà chính sách có `*`, siết dần theo log ai thật sự dùng gì\n⑤ Đặt chính sách chặn ở cấp tổ chức làm lan can\n\nBước ① đi trước vì nó cho bạn DỮ LIỆU để siết chính sách\nmà không làm hỏng thứ đang chạy.\n```\n\n## So sánh\n\n| | Khoá dài hạn | Vai + thông tin tạm |\n|---|---|---|\n| Hết hạn | ❌ | ✅ ~1 giờ |\n| Rò rỉ thì | dùng mãi tới khi thu hồi | hết giá trị sau 1 giờ |\n| Ghi log việc lấy quyền | ❌ | ✅ |\n| Xoay định kỳ | thủ công | tự động |\n| Dùng cho | gần như không nên | mọi nơi |\n\n## Dễ nhầm\n\n**1. `\"Resource\": \"*\"`.** Gồm cả tài nguyên tạo ra sau này.\n\n**2. Dùng access key dài hạn cho máy ảo hoặc CI.**\n\n**3. Một tài khoản cho cả dev và production.**\n\n**4. Không bật ghi log lời gọi API.** Không có dữ liệu để siết chính sách.\n\n**5. Cấp quyền theo người thay vì theo vai.** Không quản được khi đội thay đổi.\n\n**6. Không thu hồi đầy đủ khi người rời đội.**\n\n**7. Không rà chính sách định kỳ.** Quyền chỉ tích tụ, không tự giảm.\n\n**8. Bỏ qua điều kiện trong chính sách.** IP, MFA, thẻ là lớp phòng thủ rẻ.\n\n**9. Không có chính sách chặn ở cấp tổ chức.** Thiếu lan can.\n\n**10. Tin rằng IAM sai sẽ gây lỗi.** Nó chạy bình thường.\n\n## Mẹo nhớ\n\n> **Bốn phần: AI — LÀM GÌ — TRÊN CÁI GÌ — ĐIỀU KIỆN. Thiếu \"trên cái gì\" là lỗi phổ biến nhất.**\n>\n> **DENY luôn thắng ALLOW ⇒ dùng nó làm lan can cấp tổ chức.**\n>\n> **Mục tiêu: KHÔNG có access key dài hạn nào trong hệ thống.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Bốn thành phần của một quyết định cho phép?\n2. Vì sao khoá dài hạn nên được thay bằng vai?\n3. Assume role hoạt động thế nào, hai lợi ích?\n4. Vì sao tách môi trường bằng tài khoản chứ không bằng tên?\n5. Vì sao cấu hình IAM sai khó phát hiện hơn tường lửa sai?\n\n## Tự viết lại\n\nKhông nhìn lại, viết chính sách theo đặc quyền tối thiểu cho:\n\n```text\n① Ứng dụng web: đọc/ghi một bucket ảnh, đọc một secret\n② Job sao lưu: đọc CSDL, ghi vào bucket sao lưu (KHÔNG được xoá)\n③ CI: deploy lên môi trường staging, không chạm production\n④ Kỹ sư trực: đọc log và metric, không sửa tài nguyên\n```\n\nTự kiểm: ở ② vì sao \"không được xoá\" quan trọng — và nó bảo vệ bạn khỏi kịch bản nào?\n\n## Thử sức\n\nRà soát phát hiện: 14 access key dài hạn, 6 chính sách có `\"Action\": \"*\"`, và một tài khoản dùng cho cả dev lẫn production.\n\nBa câu để trả lời: bạn xử lý theo thứ tự nào và vì sao thứ tự đó; bạn siết chính sách mà **không làm hỏng thứ đang chạy** bằng cách nào; và bạn ngăn tình trạng này tái diễn ra sao. Câu khó nhất: một trong 14 khoá đó không ai biết dùng cho việc gì — bạn tìm ra bằng cách nào, và nếu không tìm ra thì làm gì?",
+    "tags": [
+      "cloud",
+      "iam",
+      "bao-mat",
+      "devops"
+    ],
+    "order": 2,
+    "level": "trung-cap",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-08T05:00:00.000Z",
+    "updatedAt": "2026-01-08T05:00:00.000Z"
+  },
+  {
+    "id": "note-ha-tang-bang-ma",
+    "topicId": "topic-cloud",
+    "title": "Hạ tầng bằng mã",
+    "slug": "ha-tang-bang-ma",
+    "summary": "Vì sao bấm chuột trên giao diện cloud là nợ kỹ thuật, và state file là thứ quan trọng nhất phải bảo vệ.",
+    "content": "> **Sau bài này bạn sẽ:** biết vì sao hạ tầng phải nằm trong git, và cái bẫy lớn nhất của Terraform là gì.\n\n## Ý tưởng chính\n\nHạ tầng dựng bằng cách bấm chuột trên giao diện có ba vấn đề: **không ai biết đã bấm gì**, **không dựng lại được**, và **không review được**.\n\nHạ tầng bằng mã (IaC) biến hạ tầng thành thứ chịu cùng quy trình với mã ứng dụng: review, lịch sử, và dựng lại được.\n\n## Mental model\n\nHãy nghĩ tới **công thức nấu ăn so với nấu theo cảm giác**.\n\n> Người đầu bếp nấu theo cảm giác có thể nấu rất ngon. Nhưng: món hôm nay **không giống hôm qua**, người khác **không nấu lại được**, và khi có vấn đề thì không ai biết đã cho bao nhiêu muối.\n>\n> Công thức viết ra thì nhàm hơn — nhưng **ai cũng nấu lại được**, và sửa công thức là một thay đổi **thấy được**.\n>\n> Và có một chi tiết: đầu bếp phải **ghi lại mình đang nấu tới bước nào**. Mất tờ ghi đó thì không biết đã cho muối chưa — cho thêm lần nữa là mặn, không cho thì nhạt.\n\nTờ ghi \"đang ở bước nào\" là **state file**, và nó là thứ dễ bị đánh giá thấp nhất trong toàn bộ IaC.\n\n## Ví dụ nhỏ\n\n```hcl\nresource \"aws_s3_bucket\" \"anh\" {\n  bucket = \"anh-san-pham-${var.moi_truong}\"\n}\n\nresource \"aws_s3_bucket_public_access_block\" \"anh\" {\n  bucket                  = aws_s3_bucket.anh.id\n  block_public_acls       = true\n  block_public_policy     = true\n}\n```\n\n## Code chạy thế nào\n\n**Khai báo, không phải ra lệnh — và điều đó thay đổi cách nghĩ:**\n\n```text\nRA LỆNH (script):     \"tạo máy ảo\"\n  Chạy hai lần ⇒ hai máy ảo.\n  Muốn biết hiện có gì ⇒ đọc lại toàn bộ script và đoán.\n\nKHAI BÁO (Terraform): \"phải có một máy ảo với cấu hình này\"\n  Chạy nhiều lần ⇒ vẫn một máy.\n  Terraform SO SÁNH mong muốn với thực tế, rồi làm phần chênh lệch.\n```\n\n```text\nVòng làm việc:\n  ① viết/sửa mã mô tả trạng thái MONG MUỐN\n  ② `plan` — xem nó SẼ làm gì   ← bước quan trọng nhất\n  ③ đọc plan, xác nhận đúng ý\n  ④ `apply`\n```\n\nBước ② là điểm khác biệt lớn nhất so với bấm chuột: bạn **thấy trước** hậu quả, và nó review được như một diff.\n\n**State file — cái bẫy lớn nhất:**\n\n```text\nState file ghi: \"tôi đã tạo những tài nguyên nào, id là gì\".\nNó là cách Terraform biết cái gì đã tồn tại.\n\nMất state file:\n  ⇒ Terraform tưởng chưa tạo gì\n  ⇒ `apply` sẽ TẠO LẠI mọi thứ (hoặc lỗi vì tên đã tồn tại)\n\nHai người apply cùng lúc:\n  ⇒ hai state ghi đè nhau ⇒ tài nguyên mồ côi, không ai quản\n\n⇒ Bắt buộc: state ở NƠI DÙNG CHUNG (S3, GCS) và có KHOÁ.\n⇒ Và state file chứa THÔNG TIN NHẠY CẢM (mật khẩu CSDL sinh ra\n  lúc tạo tài nguyên) ⇒ phải mã hoá, và KHÔNG BAO GIỜ commit vào git.\n```\n\nBa dòng cuối là ba lỗi thường gặp nhất của người dùng Terraform lần đầu, và cả ba đều gây hậu quả khó dọn.\n\n## Cú pháp\n\n**Drift — thay đổi bằng tay làm lệch trạng thái:**\n\n```text\nAi đó sửa security group trên giao diện web.\nTerraform không biết ⇒ lần `apply` sau nó ĐƯA VỀ như mã khai báo\n⇒ thay đổi kia mất, có thể lúc đang xử lý sự cố.\n\nHai cách xử lý:\n  ① Chặn sửa tay: chỉ CI có quyền thay đổi hạ tầng, người thì chỉ đọc\n     ⇒ hiệu quả nhất, và khả thi\n  ② Chạy `plan` định kỳ, cảnh báo khi có drift\n     ⇒ phát hiện, không ngăn\n\nVà một ngoại lệ thực dụng: lúc sự cố, sửa tay để khôi phục\nnhanh là ĐÚNG. Nhưng phải đưa vào mã ngay sau đó, không để đó.\n```\n\n**Module — đừng copy-paste hạ tầng:**\n\n```hcl\nmodule \"api\" {\n  source      = \"./modules/dich-vu-web\"\n  ten         = \"api\"\n  moi_truong  = \"production\"\n  so_ban_sao  = 3\n}\n```\n\n```text\nKhông có module: dev, staging, production là ba bản copy.\n⇒ Sửa một thứ phải sửa ba nơi, và chúng lệch nhau dần.\n⇒ \"Staging chạy được mà\" mất ý nghĩa vì staging KHÁC production.\n\nCó module: một định nghĩa, ba lần dùng với tham số khác nhau.\n⇒ Khác biệt giữa các môi trường trở thành THẤY ĐƯỢC:\n  chỉ nằm ở danh sách tham số.\n```\n\n**Tách state theo phạm vi thay đổi:**\n\n```text\n❌ Một state cho tất cả\n   ⇒ `plan` mất 10 phút; đổi một biến môi trường phải chạm\n     vào cả VPC và CSDL; và một lỗi có thể ảnh hưởng mọi thứ.\n\n✅ Tách theo NHỊP THAY ĐỔI:\n   mang/         VPC, subnet, DNS        — đổi vài lần mỗi năm\n   du-lieu/      CSDL, cache             — đổi vài lần mỗi quý\n   ung-dung/     dịch vụ, scaling        — đổi hằng tuần\n\n⇒ Cùng nguyên tắc với xếp lớp Dockerfile theo tần suất thay đổi\n  ([[viet-dockerfile]]).\n```\n\n**Hai thứ phải làm với dữ liệu:**\n\n```hcl\nresource \"aws_db_instance\" \"main\" {\n  # ...\n  lifecycle { prevent_destroy = true }   # ① chặn xoá bằng Terraform\n  deletion_protection = true             # ② chặn xoá ở cả tầng nhà cung cấp\n}\n```\n\nKhông có hai dòng này, một `terraform destroy` gõ sai môi trường là mất CSDL production. Đây là loại lỗi có thật và không sửa được.\n\n## Tại sao cần nó\n\nVì bốn thứ chỉ có được khi hạ tầng nằm trong git:\n\n```text\n① REVIEW      thay đổi hạ tầng đi qua PR như mã\n              ⇒ mở một cổng ra Internet là một dòng diff ai cũng thấy\n② LỊCH SỬ     \"vì sao security group này mở cổng 8080?\" → git blame\n③ DỰNG LẠI    mất cả region ⇒ dựng lại ở region khác từ mã\n              (nếu có sao lưu dữ liệu)\n④ MÔI TRƯỜNG GIỐNG NHAU\n              staging thật sự giống production, khác biệt thấy được\n```\n\nĐiểm ① đáng nhấn: nó chuyển bảo mật hạ tầng từ \"hy vọng không ai bấm sai\" sang \"một thay đổi rủi ro phải có người thứ hai đồng ý\" ([[iam-va-quyen-truy-cap]]).\n\n**Nhưng IaC không miễn phí:**\n\n```text\n□ Cần học một công cụ và một mô hình tư duy mới\n□ State file là một thứ nữa phải vận hành và bảo vệ\n□ Thay đổi nhỏ chậm hơn bấm chuột — lúc sự cố là bất tiện thật\n□ Drift là một loại vấn đề chỉ tồn tại vì có IaC\n\n⇒ Đáng gần như luôn, nhưng đừng bắt đầu bằng cách viết lại toàn bộ\n  hạ tầng hiện có. Cách khả thi hơn: mọi thứ MỚI thì bằng mã,\n  và `import` dần những thứ cũ khi có việc chạm tới chúng.\n```\n\n## So sánh\n\n| | Bấm chuột | Script (ra lệnh) | IaC (khai báo) |\n|---|---|---|---|\n| Review được | ❌ | ✅ | ✅ |\n| Chạy lại an toàn | — | ❌ | ✅ |\n| Biết hiện có gì | phải xem giao diện | đoán | state file |\n| Dựng lại từ 0 | ❌ | một phần | ✅ |\n| Tốc độ thay đổi nhỏ | nhanh nhất | nhanh | chậm hơn |\n\n## Dễ nhầm\n\n**1. Commit state file vào git.** Nó chứa thông tin nhạy cảm.\n\n**2. State file cục bộ.** Hai người apply là hỏng.\n\n**3. Không có khoá state.**\n\n**4. `apply` mà không đọc `plan`.**\n\n**5. Không có `prevent_destroy` cho CSDL.**\n\n**6. Copy-paste giữa các môi trường thay vì dùng module.**\n\n**7. Một state cho tất cả.** `plan` chậm, và phạm vi rủi ro rộng.\n\n**8. Cho phép sửa tay mà không phát hiện drift.**\n\n**9. Sửa tay lúc sự cố rồi không đưa vào mã.**\n\n**10. Viết lại toàn bộ hạ tầng cũ trong một dự án.** Import dần thì khả thi hơn.\n\n## Mẹo nhớ\n\n> **Khai báo trạng thái MONG MUỐN, không ra lệnh. Luôn đọc `plan` trước `apply`.**\n>\n> **STATE FILE: dùng chung, có khoá, mã hoá, KHÔNG vào git.**\n>\n> **Tách state theo NHỊP THAY ĐỔI, và `prevent_destroy` cho dữ liệu.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Khai báo khác ra lệnh thế nào, và hệ quả khi chạy lại?\n2. State file làm gì, và bốn yêu cầu với nó?\n3. Drift là gì, hai cách xử lý?\n4. Vì sao tách state theo nhịp thay đổi?\n5. Bốn thứ chỉ có được khi hạ tầng nằm trong git?\n\n## Tự viết lại\n\nKhông nhìn lại, viết cấu trúc IaC cho một hệ thống có VPC, ứng dụng web (3 bản sao), Postgres, Redis, và một bucket:\n\n```text\n① chia thành mấy state, theo tiêu chí gì\n② module nào cần\n③ ba biện pháp bảo vệ dữ liệu\n④ ai được `apply`, ở đâu\n```\n\nTự kiểm: ở ④, nếu chỉ CI được apply, thì lúc 3 giờ sáng có sự cố cần sửa hạ tầng ngay, bạn làm thế nào?\n\n## Thử sức\n\nĐội bạn có hạ tầng dựng hoàn toàn bằng tay qua giao diện web trong hai năm. Không ai biết đầy đủ đang có những gì.\n\nBa câu để trả lời: bạn bắt đầu từ đâu — và vì sao **không** phải là viết mã cho toàn bộ; bạn xử lý những tài nguyên đang chạy thế nào; và bạn ngăn việc bấm chuột tiếp diễn ra sao. Câu khó nhất: nếu `import` một tài nguyên đang chạy vào Terraform mà mã bạn viết khác cấu hình thật, lần `apply` đầu tiên sẽ làm gì — và bạn tránh tai nạn đó bằng cách nào?",
+    "tags": [
+      "cloud",
+      "devops",
+      "terraform",
+      "tu-dong-hoa"
+    ],
+    "order": 3,
+    "level": "trung-cap",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-08T06:00:00.000Z",
+    "updatedAt": "2026-01-08T06:00:00.000Z"
+  },
+  {
+    "id": "note-container-o-quy-mo",
+    "topicId": "topic-cloud",
+    "title": "Container ở quy mô — orchestrator",
+    "slug": "container-o-quy-mo",
+    "summary": "Kubernetes giải quyết vấn đề gì, cái giá của nó, và ba lựa chọn nhẹ hơn thường đủ dùng.",
+    "content": "> **Sau bài này bạn sẽ:** biết Kubernetes giải vấn đề gì, và nhận ra khi nào bạn chưa có vấn đề đó.\n\n## Ý tưởng chính\n\nChạy container trên **một máy** là chuyện đã giải quyết: Docker Compose làm được.\n\nVấn đề bắt đầu ở **nhiều máy**: container nào chạy ở máy nào, ai phát hiện máy chết, ai chuyển traffic, ai cập nhật phiên bản mà không gián đoạn.\n\nOrchestrator giải đúng nhóm câu hỏi đó. Và nếu bạn chưa có nhóm câu hỏi đó, nó chỉ là chi phí.\n\n## Mental model\n\nHãy nghĩ tới **quản lý ca làm việc**.\n\n> **Một quán nhỏ, ba người**: chủ quán tự phân việc mỗi sáng. Ai nghỉ thì gọi người khác. Không cần hệ thống gì.\n>\n> **Chuỗi 50 cửa hàng, 800 người**: không ai phân tay được. Cần một hệ thống biết mỗi cửa hàng cần bao nhiêu người, ai đang nghỉ, ai thay được ai, và tự điều chỉnh.\n>\n> Hệ thống đó rất mạnh. Nhưng cho quán ba người, nó là **một hệ thống nữa phải vận hành** — và chủ quán vẫn phải học cách dùng nó trước khi phân được việc cho ba người.\n\nKubernetes là hệ thống quản lý ca đó. Câu hỏi duy nhất cần trả lời trung thực: **bạn đang có ba người hay tám trăm?**\n\n## Ví dụ nhỏ\n\n```yaml\napiVersion: apps/v1\nkind: Deployment\nspec:\n  replicas: 3\n  template:\n    spec:\n      containers:\n        - name: api\n          image: registry/api:1.4.2\n          resources:\n            requests: { cpu: 100m, memory: 128Mi }\n            limits:   { memory: 512Mi }\n```\n\n## Code chạy thế nào\n\n**Năm việc orchestrator làm:**\n\n```text\n① LẬP LỊCH        container này chạy ở máy nào (theo tài nguyên còn trống)\n② TỰ CHỮA         container chết → khởi động lại; máy chết → chuyển sang máy khác\n③ PHÁT HIỆN DỊCH VỤ  tên dịch vụ → địa chỉ các bản sao đang sống\n④ CẬP NHẬT DẦN    thay từng bản sao, không gián đoạn, quay lui được\n⑤ TỰ MỞ RỘNG      tải cao → thêm bản sao; thấp → giảm\n```\n\n```text\nViệc ② và ④ là hai lý do chính đáng nhất.\nViệc ⑤ nghe hấp dẫn nhất nhưng ít dự án thật sự dùng —\nvà nó chỉ hoạt động tốt khi ứng dụng đã phi trạng thái\nvà khởi động nhanh ([[mo-rong-va-can-bang-tai]]).\n```\n\n**Requests và limits — hai con số hay bị đặt sai:**\n\n```text\nrequests   Lượng tài nguyên ĐẢM BẢO. Dùng để LẬP LỊCH.\nlimits     Trần. Vượt thì bị chặn hoặc bị giết.\n\nCPU:  vượt limit ⇒ bị BÓP (throttle), không bị giết\n      ⇒ triệu chứng: p99 tăng vọt, %CPU trung bình vẫn thấp\n      ⇒ đây là nguyên nhân \"chậm bất thường\" phổ biến nhất\n        trong Kubernetes, và nó KHÔNG hiện trên biểu đồ CPU\n        ([[lap-lich-va-uu-tien]])\n\nRAM:  vượt limit ⇒ bị GIẾT ngay (OOMKilled)\n      ⇒ và runtime như Node/JVM thường đọc RAM của MÁY,\n        không đọc limit ⇒ tự đặt heap quá lớn ⇒ bị giết khi có tải\n        ⇒ phải khai rõ: --max-old-space-size, -XX:MaxRAMPercentage\n```\n\n```text\nKinh nghiệm đặt:\n  requests theo mức dùng THẬT (p50–p95 quan sát được)\n  limits RAM  = requests × 1,5–2\n  limits CPU  → cân nhắc KHÔNG đặt cho dịch vụ nhạy độ trễ,\n                vì bị bóp còn tệ hơn dùng nhiều CPU một lúc\n```\n\n## Cú pháp\n\n**Ba loại probe — mỗi cái một việc:**\n\n```yaml\nlivenessProbe:   { httpGet: { path: /health }, periodSeconds: 10 }\nreadinessProbe:  { httpGet: { path: /ready },  periodSeconds: 5 }\nstartupProbe:    { httpGet: { path: /health }, failureThreshold: 30 }\n```\n\n```text\nLIVENESS   \"còn sống không?\" → thất bại ⇒ KHỞI ĐỘNG LẠI\n           ⇒ KHÔNG kiểm phụ thuộc ở đây. CSDL chậm một nhịp\n             ⇒ khởi động lại hàng loạt ⇒ CSDL nhận thêm bão kết nối.\nREADINESS  \"nhận traffic được chưa?\" → thất bại ⇒ GỠ khỏi load balancer\n           ⇒ chỗ ĐÚNG để kiểm phụ thuộc.\nSTARTUP    \"đã khởi động xong chưa?\" → cho ứng dụng chậm khởi động\n             thời gian, không bị liveness giết oan.\n```\n\nGộp liveness với readiness là lỗi cấu hình gây sự cố lan rộng nhất trong Kubernetes ([[idempotency-va-tin-cay-o-backend]]).\n\n**Ba lựa chọn nhẹ hơn — thường đủ dùng:**\n\n```text\n① MỘT MÁY + DOCKER COMPOSE + restart: always\n   Đủ cho: hầu hết hệ thống dưới vài nghìn req/s\n   Thiếu:  chuyển đổi khi máy chết, cập nhật không gián đoạn\n\n② PaaS CHẠY CONTAINER (Cloud Run, Fly, Render, App Runner)\n   Được:  scaling, HTTPS, deploy dần, tự chữa — không vận hành cụm\n   Thiếu: ít quyền tinh chỉnh; đắt hơn ở tải rất cao\n   ⇒ ĐÂY là lựa chọn đúng cho phần lớn đội dưới 20 người\n\n③ KUBERNETES QUẢN LÝ SẴN (EKS/GKE/AKS)\n   Được:  không tự vận hành control plane\n   Vẫn phải: hiểu Kubernetes, quản node, networking, nâng cấp\n   ⇒ Chỉ \"nhẹ hơn\" một phần\n```\n\n**Cái giá của Kubernetes — nói rõ:**\n\n```text\n□ Một lớp khái niệm hoàn toàn mới: pod, service, ingress, PVC,\n  namespace, ConfigMap, secret, RBAC\n□ Networking phức tạp hơn hẳn — và gỡ lỗi mạng trong cụm là\n  một kỹ năng riêng\n□ Nâng cấp cụm định kỳ, và nó có thể phá vỡ thứ đang chạy\n□ YAML rất nhiều ⇒ cần Helm hoặc Kustomize ⇒ thêm một lớp nữa\n□ Cần ít nhất một người trong đội thật sự hiểu nó\n  ⇒ và người đó thành điểm phụ thuộc duy nhất\n\n⇒ Nếu không ai trong đội tự tin gỡ lỗi cụm lúc 3 giờ sáng,\n  bạn chưa nên vận hành cụm.\n```\n\n## Tại sao cần nó\n\nVì cả hai hướng sai đều tốn kém — nhưng theo hai cách khác nhau:\n\n```text\nDÙNG KUBERNETES QUÁ SỚM:\n  Trả toàn bộ chi phí học và vận hành ngay.\n  Nhận lợi ích cho một quy mô chưa tới.\n  Và mọi sự cố đều dài hơn, vì thêm một tầng phải loại trừ.\n\nCHẠY MỘT MÁY QUÁ LÂU:\n  Mỗi lần bảo trì là downtime. Mỗi sự cố phần cứng là sự cố toàn phần.\n  Và không mở rộng được khi cần.\n```\n\n**Bốn dấu hiệu bạn thật sự cần orchestrator:**\n\n```text\n□ Hơn ~10 dịch vụ, phụ thuộc nhau, cần phát hiện dịch vụ\n□ Cần cập nhật không gián đoạn nhiều lần mỗi ngày\n□ Tải biến động lớn theo giờ, và tự mở rộng tiết kiệm đáng kể\n□ Nhiều đội cùng triển khai độc lập trên hạ tầng chung\n\nCó 2–3 dấu hiệu trở lên ⇒ đáng cân nhắc.\nCó 0–1 ⇒ chọn ① hoặc ② ở trên.\n```\n\nVà một lưu ý về động lực: **\"để tuyển người dễ hơn\"** hay **\"để CV đẹp\"** là những lý do thật, nhưng chúng không phải lý do kỹ thuật — nên hãy nói ra rõ ràng khi bàn, thay vì bọc chúng trong lập luận về quy mô ([[ra-quyet-dinh-ky-thuat]]).\n\n## So sánh\n\n| | Compose 1 máy | PaaS container | Kubernetes |\n|---|---|---|---|\n| Vận hành | rất thấp | thấp | **cao** |\n| Tự chữa khi máy chết | ❌ | ✅ | ✅ |\n| Cập nhật không gián đoạn | ❌ | ✅ | ✅ |\n| Tự mở rộng | ❌ | ✅ | ✅ |\n| Tinh chỉnh | cao | thấp | **cao** |\n| Cần chuyên môn riêng | ❌ | ❌ | ✅ |\n\n## Dễ nhầm\n\n**1. Dùng Kubernetes cho ba dịch vụ.**\n\n**2. Gộp liveness với readiness.** CSDL chậm ⇒ khởi động lại hàng loạt.\n\n**3. Không đặt requests.** Lập lịch sai, container bị dồn vào một node.\n\n**4. Đặt limits CPU cho dịch vụ nhạy độ trễ.** Bị bóp, p99 tăng.\n\n**5. Không khai heap theo limit.** OOMKilled khi có tải.\n\n**6. Không đo CPU throttling.** Không hiện trên biểu đồ %CPU.\n\n**7. Không có startupProbe cho ứng dụng khởi động chậm.** Bị giết oan.\n\n**8. Chọn Kubernetes khi không ai trong đội vận hành được.**\n\n**9. Bỏ qua PaaS container.** Nó phủ phần lớn nhu cầu.\n\n**10. Bọc lý do phi kỹ thuật trong lập luận kỹ thuật.**\n\n## Mẹo nhớ\n\n> **Orchestrator giải bài toán NHIỀU MÁY. Một máy thì Compose là đủ.**\n>\n> **CPU vượt limit thì bị BÓP; RAM vượt limit thì bị GIẾT.**\n>\n> **Liveness KHÔNG kiểm phụ thuộc — đó là việc của readiness.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Năm việc orchestrator làm, hai việc nào là lý do chính đáng nhất?\n2. Requests khác limits thế nào? CPU và RAM khác nhau ra sao khi vượt?\n3. Ba loại probe và việc của mỗi cái?\n4. Ba lựa chọn nhẹ hơn Kubernetes?\n5. Bốn dấu hiệu thật sự cần orchestrator?\n\n## Tự viết lại\n\nKhông nhìn lại, chọn nền tảng và giải thích:\n\n```text\n① Startup 4 người, một web app + Postgres, 200 req/s\n② SaaS 25 kỹ sư, 12 dịch vụ, deploy nhiều lần mỗi ngày\n③ Xử lý ảnh, tải dồn vào 2 giờ mỗi ngày\n④ Nội bộ công ty, 50 người dùng, chạy trong giờ làm việc\n```\n\nTự kiểm: ở ③, tự mở rộng tiết kiệm được bao nhiêu — và bạn cần dữ liệu gì để trả lời?\n\n## Thử sức\n\nĐội bạn (6 người, 4 dịch vụ) vừa chuyển sang Kubernetes tự quản. Ba tháng sau: một người dành nửa thời gian cho cụm, và có hai sự cố do cấu hình Kubernetes chứ không do mã.\n\nBa câu để trả lời: bạn đánh giá tình hình bằng tiêu chí gì; hai phương án và đánh đổi của mỗi cái; và nếu quyết định chuyển sang PaaS container, bạn giữ lại gì từ công đã bỏ ra. Câu khó nhất: chi phí chuyển đổi có thể lớn hơn chi phí chịu đựng — bạn dùng con số nào để quyết định, và khi nào câu trả lời đúng là \"giữ nguyên và đầu tư vào đào tạo\"?",
+    "tags": [
+      "cloud",
+      "kubernetes",
+      "container",
+      "devops"
+    ],
+    "order": 4,
+    "level": "nang-cao",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-08T07:00:00.000Z",
+    "updatedAt": "2026-01-08T07:00:00.000Z"
+  },
+  {
+    "id": "note-van-hanh-tren-cloud",
+    "topicId": "topic-cloud",
+    "title": "Vận hành trên cloud",
+    "slug": "van-hanh-tren-cloud",
+    "summary": "Vùng khả dụng, chuyển đổi dự phòng, sao lưu, và những giả định của cloud mà bạn phải thiết kế theo.",
+    "content": "> **Sau bài này bạn sẽ:** thiết kế theo đúng những gì cloud thật sự đảm bảo, và biết bốn thứ phải chuẩn bị trước sự cố.\n\n## Ý tưởng chính\n\nCloud không làm hệ thống của bạn đáng tin hơn. Nó cho bạn **công cụ** để làm điều đó — và mặc định của nó thì không.\n\nMáy ảo sẽ bị dừng để bảo trì. Đĩa sẽ hỏng. Một vùng khả dụng sẽ mất. Nhà cung cấp **nói trước** rằng những chuyện đó sẽ xảy ra — điều đó nằm trong cam kết dịch vụ của họ.\n\nNên câu hỏi thiết kế là: *\"khi nó xảy ra, hệ thống của tôi làm gì?\"*\n\n## Mental model\n\nHãy nghĩ tới **thuê nhà so với ở nhà mình**.\n\n> Ở nhà mình: ống nước hỏng thì bạn tự sửa, và bạn biết mọi thứ ở đâu.\n>\n> Thuê nhà: chủ nhà lo phần kết cấu và hệ thống chung. Tiện hơn nhiều.\n>\n> Nhưng hợp đồng có những dòng bạn phải đọc: **\"chủ nhà có thể sửa chữa hệ thống điện với thông báo trước 24 giờ\"**. Nghĩa là sẽ có ngày mất điện, và đó **không phải lỗi của ai** — nó nằm trong hợp đồng.\n>\n> Người thuê chuẩn bị: có đèn pin, không để đồ đông lạnh phụ thuộc hoàn toàn vào tủ, biết số điện thoại cần gọi.\n\nĐèn pin đó là thiết kế chịu lỗi. Và điều quan trọng: **bạn chuẩn bị trước khi mất điện**, không phải trong lúc mất điện.\n\n## Ví dụ nhỏ\n\n```text\nCam kết điển hình:\n  Máy ảo đơn lẻ       99,5%   → ~3,6 giờ downtime/tháng\n  Nhiều AZ            99,99%  → ~4 phút/tháng\n  Lưu trữ đối tượng   99,99%+\n\n⇒ Một máy ảo KHÔNG được cam kết như một dịch vụ.\n```\n\n## Code chạy thế nào\n\n**Bốn giả định của cloud mà bạn phải thiết kế theo:**\n\n```text\n① MÁY ẢO SẼ BỊ DỪNG\n   Bảo trì phần cứng, di chuyển giữa các máy chủ vật lý.\n   Có khi báo trước, có khi không.\n   ⇒ Ứng dụng phải PHI TRẠNG THÁI và khởi động lại được bất kỳ lúc nào.\n\n② ĐĨA CỤC BỘ LÀ TẠM\n   Nhiều loại máy có đĩa mất khi máy dừng.\n   ⇒ Dữ liệu phải ở volume bền hoặc lưu trữ đối tượng.\n\n③ MẠNG SẼ CHẬM VÀ ĐỨT\n   Giữa các AZ có độ trễ; đôi lúc mất gói.\n   ⇒ Timeout, retry có backoff, circuit breaker\n     ([[thiet-ke-cho-that-bai]]).\n\n④ MỘT AZ SẼ MẤT\n   Không phải \"có thể\" — đã xảy ra với mọi nhà cung cấp lớn.\n   ⇒ Chạy ở ≥ 2 AZ. Chi phí thấp, lợi ích lớn.\n```\n\nBốn điều này không phải rủi ro cần phòng xa — chúng là **hành vi bình thường** của nền tảng, được ghi trong tài liệu.\n\n**Nhiều AZ và nhiều region — hai mức rất khác nhau:**\n\n```text\nNHIỀU AZ (trong một region)\n  Độ trễ giữa AZ: ~1 ms ⇒ CSDL đồng bộ được\n  Chi phí: phí truyền dữ liệu giữa AZ, và tài nguyên dự phòng\n  ⇒ Hầu như LUÔN nên làm.\n\nNHIỀU REGION\n  Độ trễ giữa region: 50–200 ms ⇒ KHÔNG đồng bộ được\n  ⇒ phải chọn: nhất quán cuối cùng, hoặc một region là chính\n  Chi phí: cao, và độ phức tạp cao hơn nữa\n  ⇒ Chỉ khi thật sự cần: yêu cầu pháp lý, hoặc người dùng\n    phân bố toàn cầu, hoặc RTO tính bằng phút\n    ([[du-lieu-o-quy-mo]])\n```\n\nNhảy từ một AZ sang nhiều region là một bước rất lớn. Nhiều đội tưởng mình cần nó khi thực ra chỉ cần nhiều AZ.\n\n## Cú pháp\n\n**Chuyển đổi dự phòng — chưa diễn tập thì chưa có:**\n\n```text\nCSDL quản lý sẵn có chuyển đổi tự động. Nhưng:\n  □ Mất 30–120 giây — trong lúc đó ghi thất bại\n  □ Kết nối đang mở bị ĐỨT ⇒ ứng dụng phải kết nối lại\n  □ Ứng dụng cache DNS ⇒ vẫn gọi máy cũ tới khi restart\n    ([[dns-va-phan-giai-ten]])\n  □ Replica bất đồng bộ ⇒ có thể MẤT giao dịch chưa sao chép\n\n⇒ Diễn tập: kích hoạt chuyển đổi ở staging, đo thời gian thật,\n  và xem ứng dụng có tự hồi phục không.\n⇒ Nhiều nhà cung cấp cho phép kích hoạt thủ công. Hãy dùng nó.\n```\n\n**Sao lưu — bốn thứ hay bị bỏ:**\n\n```text\n□ Snapshot tự động CÙNG tài khoản, cùng region\n  ⇒ Mất tài khoản hoặc bị xoá do sự cố ⇒ mất cả sao lưu\n  ⇒ Cần một bản ở TÀI KHOẢN KHÁC hoặc REGION KHÁC\n\n□ Chưa bao giờ KHÔI PHỤC thử\n  ⇒ Bản sao lưu chưa từng khôi phục không phải bản sao lưu\n    ([[giam-sat-va-sao-luu]])\n\n□ Không biết RTO/RPO thật\n  ⇒ Khôi phục một snapshot 500 GB mất bao lâu? Đã đo chưa?\n\n□ Không có bảo vệ chống xoá\n  ⇒ `deletion_protection`, và khoá ghi trên bucket sao lưu\n```\n\n**Bốn thứ chuẩn bị TRƯỚC sự cố:**\n\n```text\n① Runbook cho các sự cố đã lường: mất AZ, CSDL chuyển đổi,\n   hết hạn chứng chỉ, hết quota\n② Biết QUOTA của mình và cảnh báo khi gần chạm\n   ⇒ hết quota giữa lúc mở rộng là một sự cố tự gây ra,\n     và nó thường xảy ra đúng lúc tải cao\n③ Có kênh liên lạc và tài khoản hỗ trợ SẴN SÀNG\n   ⇒ tìm cách mở ticket lúc đang cháy là quá muộn\n④ Biết trạng thái nhà cung cấp ở đâu, và đăng ký nhận thông báo\n   ⇒ nhiều \"sự cố của chúng ta\" thật ra là sự cố của họ\n```\n\nĐiểm ② đáng nhấn: quota là giới hạn mềm mà đội thường không biết mình có, và nó chỉ lộ ra khi bạn cần mở rộng gấp.\n\n## Tại sao cần nó\n\nVì cloud dịch chuyển loại công việc, không xoá bỏ nó:\n\n```text\nKhông dùng cloud:  bạn lo phần cứng, mạng vật lý, nguồn điện\nDùng cloud:        bạn lo cấu hình, IAM, quota, chi phí,\n                   và thiết kế chịu lỗi\n\n⇒ Số việc không giảm nhiều. Nhưng nó CHUYỂN từ những việc\n  không tạo giá trị sang những việc thật sự thuộc hệ thống của bạn.\n```\n\n**Danh sách kiểm cho một hệ thống production trên cloud:**\n\n```text\n□ Chạy ở ≥ 2 AZ\n□ Ứng dụng phi trạng thái, khởi động lại được bất kỳ lúc nào\n□ Dữ liệu ở dịch vụ quản lý sẵn hoặc volume bền, KHÔNG ở đĩa cục bộ\n□ Sao lưu ở tài khoản/region khác, và ĐÃ THỬ khôi phục\n□ Bảo vệ chống xoá cho CSDL và bucket sao lưu\n□ Timeout, retry có backoff cho mọi lời gọi ngoài\n□ Cảnh báo: ngân sách chi phí, quota, chứng chỉ, sao lưu thất bại\n□ Hạ tầng bằng mã, ở git ([[ha-tang-bang-ma]])\n□ Không có access key dài hạn ([[iam-va-quyen-truy-cap]])\n□ Runbook cho các sự cố đã lường\n```\n\n**Và một nhắc nhở về chi phí:** trên cloud, một cấu hình sai không chỉ gây sự cố — nó **gửi hoá đơn**. Một job vòng lặp gọi API, một môi trường test quên tắt, một truyền dữ liệu liên region không cần thiết đều là những thứ chỉ phát hiện vào cuối tháng nếu không có cảnh báo ngân sách ([[chi-phi-ha-tang]]).\n\n## So sánh\n\n| | Một AZ | Nhiều AZ | Nhiều region |\n|---|---|---|---|\n| Chống mất máy | ❌ | ✅ | ✅ |\n| Chống mất trung tâm dữ liệu | ❌ | ✅ | ✅ |\n| Chống mất cả vùng | ❌ | ❌ | ✅ |\n| CSDL đồng bộ được | — | ✅ | ❌ |\n| Chi phí | thấp | vừa | **cao** |\n| Nên làm | không | gần như luôn | khi thật cần |\n\n## Dễ nhầm\n\n**1. Tin cloud tự làm hệ thống đáng tin.** Nó cho công cụ; mặc định thì không.\n\n**2. Chạy production ở một AZ.**\n\n**3. Lưu dữ liệu trên đĩa cục bộ của máy ảo.**\n\n**4. Sao lưu cùng tài khoản, cùng region.**\n\n**5. Chưa bao giờ thử khôi phục.**\n\n**6. Chưa bao giờ diễn tập chuyển đổi dự phòng.**\n\n**7. Không biết quota của mình.** Hết quota đúng lúc cần mở rộng.\n\n**8. Ứng dụng cache DNS vĩnh viễn.** Chuyển đổi dự phòng không có tác dụng.\n\n**9. Không có cảnh báo ngân sách.** Phát hiện vào cuối tháng.\n\n**10. Nhảy sang nhiều region khi chỉ cần nhiều AZ.**\n\n## Mẹo nhớ\n\n> **Cloud NÓI TRƯỚC rằng máy sẽ dừng, đĩa sẽ hỏng, AZ sẽ mất. Hãy thiết kế theo đó.**\n>\n> **Nhiều AZ: gần như luôn nên. Nhiều region: chỉ khi thật cần.**\n>\n> **Chưa diễn tập chuyển đổi và khôi phục thì chưa có chúng.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Bốn giả định của cloud bạn phải thiết kế theo?\n2. Nhiều AZ khác nhiều region ở điểm nào quyết định?\n3. Chuyển đổi dự phòng CSDL có bốn điều gì cần lưu ý?\n4. Bốn thứ hay bị bỏ trong sao lưu?\n5. Bốn thứ chuẩn bị trước sự cố?\n\n## Tự viết lại\n\nKhông nhìn lại, thiết kế cho một hệ thống có web, worker, Postgres, Redis, bucket ảnh:\n\n```text\n① phân bố qua AZ\n② nơi lưu từng loại dữ liệu\n③ chiến lược sao lưu, kèm RPO/RTO nhắm tới\n④ năm cảnh báo cần có\n⑤ hai diễn tập cần chạy, tần suất\n```\n\nTự kiểm: ở ③, con số RTO của bạn là ước lượng hay đã đo — và nếu chưa đo, bạn đo bằng cách nào?\n\n## Thử sức\n\nNhà cung cấp thông báo sự cố ở một AZ. Hệ thống của bạn chạy ở đúng AZ đó, một máy ảo, CSDL cùng chỗ. Bạn có snapshot hằng ngày, cùng region.\n\nBa câu để trả lời: bạn làm gì **ngay bây giờ**, theo thứ tự; sau khi khôi phục, ba thay đổi ưu tiên cao nhất; và bạn viết gì trong hậu kiểm. Câu khó nhất: snapshot cùng region — nếu sự cố là **cả region** chứ không phải một AZ, bạn còn gì trong tay, và điều đó đổi ưu tiên ở câu hai ra sao?",
+    "tags": [
+      "cloud",
+      "van-hanh",
+      "do-tin-cay",
+      "devops"
+    ],
+    "order": 5,
+    "level": "nang-cao",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-08T08:00:00.000Z",
+    "updatedAt": "2026-01-08T08:00:00.000Z"
+  },
+  {
     "id": "note-uoc-luong-va-tim-diem-nghen",
     "topicId": "topic-system-design",
     "title": "Ước lượng và tìm điểm nghẽn",
@@ -3390,8 +3490,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T04:00:00.000Z",
-    "updatedAt": "2026-01-08T04:00:00.000Z"
+    "createdAt": "2026-01-08T09:00:00.000Z",
+    "updatedAt": "2026-01-08T09:00:00.000Z"
   },
   {
     "id": "note-mo-rong-va-can-bang-tai",
@@ -3410,8 +3510,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T05:00:00.000Z",
-    "updatedAt": "2026-01-08T05:00:00.000Z"
+    "createdAt": "2026-01-08T10:00:00.000Z",
+    "updatedAt": "2026-01-08T10:00:00.000Z"
   },
   {
     "id": "note-cache-nhieu-tang",
@@ -3430,8 +3530,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T06:00:00.000Z",
-    "updatedAt": "2026-01-08T06:00:00.000Z"
+    "createdAt": "2026-01-08T11:00:00.000Z",
+    "updatedAt": "2026-01-08T11:00:00.000Z"
   },
   {
     "id": "note-hang-doi-va-xu-ly-bat-dong-bo",
@@ -3450,8 +3550,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T07:00:00.000Z",
-    "updatedAt": "2026-01-08T07:00:00.000Z"
+    "createdAt": "2026-01-08T12:00:00.000Z",
+    "updatedAt": "2026-01-08T12:00:00.000Z"
   },
   {
     "id": "note-thiet-ke-cho-that-bai",
@@ -3470,8 +3570,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T08:00:00.000Z",
-    "updatedAt": "2026-01-08T08:00:00.000Z"
+    "createdAt": "2026-01-08T13:00:00.000Z",
+    "updatedAt": "2026-01-08T13:00:00.000Z"
   },
   {
     "id": "note-du-lieu-o-quy-mo",
@@ -3490,8 +3590,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T09:00:00.000Z",
-    "updatedAt": "2026-01-08T09:00:00.000Z"
+    "createdAt": "2026-01-08T14:00:00.000Z",
+    "updatedAt": "2026-01-08T14:00:00.000Z"
   },
   {
     "id": "note-ranh-gioi-service",
@@ -3510,8 +3610,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T10:00:00.000Z",
-    "updatedAt": "2026-01-08T10:00:00.000Z"
+    "createdAt": "2026-01-08T15:00:00.000Z",
+    "updatedAt": "2026-01-08T15:00:00.000Z"
   },
   {
     "id": "note-redis-cau-truc-du-lieu",
@@ -3530,8 +3630,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T11:00:00.000Z",
-    "updatedAt": "2026-01-08T11:00:00.000Z"
+    "createdAt": "2026-01-08T16:00:00.000Z",
+    "updatedAt": "2026-01-08T16:00:00.000Z"
   },
   {
     "id": "note-cache-voi-redis-trong-thuc-te",
@@ -3550,8 +3650,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T12:00:00.000Z",
-    "updatedAt": "2026-01-08T12:00:00.000Z"
+    "createdAt": "2026-01-08T17:00:00.000Z",
+    "updatedAt": "2026-01-08T17:00:00.000Z"
   },
   {
     "id": "note-rabbitmq-va-mo-hinh-message",
@@ -3570,8 +3670,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T13:00:00.000Z",
-    "updatedAt": "2026-01-08T13:00:00.000Z"
+    "createdAt": "2026-01-08T18:00:00.000Z",
+    "updatedAt": "2026-01-08T18:00:00.000Z"
   },
   {
     "id": "note-kafka-va-luong-su-kien",
@@ -3590,8 +3690,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T14:00:00.000Z",
-    "updatedAt": "2026-01-08T14:00:00.000Z"
+    "createdAt": "2026-01-08T19:00:00.000Z",
+    "updatedAt": "2026-01-08T19:00:00.000Z"
   },
   {
     "id": "note-chon-cong-cu-va-van-hanh",
@@ -3610,8 +3710,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T15:00:00.000Z",
-    "updatedAt": "2026-01-08T15:00:00.000Z"
+    "createdAt": "2026-01-08T20:00:00.000Z",
+    "updatedAt": "2026-01-08T20:00:00.000Z"
   },
   {
     "id": "note-kien-truc-la-gi-va-khi-nao-can",
@@ -3630,8 +3730,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T16:00:00.000Z",
-    "updatedAt": "2026-01-08T16:00:00.000Z"
+    "createdAt": "2026-01-08T21:00:00.000Z",
+    "updatedAt": "2026-01-08T21:00:00.000Z"
   },
   {
     "id": "note-layered-va-hexagonal",
@@ -3650,8 +3750,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T17:00:00.000Z",
-    "updatedAt": "2026-01-08T17:00:00.000Z"
+    "createdAt": "2026-01-08T22:00:00.000Z",
+    "updatedAt": "2026-01-08T22:00:00.000Z"
   },
   {
     "id": "note-mau-thiet-ke-thuong-gap",
@@ -3670,8 +3770,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T18:00:00.000Z",
-    "updatedAt": "2026-01-08T18:00:00.000Z"
+    "createdAt": "2026-01-08T23:00:00.000Z",
+    "updatedAt": "2026-01-08T23:00:00.000Z"
   },
   {
     "id": "note-kien-truc-huong-su-kien",
@@ -3690,8 +3790,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T19:00:00.000Z",
-    "updatedAt": "2026-01-08T19:00:00.000Z"
+    "createdAt": "2026-01-09T00:00:00.000Z",
+    "updatedAt": "2026-01-09T00:00:00.000Z"
   },
   {
     "id": "note-danh-gia-va-tien-hoa-kien-truc",
@@ -3710,8 +3810,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T20:00:00.000Z",
-    "updatedAt": "2026-01-08T20:00:00.000Z"
+    "createdAt": "2026-01-09T01:00:00.000Z",
+    "updatedAt": "2026-01-09T01:00:00.000Z"
   },
   {
     "id": "note-quan-sat-he-thong",
@@ -3731,8 +3831,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T21:00:00.000Z",
-    "updatedAt": "2026-01-08T21:00:00.000Z"
+    "createdAt": "2026-01-09T02:00:00.000Z",
+    "updatedAt": "2026-01-09T02:00:00.000Z"
   },
   {
     "id": "note-slo-va-error-budget",
@@ -3752,8 +3852,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T22:00:00.000Z",
-    "updatedAt": "2026-01-08T22:00:00.000Z"
+    "createdAt": "2026-01-09T03:00:00.000Z",
+    "updatedAt": "2026-01-09T03:00:00.000Z"
   },
   {
     "id": "note-su-co-va-hau-kiem",
@@ -3772,8 +3872,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T23:00:00.000Z",
-    "updatedAt": "2026-01-08T23:00:00.000Z"
+    "createdAt": "2026-01-09T04:00:00.000Z",
+    "updatedAt": "2026-01-09T04:00:00.000Z"
   },
   {
     "id": "note-trien-khai-an-toan",
@@ -3793,8 +3893,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-09T00:00:00.000Z",
-    "updatedAt": "2026-01-09T00:00:00.000Z"
+    "createdAt": "2026-01-09T05:00:00.000Z",
+    "updatedAt": "2026-01-09T05:00:00.000Z"
   },
   {
     "id": "note-hieu-nang-va-do-luong",
@@ -3814,8 +3914,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-09T01:00:00.000Z",
-    "updatedAt": "2026-01-09T01:00:00.000Z"
+    "createdAt": "2026-01-09T06:00:00.000Z",
+    "updatedAt": "2026-01-09T06:00:00.000Z"
   },
   {
     "id": "note-chi-phi-ha-tang",
@@ -3834,8 +3934,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-09T02:00:00.000Z",
-    "updatedAt": "2026-01-09T02:00:00.000Z"
+    "createdAt": "2026-01-09T07:00:00.000Z",
+    "updatedAt": "2026-01-09T07:00:00.000Z"
   },
   {
     "id": "note-ra-quyet-dinh-ky-thuat",
@@ -3854,8 +3954,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-09T03:00:00.000Z",
-    "updatedAt": "2026-01-09T03:00:00.000Z"
+    "createdAt": "2026-01-09T08:00:00.000Z",
+    "updatedAt": "2026-01-09T08:00:00.000Z"
   },
   {
     "id": "note-review-code-va-nang-nguoi",
@@ -3874,8 +3974,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-09T04:00:00.000Z",
-    "updatedAt": "2026-01-09T04:00:00.000Z"
+    "createdAt": "2026-01-09T09:00:00.000Z",
+    "updatedAt": "2026-01-09T09:00:00.000Z"
   },
   {
     "id": "note-no-ky-thuat-va-refactor",
@@ -3894,8 +3994,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-09T05:00:00.000Z",
-    "updatedAt": "2026-01-09T05:00:00.000Z"
+    "createdAt": "2026-01-09T10:00:00.000Z",
+    "updatedAt": "2026-01-09T10:00:00.000Z"
   },
   {
     "id": "note-uoc-luong-va-pham-vi",
@@ -3914,8 +4014,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-09T06:00:00.000Z",
-    "updatedAt": "2026-01-09T06:00:00.000Z"
+    "createdAt": "2026-01-09T11:00:00.000Z",
+    "updatedAt": "2026-01-09T11:00:00.000Z"
   },
   {
     "id": "note-giao-tiep-va-anh-huong",
@@ -3934,8 +4034,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-09T07:00:00.000Z",
-    "updatedAt": "2026-01-09T07:00:00.000Z"
+    "createdAt": "2026-01-09T12:00:00.000Z",
+    "updatedAt": "2026-01-09T12:00:00.000Z"
   },
   {
     "id": "note-uy-quyen-va-dan-dat-nhom",
@@ -3955,7 +4055,7 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-09T08:00:00.000Z",
-    "updatedAt": "2026-01-09T08:00:00.000Z"
+    "createdAt": "2026-01-09T13:00:00.000Z",
+    "updatedAt": "2026-01-09T13:00:00.000Z"
   }
 ]

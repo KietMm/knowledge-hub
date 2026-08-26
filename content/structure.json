@@ -219,6 +219,12 @@
           "name": "Nginx & Triển khai",
           "slug": "nginx-va-trien-khai",
           "description": "Reverse proxy, HTTPS, biến môi trường và theo dõi ứng dụng chạy thật."
+        },
+        {
+          "id": "topic-cloud",
+          "name": "Cloud và DevOps nền tảng",
+          "slug": "cloud-nen-tang",
+          "description": "IaaS/PaaS, vùng và AZ, IAM, hạ tầng bằng mã, và dịch vụ quản lý sẵn."
         }
       ]
     },

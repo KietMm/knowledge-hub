@@ -216,6 +216,14 @@
     "order": 4
   },
   {
+    "id": "topic-cloud",
+    "name": "Cloud và DevOps nền tảng",
+    "slug": "cloud-nen-tang",
+    "description": "IaaS/PaaS, vùng và AZ, IAM, hạ tầng bằng mã, và dịch vụ quản lý sẵn.",
+    "categoryId": "cat-devops",
+    "order": 5
+  },
+  {
     "id": "topic-system-design",
     "name": "Thiết kế hệ thống",
     "slug": "thiet-ke-he-thong",
