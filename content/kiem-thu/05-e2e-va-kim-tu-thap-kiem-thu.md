@@ -4,133 +4,198 @@ slug: e2e-va-kim-tu-thap-kiem-thu
 summary: Vì sao ít E2E mà nhiều unit test, và cách làm E2E không chập chờn.
 level: trung-cap
 tags: [testing, e2e, ci]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** phân bổ được số lượng test theo từng tầng, và viết E2E không đỏ ngẫu nhiên.
+> **Sau bài này bạn sẽ:** biết phân bổ test giữa ba tầng, và viết E2E không chập chờn bằng ba quy tắc.
 
-## Ba tầng, ba đánh đổi
+## Ý tưởng chính
 
-```
-        /\        E2E — mở trình duyệt thật, đi qua cả hệ thống
-       /  \       ít bài, chậm (giây → phút), dễ chập chờn
-      /----\
-     /      \     Integration — nhiều thành phần thật ghép lại
-    /        \    trung bình, chạy trong trăm ms
-   /----------\
-  /            \  Unit — một hàm, không phụ thuộc gì
- /              \ rất nhiều, chạy trong vài ms
-/________________\
+Ba tầng test đánh đổi ngược nhau giữa **độ tin cậy** và **chi phí**:
+
+```text
+Unit         nhanh, rẻ, dễ định vị lỗi   —  nhưng không chứng minh hệ thống chạy
+Integration  vừa phải                     —  kiểm được các mảnh ghép với nhau
+E2E          chậm, đắt, hay chập chờn     —  nhưng đây là thứ NGƯỜI DÙNG thật sự trải qua
 ```
 
-Tỉ lệ tham khảo: khoảng **70% unit / 20% integration / 10% E2E**. Đây là hệ quả của một phép tính đơn giản, không phải quy ước thẩm mỹ.
+Nên phân bổ theo hình kim tự tháp: **nhiều unit, vừa integration, rất ít E2E**.
 
-Giả sử mỗi tầng đều bắt được lỗi:
+## Mental model
 
-| | Thời gian chạy | Lúc đỏ, bạn biết gì |
-|---|---|---|
-| Unit | 5ms | Đúng hàm nào sai |
-| Integration | 200ms | Đúng tầng nào sai |
-| E2E | 30s | "Có gì đó hỏng đâu đó" |
+Hãy nghĩ tới **kiểm tra một chiếc xe trước khi giao khách**.
 
-Test chậm và chỉ ra chỗ mơ hồ thì phải ít. Test nhanh và chỉ ra chính xác thì cho nhiều. Bộ test 500 unit chạy 3 giây được chạy sau mỗi lần lưu file; bộ 500 E2E chạy 4 tiếng thì không ai chạy trước khi push.
+> **Unit test** là đo từng bộ phận trên bàn: bugi có đánh lửa không, phanh có ăn không. Nhanh, chính xác, và biết ngay hỏng cái nào.
+>
+> **Integration test** là lắp cụm rồi thử: động cơ có quay bánh không.
+>
+> **E2E test** là **lái thử một vòng**. Chậm, tốn xăng, và nếu xe không chạy thì bạn vẫn phải mở nắp máy ra tìm. Nhưng đây là thứ duy nhất chứng minh **chiếc xe đi được**.
 
-**Kim tự tháp lật ngược** — nhiều E2E, ít unit — là hình dạng tệ nhất: chậm, chập chờn, và mỗi lần đỏ phải điều tra thủ công.
+Không ai kiểm xe bằng cách lái thử 500 vòng cho mỗi bộ phận. Và cũng không ai giao xe mà chưa lái thử lần nào.
 
-## E2E test cái gì
-
-Chỉ những luồng mà **nếu vỡ thì sản phẩm coi như chết**:
-
-- Đăng ký → đăng nhập → vào được trang chính
-- Thêm hàng vào giỏ → thanh toán → thấy đơn đã tạo
-- Với repo này: mở trang chủ → chọn công nghệ → mở bài học → thấy nội dung
-
-Không dùng E2E để test validate từng ô nhập. Có 12 quy tắc validate thì viết 12 unit test cho hàm validate, cộng **một** E2E xác nhận lỗi hiện lên được trên giao diện.
-
-## Nguồn của E2E chập chờn: chờ theo thời gian
-
-Đây là nguyên nhân của gần như mọi E2E đỏ ngẫu nhiên.
+## Ví dụ nhỏ
 
 ```ts
-// ❌ Xanh trên máy mình, đỏ trên CI (CI luôn chậm hơn)
-await page.click('button[type=submit]')
-await page.waitForTimeout(1000)
-expect(await page.textContent('.ket-qua')).toBe('Đã lưu')
-```
+import { test, expect } from '@playwright/test'
 
-`waitForTimeout` là lời phỏng đoán. Chọn 1s thì CI chậm hơn sẽ đỏ; chọn 10s cho an toàn thì bộ test chậm gấp mười. Chờ theo **điều kiện**, không theo đồng hồ:
+test('người dùng đăng nhập và thấy trang chủ', async ({ page }) => {
+  await page.goto('/dang-nhap')
+  await page.getByLabel('Email').fill('a@x.com')
+  await page.getByLabel('Mật khẩu').fill('matkhau123')
+  await page.getByRole('button', { name: 'Đăng nhập' }).click()
 
-```ts
-// ✅ Chờ đúng thứ mình cần, tự thoát ngay khi có
-await page.click('button[type=submit]')
-await expect(page.getByText('Đã lưu')).toBeVisible()
-```
-
-Cách này vừa nhanh hơn (thoát ngay khi điều kiện đúng) vừa ổn định hơn (chờ tới timeout mới bỏ).
-
-## Chọn phần tử theo thứ người dùng thấy
-
-```ts
-// ❌ Vỡ khi đổi CSS hoặc cấu trúc DOM
-await page.click('.btn-primary > span:nth-child(2)')
-
-// ✅ Bám vào thứ có ý nghĩa với người dùng
-await page.getByRole('button', { name: 'Lưu bài học' }).click()
-await page.getByLabel('Tiêu đề').fill('Bài mới')
-await page.getByRole('link', { name: 'Bài tiếp theo' }).click()
-```
-
-Lợi ích kép: test không vỡ khi refactor giao diện, **và** nếu `getByRole` không tìm thấy thì trình đọc màn hình cũng không tìm thấy — test bắt luôn lỗi trợ năng.
-
-## Mỗi test tự dựng dữ liệu của nó
-
-```ts
-test('sửa được bài học', async ({ page }) => {
-  // ❌ Dựa vào dữ liệu có sẵn trong database
-  await page.goto('/n/async-await-va-event-loop/edit')
-
-  // ✅ Tự tạo qua API rồi mới mở giao diện
-  const bai = await api.taoBaiHoc({ title: `Bài thử ${Date.now()}` })
-  await page.goto(`/n/${bai.slug}/edit`)
+  await expect(page.getByRole('heading', { name: 'Xin chào' })).toBeVisible()
 })
 ```
 
-Dữ liệu dựng qua API nhanh hơn dựng qua giao diện rất nhiều, và không làm test đỏ vì một lý do chẳng liên quan gì tới điều đang test.
+## Code chạy thế nào
 
-## Khi E2E đỏ trên CI mà xanh ở máy
+**Nguồn số một của E2E chập chờn: chờ theo thời gian.**
 
-Thu bằng chứng thay vì đoán:
+```text
+❌ await page.waitForTimeout(2000)
+
+  Máy bạn:   API trả về sau 300ms  →  chờ thừa 1700ms  →  xanh, nhưng chậm
+  CI buổi tối: CI đang tải, API mất 2500ms  →  ĐỎ
+  CI sáng mai: API mất 1800ms  →  xanh
+
+  ⇒ đỏ ngẫu nhiên, và không ai tái hiện được
+```
+
+```ts
+// ✅ Chờ theo ĐIỀU KIỆN, không theo đồng hồ
+await expect(page.getByText('Đã lưu')).toBeVisible()      // chờ tới khi thấy
+await page.waitForURL('/don-hang/**')                      // chờ tới khi điều hướng
+await expect(page.getByRole('button')).toBeEnabled()       // chờ tới khi bấm được
+```
+
+Playwright và Cypress **tự chờ** ở mọi thao tác: nó thử lại cho tới khi phần tử xuất hiện và tương tác được, trong một hạn thời gian. Bạn thêm `waitForTimeout` là đang phá cơ chế đó.
+
+Quy tắc: **thấy `waitForTimeout` trong E2E, coi như đã tìm ra nguyên nhân chập chờn.**
+
+## Cú pháp
+
+**Chọn phần tử theo thứ người dùng thấy**, không theo chi tiết cài đặt:
+
+```ts
+// ❌ Vỡ khi đổi class, đổi cấu trúc HTML, đổi thư viện UI
+page.locator('.btn-primary > span:nth-child(2)')
+page.locator('#submit-btn-2')
+
+// ✅ Bền, và đọc như mô tả hành vi
+page.getByRole('button', { name: 'Đăng nhập' })
+page.getByLabel('Email')
+page.getByText('Đơn hàng của tôi')
+page.getByTestId('nut-thanh-toan')     // khi không còn cách nào khác
+```
+
+Lợi ích kép của `getByRole`/`getByLabel`: test **bền hơn**, và nó **ép giao diện phải có nhãn đúng** — nghĩa là test đang kiểm luôn khả năng truy cập ([[form-va-xu-ly-loi]]).
+
+**Mỗi test tự dựng dữ liệu của nó:**
+
+```ts
+test('xoá đơn hàng', async ({ page, request }) => {
+  // Dựng dữ liệu qua API, KHÔNG qua giao diện — nhanh hơn và ít vỡ hơn
+  const don = await request.post('/api/test/don-hang', { data: { ... } })
+
+  await page.goto(`/don-hang/${don.id}`)
+  await page.getByRole('button', { name: 'Xoá' }).click()
+  await expect(page.getByText('Đã xoá')).toBeVisible()
+})
+```
+
+Dựng dữ liệu qua giao diện (đi qua 5 màn hình để tạo một đơn) làm test chậm gấp mười và vỡ mỗi khi bất kỳ màn hình nào trong số đó thay đổi.
+
+## Tại sao cần nó
+
+Vì E2E chỉ nên phủ **những luồng mà hỏng là mất tiền hoặc mất khách**:
+
+```text
+✅ NÊN có E2E
+   · Đăng ký / đăng nhập
+   · Thêm giỏ hàng → thanh toán → nhận xác nhận
+   · Luồng nghiệp vụ chính của sản phẩm
+
+❌ KHÔNG cần E2E
+   · Mọi ca biên của form (unit test)
+   · Mọi thông báo lỗi (unit test)
+   · Bố cục, màu sắc (kiểm bằng mắt hoặc snapshot ảnh)
+```
+
+Con số thực tế cho một sản phẩm web: **5–20 kịch bản E2E** là đủ. Nhiều hơn thì thời gian chạy và chi phí bảo trì vượt quá giá trị.
+
+**Khi E2E đỏ trên CI mà xanh ở máy** — bốn nguyên nhân, theo thứ tự phổ biến:
+
+```text
+① Chờ theo thời gian        → CI chậm hơn máy bạn
+② Dữ liệu dùng chung        → test khác chạy song song đụng vào
+③ Múi giờ / ngôn ngữ khác   → CI chạy UTC, máy bạn UTC+7
+④ Kích thước cửa sổ khác    → phần tử bị ẩn ở màn hình nhỏ trên CI
+```
+
+Công cụ chẩn đoán: Playwright ghi lại **video, ảnh chụp màn hình và trace** của lần chạy đỏ. Xem trace là thấy đúng khoảnh khắc hỏng — nhanh hơn nhiều so với đoán.
 
 ```ts
 // playwright.config.ts
-use: {
-  trace: 'retain-on-failure',      // xem lại từng bước, có cả DOM snapshot
-  screenshot: 'only-on-failure',
-  video: 'retain-on-failure',
-}
+use: { trace: 'on-first-retry', video: 'retain-on-failure' }
 ```
 
-Ba nguyên nhân phổ biến nhất, theo thứ tự: CI chậm hơn nên `waitForTimeout` không đủ; múi giờ/ngôn ngữ khác nhau làm định dạng ngày lệch; và dữ liệu còn sót từ lần chạy trước.
+## So sánh
 
-## Lỗi hay gặp
+| | Unit | Integration | E2E |
+|---|---|---|---|
+| Tốc độ | ms | 10–100ms | 5–30 **giây** |
+| Định vị lỗi | Chính xác | Khá | Mơ hồ |
+| Độ tin cậy về "hệ thống chạy" | Thấp | Vừa | **Cao** |
+| Chập chờn | Hiếm | Ít | **Hay** |
+| Số lượng nên có | Hàng trăm | Hàng chục | 5–20 |
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Kim tự tháp lật ngược | Bộ test chậm, chập chờn, khó lần ra lỗi | Dồn về unit |
-| `waitForTimeout` | Đỏ ngẫu nhiên trên CI | Chờ theo điều kiện |
-| Chọn phần tử bằng CSS class | Đổi style là vỡ test | `getByRole` / `getByLabel` |
-| E2E dùng dữ liệu có sẵn | Đỏ vì lý do không liên quan | Tự dựng qua API |
-| Test validate từng ô bằng E2E | 12 test chậm thay cho 12 test nhanh | Unit cho luật, E2E cho luồng |
-| Không bật trace trên CI | Đỏ mà không có cách điều tra | `trace: retain-on-failure` |
+## Dễ nhầm
 
-## Ghi nhớ
+**1. `waitForTimeout`.** Nguyên nhân chập chờn số một.
 
-- Khoảng 70/20/10 — test chậm và mơ hồ thì phải ít.
-- E2E chỉ cho luồng chết người, không cho quy tắc validate.
-- Không bao giờ chờ theo thời gian; chờ theo điều kiện.
-- Chọn phần tử theo role/label — bắt luôn lỗi trợ năng.
+**2. Chọn phần tử theo class hoặc CSS selector phức tạp.** Đổi giao diện là vỡ hàng loạt.
 
-## Tự kiểm tra
+**3. Test phụ thuộc nhau.** Test 2 dùng tài khoản do test 1 tạo ⇒ chạy song song là vỡ, và test 1 đỏ thì test 2 cũng đỏ theo dù nó không có lỗi.
 
-1. Vì sao `waitForTimeout(1000)` xanh ở máy mà đỏ trên CI?
-2. Có 12 quy tắc validate. Phân bổ test thế nào giữa unit và E2E?
-3. Vì sao `getByRole` tốt hơn selector CSS ở hai phương diện?
+**4. Viết quá nhiều E2E.** Bộ test 45 phút thì không ai chạy trước khi merge.
+
+**5. Không xem trace khi đỏ.** Người ta đoán, sửa bừa, rồi thêm `waitForTimeout` — và làm mọi thứ tệ hơn.
+
+**6. Dựng dữ liệu qua giao diện.** Chậm và vỡ theo mọi thay đổi giao diện không liên quan.
+
+**7. Chạy E2E với dữ liệu production.** Rồi một hôm test "xoá đơn hàng" chạy trên đơn thật.
+
+## Mẹo nhớ
+
+> **Kiểm từng bộ phận (unit) · lắp cụm thử (integration) · lái thử một vòng (E2E).**
+>
+> **Chờ theo ĐIỀU KIỆN, không theo đồng hồ.**
+>
+> **Chọn phần tử theo thứ người dùng thấy.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Ba tầng test đánh đổi giữa hai thứ gì?
+2. Vì sao `waitForTimeout` gây chập chờn, và thay bằng gì?
+3. Vì sao `getByRole` bền hơn `.locator('.btn')`, và lợi ích phụ là gì?
+4. Bốn nguyên nhân khiến E2E xanh ở máy nhưng đỏ trên CI?
+5. Bao nhiêu kịch bản E2E là hợp lý, và chọn kịch bản theo tiêu chí nào?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết E2E cho luồng mua hàng:
+
+```text
+Tìm sản phẩm → thêm giỏ → thanh toán → thấy trang xác nhận có mã đơn
+```
+
+Tự kiểm ba câu: bạn dựng dữ liệu sản phẩm thế nào, bạn chờ ở những chỗ nào, và bạn chọn phần tử bằng cách nào?
+
+## Thử sức
+
+Đội bạn có 200 test E2E chạy 50 phút, khoảng 15 test đỏ ngẫu nhiên mỗi ngày. Mọi người đã quen bấm "chạy lại" cho tới khi xanh.
+
+Bộ test này đang **có hại**: nó tốn thời gian mà không ai còn tin. Lập kế hoạch ba bước để cứu — và câu khó nhất: bạn có **xoá bớt test** không? Nếu có thì xoá theo tiêu chí nào?

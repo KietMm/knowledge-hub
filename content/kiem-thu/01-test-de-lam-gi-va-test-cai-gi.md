@@ -4,97 +4,173 @@ slug: test-de-lam-gi-va-test-cai-gi
 summary: Test không phải để chứng minh code đúng, mà để bạn dám sửa code. Và vì sao 100% coverage là mục tiêu sai.
 level: co-ban
 tags: [testing, tu-duy]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** biết chọn cái gì đáng test, và vì sao chạy theo con số coverage lại tạo ra test vô dụng.
+> **Sau bài này bạn sẽ:** biết chọn cái gì đáng test bằng một phép thử, và hiểu vì sao đuổi theo 100% coverage lại làm bộ test tệ đi.
 
-## Test mua cho bạn quyền được sửa code
+## Ý tưởng chính
 
-Lý do thật của test không phải "chứng minh code đúng" — không bộ test nào chứng minh được điều đó. Lý do là: **có test thì bạn dám thay đổi code**.
+Test không tồn tại để chứng minh code đúng — nó không chứng minh được điều đó.
 
-Không có test, mỗi lần refactor là một lần đánh cược. Có test, bạn sửa rồi chạy một lệnh và biết ngay mình có làm vỡ gì không. Cái bạn mua được là **tốc độ về sau**, trả bằng thời gian bây giờ.
+Test tồn tại để **bạn dám sửa code**. Không có test, mỗi lần refactor là một canh bạc, và dần dần không ai dám đụng vào phần quan trọng nhất của hệ thống.
 
-Từ đó suy ra ngay một điều: test nào khiến việc sửa code **khó hơn** là test có hại. Nó tồn tại để phục vụ việc thay đổi, không phải để ràng buộc.
+## Mental model
 
-## Test hành vi, đừng test cách làm
+Hãy nghĩ tới **dây bảo hiểm khi leo núi**.
 
-Đây là ranh giới quyết định test của bạn hữu ích hay thành gánh nặng.
+> Dây không giúp bạn leo nhanh hơn. Nó không leo thay bạn. Nó chỉ làm một việc: **khi bạn trượt, bạn không rơi xuống đáy**.
+>
+> Và chính vì có nó, bạn **dám với tay tới mỏm đá xa hơn** — điều bạn sẽ không bao giờ dám làm nếu leo không dây.
+
+Đó là toàn bộ giá trị của test: không phải "code không có bug", mà là **bạn dám thay đổi code**. Một hệ thống không ai dám sửa là hệ thống đã chết, dù nó đang chạy.
+
+## Ví dụ nhỏ
 
 ```ts
-// ❌ Test cách làm: buộc chặt vào chi tiết bên trong
+// ❌ Test CÁCH LÀM — vỡ khi bạn refactor, dù hành vi không đổi
 it('gọi tinhThue rồi gọi lamTron', () => {
-  const spy = vi.spyOn(module, 'tinhThue')
-  tinhTongDon(don)
-  expect(spy).toHaveBeenCalled()
+  expect(tinhThue).toHaveBeenCalled()
+  expect(lamTron).toHaveBeenCalled()
 })
 
-// ✅ Test hành vi: khẳng định điều người dùng quan tâm
-it('cộng 10% thuế vào tổng đơn', () => {
-  expect(tinhTongDon({ items: [{ gia: 100_000, sl: 2 }] })).toBe(220_000)
+// ✅ Test HÀNH VI — chỉ vỡ khi kết quả thật sự sai
+it('đơn 100k chịu thuế 10% thành 110k', () => {
+  expect(tinhTong({ gia: 100_000 })).toBe(110_000)
 })
 ```
 
-Test đầu **đỏ khi bạn refactor dù kết quả vẫn đúng** — nó chống lại chính việc nó phải bảo vệ. Test sau chỉ đỏ khi kết quả thật sự sai.
+## Code chạy thế nào
 
-Câu hỏi để tự kiểm: *"nếu tôi viết lại toàn bộ phần bên trong mà kết quả không đổi, test này có đỏ không?"* Đỏ thì nó đang test cách làm.
+Vì sao test cách làm lại có hại — lần theo một tình huống thật:
 
-## Cái gì đáng test
+```text
+Tuần 1:  viết hàm tinhTong, gọi tinhThue() rồi lamTron()
+         viết test kiểm "có gọi tinhThue" ✅
 
-Xếp theo tỉ lệ giá trị trên công sức:
+Tuần 8:  refactor — gộp hai hàm thành một, kết quả GIỐNG HỆT
+         → test ĐỎ
+         → nhưng phần mềm KHÔNG hỏng gì cả
 
-**Rất đáng:**
-- **Hàm thuần có logic** — tính toán, chuyển đổi, phân tích. Vào ra rõ ràng, không cần dựng gì.
-- **Trường hợp biên** — rỗng, một phần tử, âm, `null`, chuỗi cực dài, dấu tiếng Việt.
-- **Mọi bug từng xảy ra** — sửa bug thì viết test tái hiện nó trước. Đây là loại test có tỉ lệ hoàn vốn cao nhất, vì bug đã chứng minh chỗ đó dễ sai.
-- **Quy tắc nghiệp vụ** — "đơn dưới 50k không được freeship", "chỉ chủ sở hữu mới xoá được".
+Bạn phải sửa test. Test không bảo vệ bạn — nó cản bạn.
+```
 
-**Ít đáng:**
-- Getter/setter không có logic
-- Code chỉ chuyển tiếp lời gọi sang thư viện
-- Bố cục giao diện (`className` nào, thẻ gì) — thay đổi liên tục, test vỡ liên tục
-- Chính thư viện bạn dùng (React, zod đã có test của họ)
+Đây là lý do bộ test nhiều mock hay bị bỏ hoang: nó đỏ mỗi lần refactor, nên người ta ngừng tin nó, rồi ngừng chạy nó.
 
-Bộ test của repo này là ví dụ: `tests/lib/` phủ hàm thuần (`slug`, `search`, `tags`, `reading-time`, `frontmatter`) và tầng dữ liệu (`*.repo`), không có test nào khẳng định một `div` có class gì.
+Phép thử để biết mình đang test đúng thứ:
 
-## Coverage là chẩn đoán, không phải mục tiêu
+> **"Nếu tôi viết lại hoàn toàn phần bên trong nhưng giữ nguyên kết quả, test có còn xanh không?"**
+>
+> Còn xanh ⇒ bạn đang test hành vi. Đỏ ⇒ bạn đang test cách làm.
 
-Coverage trả lời *"dòng nào chưa lần nào chạy trong test"* — hữu ích. Nó **không** trả lời *"code có đúng không"*:
+## Cú pháp
+
+Cái gì **đáng** test, xếp theo giá trị trên mỗi phút bỏ ra:
+
+```text
+⭐⭐⭐  Logic nghiệp vụ phức tạp
+        tính giá, tính thuế, phân quyền, quy tắc trạng thái
+
+⭐⭐⭐  Chỗ đã từng có bug
+        mỗi bug đã sửa nên kèm một test — nó không quay lại lần thứ hai
+
+⭐⭐    Ca biên và luồng lỗi
+        rỗng, âm, quá lớn, mạng hỏng, dữ liệu sai định dạng
+
+⭐      Luồng chính của tính năng quan trọng
+        đăng nhập, thanh toán — thường là E2E, ít thôi
+
+❌      Getter/setter, code chỉ chuyển tiếp
+❌      Thư viện bên thứ ba (họ đã test rồi)
+❌      Bố cục giao diện, màu sắc, khoảng cách
+```
+
+Dòng thứ hai là quy tắc có lãi nhất: **mỗi bug đã sửa kèm một test**. Bộ test của bạn lớn dần đúng theo những chỗ hệ thống thật sự hay hỏng, chứ không theo cảm tính.
+
+## Tại sao cần nó
+
+Vì **coverage là chẩn đoán, không phải mục tiêu** — và nhầm chỗ này làm hỏng cả bộ test:
 
 ```ts
-export function chia(a: number, b: number): number {
-  return a / b
-}
-
-it('chia được', () => {
-  expect(chia(10, 2)).toBe(5)     // coverage 100% ✅
+// 100% coverage, 0 giá trị
+it('chạy được', () => {
+  tinhTong({ gia: 100 })      // gọi hàm, không kiểm tra gì cả
 })
-// b = 0 chưa hề được nghĩ tới. Con số 100% không biết điều đó.
 ```
 
-Ép chỉ tiêu 100% tạo ra test viết cho có: gọi hàm rồi `expect(x).toBeDefined()`. Coverage lên, giá trị bằng không, và bạn còn phải bảo trì chúng.
+Coverage chỉ nói **dòng nào đã được chạy qua**, không nói dòng đó có được **kiểm tra** hay không. Đọc nó theo chiều ngược lại mới đúng:
 
-Dùng nó đúng cách: xem báo cáo, tìm **nhánh** chưa chạy, tự hỏi "nhánh này có đáng test không". Câu trả lời "không" là hợp lệ.
+```text
+Coverage thấp ở một module quan trọng  →  ⚠️ tín hiệu đáng xem
+Coverage 100%                           →  không nói lên điều gì
+Đuổi theo con số                        →  sinh ra test rỗng để lấp chỉ tiêu
+```
 
-## Lỗi hay gặp
+Mức thực tế: **70–80% cho code nghiệp vụ** là hợp lý. Cao hơn nữa thường là đang test những thứ không đáng.
 
-| Lỗi | Hậu quả | Sửa thế nào |
+## So sánh
+
+| | Test hành vi | Test cách làm |
 |---|---|---|
-| Test cách làm thay vì hành vi | Refactor đúng vẫn làm test đỏ | Khẳng định kết quả, không khẳng định lời gọi |
-| Chạy theo chỉ tiêu coverage | Đầy test vô nghĩa phải bảo trì | Coi coverage là chẩn đoán |
-| Test bố cục giao diện | Đổi class là đỏ hàng loạt | Test hành vi người dùng thấy |
-| Sửa bug mà không viết test | Bug quay lại sau vài tháng | Viết test tái hiện trước khi sửa |
-| Một test khẳng định mười thứ | Đỏ lên không biết cái nào sai | Một test một mệnh đề |
-| Tên test là `it('works')` | Đỏ mà không biết cái gì hỏng | Tên nói rõ hành vi |
+| Kiểm cái gì | Đầu vào → đầu ra | Hàm nào được gọi, theo thứ tự nào |
+| Refactor bên trong | ✅ vẫn xanh | ❌ đỏ |
+| Bắt được bug thật | ✅ | Đôi khi |
+| Cần mock | Ít | Nhiều |
+| Tuổi thọ | Dài | Ngắn |
 
-## Ghi nhớ
+Cột phải không phải luôn sai — có lúc bạn **cần** kiểm rằng email đã được gửi. Nhưng nếu phần lớn test của bạn nằm ở cột phải, đó là dấu hiệu thiết kế đang dính chặt — xem [[ket-dinh-cao-lien-ket-long]].
 
-- Test tồn tại để bạn dám sửa code, không để chứng minh code đúng.
-- Test nào đỏ khi refactor mà kết quả không đổi là test sai.
-- Đáng nhất: hàm thuần có logic, trường hợp biên, và mọi bug từng gặp.
-- Coverage chỉ ra chỗ chưa chạy; nó không biết chỗ nào sai.
+## Dễ nhầm
 
-## Tự kiểm tra
+**1. Test để đạt chỉ tiêu coverage.** Sinh ra test gọi hàm mà không `expect` gì.
 
-1. Câu hỏi nào phân biệt được test hành vi và test cách làm?
-2. Vì sao 100% coverage vẫn để lọt lỗi chia cho 0?
-3. Vừa sửa một bug. Việc đầu tiên nên làm là gì, và vì sao?
+**2. Test mọi thứ.** Test cũng là code: nó cần bảo trì, cũng có bug. Bộ test 5000 ca mà 4000 ca vô nghĩa còn tệ hơn 500 ca đúng chỗ.
+
+**3. Test chi tiết cài đặt.** Xem phép thử ở trên.
+
+**4. Không test luồng lỗi.** Người ta test đường đi đẹp rồi dừng — trong khi bug hầu hết nằm ở đường xấu: mạng hỏng, dữ liệu rỗng, quyền không đủ.
+
+**5. Test phụ thuộc thứ tự chạy.** Test A phải chạy trước test B mới xanh ⇒ chúng dùng chung state ⇒ sớm muộn sẽ chập chờn. Xem [[integration-test-va-tang-du-lieu]].
+
+**6. Bỏ test khi gấp.** Đây chính là lúc cần nó nhất — code viết vội là code nhiều bug nhất.
+
+**7. Viết test sau khi code xong rất lâu.** Bạn sẽ viết test **khớp với code đang có**, kể cả khi code đó sai.
+
+## Mẹo nhớ
+
+> **Test là dây bảo hiểm: không giúp leo nhanh hơn, nhưng cho bạn dám với xa hơn.**
+>
+> **Test hành vi, không test cách làm.**
+>
+> **Coverage là chẩn đoán, không phải mục tiêu.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Giá trị thật của test là gì — không phải "code không có bug", mà là gì?
+2. Phép thử một câu để biết bạn đang test hành vi hay cách làm?
+3. Vì sao bộ test nhiều mock hay bị bỏ hoang?
+4. Vì sao 100% coverage không nói lên chất lượng?
+5. Ba loại code **không** đáng test?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, với module tính phí giao hàng dưới đây, hãy liệt kê **những gì bạn sẽ test và những gì bỏ qua**, kèm lý do:
+
+```ts
+class DichVuGiao {
+  constructor(private db, private apiBanDo) {}
+  async tinhPhi(don) { /* gọi API bản đồ, tra bảng giá, áp khuyến mãi */ }
+  get tenDichVu() { return 'GHN' }
+  private lamTron(x) { return Math.round(x / 1000) * 1000 }
+}
+```
+
+Tự kiểm: `lamTron` là private — bạn test nó trực tiếp hay qua `tinhPhi`? Nêu lý do.
+
+## Thử sức
+
+Đội bạn có 2000 test, chạy mất 25 phút, và **khoảng 30 test đỏ ngẫu nhiên** mỗi tuần mà không ai biết vì sao. Mọi người đã quen bấm "chạy lại".
+
+Đây là bộ test đã mất giá trị. Nêu **ba bước** để cứu nó, theo đúng thứ tự — và câu khó nhất: bước nào bạn làm **đầu tiên**, và vì sao không phải là "sửa 30 test kia"?

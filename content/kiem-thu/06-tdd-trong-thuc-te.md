@@ -4,145 +4,204 @@ slug: tdd-trong-thuc-te
 summary: Vòng đỏ-xanh-refactor, khi TDD giúp thật, và khi nó chỉ làm chậm bạn.
 level: nang-cao
 tags: [testing, tdd, quy-trinh]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** chạy được một vòng TDD hoàn chỉnh, và biết khi nào nên bỏ nó đi.
+> **Sau bài này bạn sẽ:** chạy được một vòng TDD đầy đủ, và biết khi nào **không** nên dùng nó — điều ít tài liệu nào nói.
 
-## Vòng ba bước
+## Ý tưởng chính
 
-**Đỏ** → viết test cho hành vi chưa có. Chạy, thấy nó đỏ.
-**Xanh** → viết code ít nhất để test xanh. Xấu cũng được.
-**Refactor** → dọn code, test vẫn xanh.
+TDD là vòng ba bước: **viết test đỏ → làm nó xanh → dọn dẹp**.
 
-Bước "thấy nó đỏ" là bước dễ bị bỏ nhất và cũng quan trọng nhất. Test chưa từng đỏ là test **chưa được chứng minh là có tác dụng**:
+Nhưng giá trị thật của TDD không nằm ở chỗ "có test". Nó nằm ở chỗ **viết test trước buộc bạn thiết kế từ phía người dùng code** — bạn phải quyết định hàm này gọi thế nào **trước khi** biết nó làm thế nào.
+
+## Mental model
+
+Hãy nghĩ tới **viết đơn đặt hàng trước khi vào xưởng**.
+
+> Cách thông thường: vào xưởng, làm ra một cái ghế, rồi mô tả nó cho khách.
+>
+> TDD: **viết đơn đặt hàng trước** — *"ghế cao 45cm, chịu 100kg, gấp lại được"* — rồi mới vào xưởng làm cho vừa đơn.
+>
+> Đơn hàng viết trước buộc bạn nghĩ từ phía **người ngồi**, không phải từ phía **cái máy tiện bạn đang có**.
+
+Đó là lý do code viết theo TDD thường dễ dùng hơn: giao diện của nó được thiết kế bởi người **dùng** nó, không phải bởi người **cài đặt** nó.
+
+## Ví dụ nhỏ
+
+```text
+🔴 ĐỎ     viết test cho hành vi CHƯA có → chạy → phải ĐỎ
+🟢 XANH   viết code ÍT NHẤT có thể để xanh
+🔵 DỌN    cải thiện code, test vẫn xanh
+```
+
+Bước "chạy để thấy nó đỏ" nghe thừa nhưng bắt buộc: test không bao giờ đỏ là test **không kiểm gì cả**, và bạn sẽ không phát hiện ra điều đó nếu bỏ qua bước này.
+
+## Code chạy thế nào
+
+Một vòng đầy đủ với bài "tính phí giao hàng":
 
 ```ts
-it('tính giảm giá cho thành viên VIP', () => {
-  expect(tinhGiamGia({ vip: true, tong: 100_000 })).toBe(10_000)
+// 🔴 ĐỎ — hàm chưa tồn tại
+it('phí cơ bản là 30k', () => {
+  expect(tinhPhi({ khoangCach: 5 })).toBe(30_000)
 })
+// → ReferenceError: tinhPhi is not defined  ✅ đỏ đúng như mong đợi
 ```
 
-Nếu bạn viết `tinhGiamGia` trước rồi mới viết test, và test xanh ngay — bạn không biết nó xanh vì code đúng hay vì `expect` gõ sai. Thấy nó đỏ trước là cách duy nhất biết test thật sự đang kiểm cái gì.
-
-## Một vòng đầy đủ
-
-Yêu cầu: *đơn từ 500k trở lên được freeship, dưới thì tính 30k, thành viên VIP luôn freeship.*
-
-**Đỏ 1:**
-
 ```ts
-it('miễn phí ship cho đơn từ 500k', () => {
-  expect(tinhPhiShip({ tong: 500_000, vip: false })).toBe(0)
-})
+// 🟢 XANH — ít nhất có thể. Đúng, trả về hằng số cũng được.
+function tinhPhi(don) { return 30_000 }
 ```
 
-Chạy: `tinhPhiShip is not defined`. Đỏ — đúng như mong đợi.
-
-**Xanh 1** — ít nhất có thể, kể cả hard-code:
+Trả về hằng số nghe như gian lận, nhưng nó có mục đích: nó chứng minh **test chạy đúng cơ chế**, và nó ép bạn viết ca test tiếp theo để "phá" nó.
 
 ```ts
-export function tinhPhiShip(don: { tong: number; vip: boolean }): number {
-  return 0
-}
-```
-
-Hard-code trông vô nghĩa nhưng có tác dụng thật: nó chứng minh đường dây đã nối (import đúng, tên hàm đúng, chữ ký đúng) trước khi bạn viết logic. Test tiếp theo sẽ ép nó phải tổng quát hoá.
-
-**Đỏ 2:**
-
-```ts
-it('tính 30k cho đơn dưới 500k', () => {
-  expect(tinhPhiShip({ tong: 499_000, vip: false })).toBe(30_000)
-})
-```
-
-**Xanh 2:**
-
-```ts
-export function tinhPhiShip(don: { tong: number; vip: boolean }): number {
-  return don.tong >= 500_000 ? 0 : 30_000
-}
-```
-
-**Đỏ 3 + Xanh 3:**
-
-```ts
-it('VIP luôn được miễn phí ship', () => {
-  expect(tinhPhiShip({ tong: 100_000, vip: true })).toBe(0)
+// 🔴 ĐỎ — ca thứ hai buộc code phải thật
+it('trên 10km cộng 5k mỗi km', () => {
+  expect(tinhPhi({ khoangCach: 12 })).toBe(40_000)
 })
 ```
 
 ```ts
-export function tinhPhiShip(don: { tong: number; vip: boolean }): number {
-  if (don.vip) return 0
-  return don.tong >= 500_000 ? 0 : 30_000
+// 🟢 XANH
+function tinhPhi(don) {
+  if (don.khoangCach <= 10) return 30_000
+  return 30_000 + (don.khoangCach - 10) * 5_000
 }
 ```
 
-**Refactor** — giờ mới đặt tên cho các con số, an toàn vì có ba test canh:
-
 ```ts
-const NGUONG_FREESHIP = 500_000
-const PHI_SHIP = 30_000
+// 🔵 DỌN — đặt tên cho số ma thuật, test vẫn xanh
+const PHI_CO_BAN = 30_000
+const NGUONG_KM = 10
+const PHI_MOI_KM = 5_000
 
-export function tinhPhiShip(don: { tong: number; vip: boolean }): number {
-  if (don.vip) return 0
-  return don.tong >= NGUONG_FREESHIP ? 0 : PHI_SHIP
+function tinhPhi(don) {
+  const themKm = Math.max(0, don.khoangCach - NGUONG_KM)
+  return PHI_CO_BAN + themKm * PHI_MOI_KM
 }
 ```
 
-Ba test này còn là tài liệu chính xác về quy tắc nghiệp vụ — thứ mà comment không bao giờ đảm bảo được vì comment không chạy.
+Chú ý bước 🔵: bạn refactor **với lưới an toàn** — nếu làm hỏng, test đỏ ngay. Đây là chỗ TDD trả lại công sức đã bỏ ra.
 
-## TDD giúp thật khi nào
+## Cú pháp
 
-**Rất phù hợp:**
-- Logic nghiệp vụ có nhiều nhánh và điều kiện — mỗi nhánh là một test, viết tới đâu chắc tới đó
-- Sửa bug: viết test tái hiện bug (đỏ), sửa (xanh). Bạn có bằng chứng đã sửa đúng, và bug không quay lại.
-- Hàm thuần chuyển đổi dữ liệu
-- Khi bạn **chưa rõ** code nên trông thế nào — viết test trước buộc bạn quyết định giao diện hàm từ góc nhìn người dùng nó
+Nhịp làm việc thực tế, tính bằng phút:
 
-**Ít phù hợp:**
-- Dò đường trong thư viện lạ — bạn còn chưa biết mình muốn gì thì test trước là đoán mò
-- Bố cục giao diện — "cái nút nằm bên phải" không diễn đạt được bằng test một cách hữu ích
-- Prototype định bỏ đi
-- Code chỉ chuyển tiếp lời gọi, không có logic
-
-Thành thật: dò đường xong rồi thì **xoá bản nháp và làm lại bằng TDD** thường ra kết quả tốt hơn là giữ bản nháp rồi bọc test lên sau.
-
-## Vì sao viết test trước ra thiết kế khác
-
-Viết test trước buộc bạn dùng hàm **trước khi** cài đặt nó. Bạn tự nhiên chọn chữ ký dễ gọi:
-
-```ts
-// Nghĩ từ góc nhìn cài đặt: cần gì thì nhét vào
-tinhPhiShip(don, khachHang, cauHinh, db, logger)
-
-// Nghĩ từ góc nhìn người gọi (test trước): cần đúng những gì?
-tinhPhiShip({ tong: 500_000, vip: false })
+```text
+🔴 1-2 phút   viết một test nhỏ, chạy, thấy đỏ
+🟢 2-5 phút   làm xanh bằng cách đơn giản nhất
+🔵 0-5 phút   dọn dẹp nếu cần
+──────────────
+lặp lại
 ```
 
-Hàm thứ hai không cần `db` hay `logger` vì test không muốn dựng chúng. Cái "không muốn dựng" đó chính là áp lực đẩy bạn tách logic thuần ra khỏi tác dụng phụ — xem [[test-double-stub-mock-fake]].
+Một vòng **không nên quá 10 phút**. Vòng dài nghĩa là bước bạn chọn quá lớn — chia nhỏ hơn.
 
-## Lỗi hay gặp
+## Tại sao cần nó
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Không chạy để thấy test đỏ | Test có thể vô tác dụng mà không ai biết | Luôn xác nhận đỏ trước |
-| Viết 10 test rồi mới code | Mất phản hồi từng bước, debug cả khối | Một test một lần |
-| Bỏ bước refactor | Code tích tụ hard-code và số ma thuật | Dọn khi vẫn còn xanh |
-| TDD cho code đang dò đường | Test đoán mò, phải viết lại liên tục | Dò trước, xoá, TDD lại |
-| Sửa bug mà không viết test đỏ trước | Không biết đã sửa đúng nguyên nhân chưa | Tái hiện bug bằng test |
-| Test trước cho bố cục UI | Test giòn, không diễn đạt được ý định | Test hành vi, không test vị trí |
+Vì TDD **giúp thật** ở ba tình huống cụ thể, và **không giúp** ở những tình huống khác:
 
-## Ghi nhớ
+```text
+✅ TDD giúp rõ nhất
+   · Logic nghiệp vụ phức tạp, nhiều quy tắc và ca biên
+     (tính giá, tính thuế, quy tắc trạng thái, phân quyền)
+   · Sửa bug — viết test tái hiện bug TRƯỚC, rồi mới sửa
+   · Refactor code cũ — bọc test quanh hành vi hiện tại rồi mới đụng vào
 
-- Đỏ → xanh → refactor. Bỏ bước "thấy đỏ" là bỏ mất giá trị của TDD.
-- Xanh bằng code ít nhất, kể cả hard-code; test sau sẽ ép tổng quát hoá.
-- Sửa bug: test đỏ tái hiện trước, rồi mới sửa.
-- Viết test trước ra chữ ký hàm dễ gọi hơn, vì bạn là người gọi đầu tiên.
+❌ TDD cản trở
+   · Đang khám phá, chưa biết mình muốn gì (viết nháp trước, test sau)
+   · Giao diện, bố cục — nhìn bằng mắt nhanh hơn
+   · Script chạy một lần rồi bỏ
+   · Code chỉ chuyển tiếp, không có quyết định nào
+```
 
-## Tự kiểm tra
+Tình huống "sửa bug" là chỗ TDD có lãi nhất và ai cũng áp dụng được ngay:
 
-1. Vì sao bắt buộc phải thấy test đỏ trước khi viết code?
-2. Hard-code `return 0` để test xanh có ích gì?
-3. Vì sao TDD thường ra hàm có ít phụ thuộc hơn?
+```text
+① Viết test tái hiện bug           → đỏ (chứng minh bạn hiểu đúng bug)
+② Sửa code                          → xanh
+③ Test đó ở lại mãi mãi             → bug không quay lại lần thứ hai
+```
+
+Bước ① quan trọng hơn vẻ ngoài: rất nhiều lần bạn sẽ phát hiện mình **hiểu sai bug** ngay ở bước này, trước khi tốn một giờ sửa nhầm chỗ.
+
+## So sánh
+
+**Vì sao viết test trước ra thiết kế khác** — đây là lập luận cốt lõi, không phải chuyện niềm tin:
+
+```ts
+// Viết code trước: bạn nghĩ từ phía CÀI ĐẶT
+class DichVuDon {
+  constructor() {
+    this.db = new PostgresClient()          // ← tự tạo phụ thuộc bên trong
+    this.mail = new SendGridClient()
+  }
+}
+// Khi viết test: bạn phát hiện không mock nổi, phải sửa lại thiết kế
+```
+
+```ts
+// Viết test trước: bạn nghĩ từ phía NGƯỜI GỌI
+it('gửi mail sau khi tạo đơn', async () => {
+  const mail = { gui: vi.fn() }
+  await taoDon(donMau, { db: dbGia, mail })     // ← chữ ký này bạn TỰ CHỌN
+  expect(mail.gui).toHaveBeenCalled()
+})
+// Thiết kế "tiêm phụ thuộc" xuất hiện tự nhiên, không phải do bạn nhớ nguyên lý
+```
+
+TDD không dạy bạn nguyên lý thiết kế — nó **buộc bạn dùng chúng**, vì code khó test là code bạn không viết xong được. Cùng ý với [[test-double-stub-mock-fake]].
+
+## Dễ nhầm
+
+**1. Bỏ qua bước "thấy nó đỏ".** Test không bao giờ đỏ là test không kiểm gì. Bạn chỉ phát hiện điều đó vào lúc production hỏng mà test vẫn xanh.
+
+**2. Viết test quá lớn.** Test kiểm 5 hành vi cùng lúc thì bạn phải viết cả module mới làm nó xanh — và mất hẳn nhịp đỏ-xanh nhanh.
+
+**3. Bỏ bước refactor.** Đây là bước hay bị bỏ nhất, và bỏ nó thì bạn chỉ còn "viết test trước" chứ không phải TDD. Code tích tụ nợ dần dần.
+
+**4. TDD cho mọi thứ.** Áp dụng máy móc lên code giao diện hoặc script dùng một lần là tự làm chậm mình.
+
+**5. Sửa test cho khớp code khi test đỏ.** Nếu test viết đúng ý định, **code sai chứ không phải test sai**. Dừng lại và hỏi lại ý định trước khi sửa test.
+
+**6. Test trước khi đã hiểu bài toán.** TDD không thay được việc suy nghĩ. Bí quá thì viết nháp trước cho hiểu, xoá đi, rồi làm lại bằng TDD.
+
+## Mẹo nhớ
+
+> **Viết đơn đặt hàng trước khi vào xưởng.**
+>
+> **Đỏ → Xanh → Dọn. Một vòng dưới 10 phút.**
+>
+> **Sửa bug: test tái hiện TRƯỚC, sửa SAU.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Ba bước của TDD, và bước nào hay bị bỏ nhất?
+2. Vì sao bắt buộc phải chạy để **thấy test đỏ**?
+3. Vì sao viết test trước dẫn tới thiết kế khác — nêu cơ chế, không nêu niềm tin?
+4. Ba tình huống TDD giúp rõ nhất?
+5. Khi test đỏ, khi nào bạn được phép sửa test?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, chạy một vòng TDD đầy đủ trên giấy cho yêu cầu:
+
+```text
+Hàm kiemTraMatKhau(mk) trả về danh sách lỗi:
+- ngắn hơn 8 ký tự
+- không có chữ số
+- không có chữ hoa
+- trùng với 100 mật khẩu phổ biến
+```
+
+Viết ra **ba vòng đầu tiên**: test nào trước, code tối thiểu nào, và bạn dọn dẹp gì ở vòng thứ ba?
+
+## Thử sức
+
+Bạn nhận một module 800 dòng, không có test nào, và cần sửa một bug bên trong. Sếp cho hai ngày.
+
+Bạn **không** đủ thời gian viết test cho cả module. Lập kế hoạch: bạn viết test cho **phần nào**, theo tiêu chí gì, và làm sao để chắc rằng phần bạn không test vẫn không bị bạn làm hỏng? Gợi ý: có một kỹ thuật tên là "characterization test" — hãy tự suy ra nó làm gì từ chính cái tên.

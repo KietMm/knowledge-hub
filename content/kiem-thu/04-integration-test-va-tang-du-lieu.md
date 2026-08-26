@@ -4,131 +4,198 @@ slug: integration-test-va-tang-du-lieu
 summary: Test thật với database hoặc filesystem, cách cô lập giữa các test, và vì sao dùng chung state là nguồn của test chập chờn.
 level: trung-cap
 tags: [testing, integration-test, database]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** viết được test chạy thật với dữ liệu mà không để test này làm vỡ test khác.
+> **Sau bài này bạn sẽ:** viết được test chạm cơ sở dữ liệu thật mà không chập chờn, và biết vì sao "dùng chung dữ liệu" là nguồn gốc của phần lớn test đỏ ngẫu nhiên.
 
-## Unit test không đủ cho tầng dữ liệu
+## Ý tưởng chính
 
-Mock database rồi test repository là test chính cái mock của mình. Những lỗi thật nhất ở tầng này chỉ hiện ra khi chạy thật:
+Unit test với cơ sở dữ liệu giả **không bắt được** những lỗi thật sự hay xảy ra ở tầng dữ liệu: SQL sai cú pháp, ràng buộc bị vi phạm, migration thiếu cột, transaction không rollback.
 
-- Ràng buộc `UNIQUE`, khoá ngoại, `NOT NULL` có được tôn trọng không
-- Transaction có rollback đúng khi lỗi giữa đường không
-- Truy vấn có trả về đúng thứ tự đã `ORDER BY` không
-- Ghi đồng thời có mất dữ liệu không
+Nên tầng dữ liệu cần integration test — chạy với **cơ sở dữ liệu thật**. Và toàn bộ độ khó nằm ở một chỗ: **cô lập giữa các test**.
 
-Không mock nào phát hiện được nhóm này. Repo này test `src/lib/db/*.repo.ts` **chạy thật với filesystem**, chỉ đổi thư mục đích.
+## Mental model
 
-## Nguyên tắc: mỗi test một môi trường riêng
+Hãy nghĩ tới **phòng thí nghiệm dùng chung**.
 
-Nguồn số một của test chập chờn là dùng chung trạng thái. Test A tạo user `u-1`, test B cũng tạo `u-1` → cái sau đỏ. Chạy riêng thì cả hai xanh, chạy cả bộ thì đỏ — và thứ tự chạy có thể đổi giữa các lần.
+> Ba nhóm cùng làm thí nghiệm trên một cái bàn. Nhóm A để lại hoá chất, nhóm B vào làm và kết quả sai — nhưng khi nhóm B làm một mình thì lại đúng.
+>
+> Đó chính là **test chập chờn**: xanh khi chạy riêng, đỏ khi chạy cùng nhau, và đỏ **ngẫu nhiên** khi thứ tự thay đổi.
+
+Cách chữa duy nhất đáng tin: **mỗi nhóm một bàn riêng, hoặc lau sạch bàn trước mỗi lượt** — không phải "nhắc nhau dọn dẹp".
+
+## Ví dụ nhỏ
 
 ```ts
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+// ❌ Dùng chung dữ liệu — nguồn của test chập chờn
+beforeAll(async () => {
+  await db.nguoiDung.create({ id: '1', email: 'a@x.com' })
+})
 
-describe('notesRepo', () => {
-  let thuMuc: string
+it('sửa email', async () => {
+  await capNhat('1', { email: 'b@x.com' })      // ← đổi dữ liệu dùng chung
+})
 
-  beforeEach(async () => {
-    // mkdtemp sinh tên có hậu tố ngẫu nhiên → hai test song song không đụng nhau
-    thuMuc = await mkdtemp(join(tmpdir(), 'kh-test-'))
-    process.env.DATA_DIR = thuMuc
-  })
-
-  afterEach(async () => {
-    // recursive + force: xoá được cả cây, và không ném lỗi nếu test đã tự xoá
-    await rm(thuMuc, { recursive: true, force: true })
-  })
-
-  it('không cho hai note trùng slug', async () => {
-    await notesRepo.create({ topicId: 't1', title: 'A', slug: 'trung' })
-    await expect(
-      notesRepo.create({ topicId: 't1', title: 'B', slug: 'trung' }),
-    ).rejects.toThrow(/trùng/)
-  })
+it('tìm theo email', async () => {
+  expect(await tim('a@x.com')).toBeTruthy()      // ❌ đỏ nếu test trên chạy trước
 })
 ```
 
-Với database thật, ba cách cô lập, xếp theo mức độ chắc chắn:
+## Code chạy thế nào
 
-| Cách | Cô lập | Tốc độ | Ghi chú |
-|---|---|---|---|
-| Database riêng mỗi test | Tuyệt đối | Chậm nhất | Dùng khi test schema/migration |
-| Transaction rollback sau mỗi test | Rất tốt | Nhanh | Không dùng được nếu code tự mở transaction |
-| `TRUNCATE` bảng sau mỗi test | Tốt | Nhanh | Phải nhớ hết bảng, dễ sót bảng mới |
+Ba cách cô lập, xếp theo độ tin cậy:
 
-## Đừng dùng lại dữ liệu giữa các test
+```text
+① TRANSACTION + ROLLBACK        (nhanh nhất, cô lập tốt)
+   mỗi test chạy trong một transaction, cuối test rollback
+   → cơ sở dữ liệu trở lại y như trước, không sót gì
 
-```ts
-// ❌ Test sau phụ thuộc test trước đã chạy
-beforeAll(async () => { await taoUser('u-1') })
+② XOÁ SẠCH TRƯỚC MỖI TEST       (đơn giản, đủ dùng)
+   beforeEach: TRUNCATE mọi bảng
 
-it('đọc được user', ...)      // xanh
-it('xoá user', ...)           // xoá u-1
-it('sửa user', ...)           // ĐỎ — u-1 không còn
+③ MỖI TEST MỘT SCHEMA/DATABASE  (cô lập tuyệt đối, chậm nhất)
+   dùng khi test chạy song song nhiều luồng
 ```
 
-Ba test này còn đổi kết quả theo thứ tự chạy, mà Vitest không đảm bảo thứ tự khi chạy song song. Dùng `beforeEach` và một hàm dựng dữ liệu:
+```ts
+// Cách ① — nhanh và sạch
+beforeEach(async () => {
+  tx = await db.beginTransaction()
+})
+afterEach(async () => {
+  await tx.rollback()          // ← mọi thứ test vừa ghi biến mất
+})
+```
+
+Lưu ý về cách ①: nếu **code đang test cũng mở transaction riêng**, bạn cần transaction lồng nhau (savepoint) — không phải mọi ORM đều hỗ trợ. Lúc đó dùng cách ②.
+
+## Cú pháp
+
+**Mỗi test tự dựng dữ liệu của nó** — nguyên tắc quan trọng nhất:
 
 ```ts
-function userMau(ghiDe: Partial<User> = {}): User {
-  return {
-    id: nanoid(),                        // id khác nhau mỗi lần → không bao giờ trùng
-    email: `test-${nanoid()}@example.com`,
-    name: 'Người dùng thử',
-    createdAt: new Date().toISOString(),
-    ...ghiDe,                            // test chỉ nói phần nó quan tâm
-  }
+// ❌ Dữ liệu dùng chung ở beforeAll
+// ✅ Mỗi test tạo đúng thứ nó cần
+function taoNguoiDung(ghiDe = {}) {
+  return db.nguoiDung.create({
+    email: `test-${crypto.randomUUID()}@x.com`,     // ← DUY NHẤT mỗi lần
+    ten: 'Người thử',
+    ...ghiDe,
+  })
 }
 
 it('không cho email trùng', async () => {
-  const email = 'trung@example.com'
-  await usersRepo.create(userMau({ email }))
-  await expect(usersRepo.create(userMau({ email }))).rejects.toThrow(/email/i)
+  const u = await taoNguoiDung()
+  await expect(taoNguoiDung({ email: u.email })).rejects.toThrow()
 })
 ```
 
-Hàm này giải quyết hai việc: id/email luôn khác nhau nên không trùng ngẫu nhiên, và test chỉ khai báo đúng trường nó quan tâm — đọc là thấy ngay ý định.
+Hàm `taoNguoiDung` gọi là **factory**, và nó giải quyết hai vấn đề cùng lúc: test đọc được (chỉ khai trường nào **quan trọng với test này**), và dữ liệu luôn duy nhất.
 
-## Test transaction có rollback thật
+Chạy cơ sở dữ liệu thật cho test:
+
+```yaml
+# docker-compose.test.yml
+services:
+  db:
+    image: postgres:16
+    environment: { POSTGRES_PASSWORD: test }
+    ports: ["5433:5432"]        # ← cổng KHÁC với db phát triển
+    tmpfs: /var/lib/postgresql/data    # ← chạy trong RAM, nhanh hơn nhiều
+```
+
+`tmpfs` là mẹo đáng biết: cơ sở dữ liệu test không cần bền vững, nên cho nó chạy trong RAM là được tốc độ đáng kể.
+
+## Tại sao cần nó
+
+Vì đây là những lỗi **chỉ** integration test bắt được:
+
+```text
+· SQL sai cú pháp (chỉ lộ khi thật sự chạy)
+· Ràng buộc UNIQUE, FOREIGN KEY, NOT NULL
+· Migration thiếu cột, sai kiểu
+· Truy vấn trả về hình dạng khác mong đợi
+· Transaction không rollback đúng lúc lỗi
+· Index thiếu → truy vấn chạy nhưng chậm
+```
+
+Và test transaction có rollback thật là chỗ đáng viết test nhất, vì logic đó khó và ít ai kiểm:
 
 ```ts
-it('không tạo đơn nào khi trừ kho thất bại', async () => {
-  await khoRepo.datSoLuong('p-1', 0)     // kho rỗng
+it('rollback toàn bộ khi bước cuối lỗi', async () => {
+  await expect(
+    chuyenTien({ tu: 'A', den: 'KHONG_TON_TAI', soTien: 100 })
+  ).rejects.toThrow()
 
-  await expect(taoDon({ productId: 'p-1', quantity: 1 })).rejects.toThrow(/hết hàng/)
-
-  // Điểm quan trọng: khẳng định KHÔNG có tác dụng phụ nào sót lại.
-  // Thiếu dòng này, test vẫn xanh khi transaction rò rỉ đơn hàng dở dang.
-  expect(await donRepo.demTheoProduct('p-1')).toBe(0)
+  // Điều QUAN TRỌNG: tiền không bị trừ ở tài khoản nguồn
+  expect((await layTaiKhoan('A')).soDu).toBe(1000)
 })
 ```
 
-Khẳng định "lỗi được ném ra" là chưa đủ. Phải khẳng định thêm **trạng thái sau lỗi vẫn sạch**.
+Không có test này, bug "trừ tiền rồi lỗi giữa chừng" chỉ lộ ra khi có khách hàng thật mất tiền.
 
-## Lỗi hay gặp
+## So sánh
 
-| Lỗi | Hậu quả | Sửa thế nào |
+| | Unit test | Integration test |
 |---|---|---|
-| Dùng chung database/thư mục giữa các test | Test chập chờn, xanh khi chạy lẻ | Môi trường riêng mỗi test |
-| `beforeAll` tạo dữ liệu cho nhiều test | Kết quả đổi theo thứ tự chạy | `beforeEach` |
-| Không dọn sau test | Ổ đĩa đầy, lần chạy sau đỏ | `afterEach` với `force: true` |
-| Id/email cố định trong dữ liệu mẫu | Trùng khi chạy song song | Sinh ngẫu nhiên |
-| Chỉ khẳng định lỗi được ném | Bỏ sót transaction rò rỉ | Khẳng định cả trạng thái sau lỗi |
-| Mock database rồi gọi là integration test | Không phát hiện được lỗi ràng buộc | Chạy thật với dữ liệu |
+| Tốc độ | ms | 10–100ms mỗi test |
+| Cơ sở dữ liệu | Giả | **Thật** |
+| Bắt lỗi SQL, ràng buộc | ❌ | ✅ |
+| Bắt lỗi logic nghiệp vụ | ✅ | ✅ (nhưng chậm hơn) |
+| Số lượng nên có | Nhiều | Vừa phải — chỉ ở tầng dữ liệu và luồng quan trọng |
 
-## Ghi nhớ
+Nguyên tắc phân bổ: **logic nghiệp vụ test bằng unit test** (nhanh, nhiều ca), **tầng dữ liệu test bằng integration test** (ít ca hơn, nhưng thật). Đừng dùng integration test để kiểm 50 ca biên của một hàm tính giá.
 
-- Lỗi ràng buộc, transaction, thứ tự truy vấn chỉ hiện ra khi chạy thật.
-- Mỗi test một môi trường riêng — dùng chung là nguồn của test chập chờn.
-- Dữ liệu mẫu sinh id ngẫu nhiên và cho phép ghi đè từng trường.
-- Test rollback phải khẳng định cả trạng thái sau lỗi, không chỉ lỗi.
+## Dễ nhầm
 
-## Tự kiểm tra
+**1. Dùng chung dữ liệu giữa các test.** Nguồn số một của test chập chờn.
 
-1. Kể ba loại lỗi mà mock database không bao giờ phát hiện được.
-2. Vì sao `beforeAll` tạo dữ liệu chung là nguy hiểm khi test chạy song song?
-3. Test rollback chỉ khẳng định `rejects.toThrow()` thì bỏ sót điều gì?
+**2. Test phụ thuộc thứ tự chạy.** Xanh khi chạy tuần tự, đỏ khi chạy song song — và CI thường chạy song song.
+
+**3. Dùng cơ sở dữ liệu phát triển để test.** Một ngày `TRUNCATE` chạy nhầm chỗ và bạn mất dữ liệu đang làm dở. Cổng riêng, database riêng.
+
+**4. Không dọn dẹp khi test thất bại.** Đặt dọn dẹp trong `afterEach`, không đặt ở cuối thân test — test đỏ giữa chừng thì phần dọn dẹp không bao giờ chạy.
+
+**5. Dữ liệu cố định gây trùng.** `email: 'test@x.com'` trong hai test chạy song song ⇒ vi phạm UNIQUE. Sinh giá trị duy nhất.
+
+**6. Mock cơ sở dữ liệu trong integration test.** Lúc đó nó không còn là integration test, và bạn mất đúng thứ mình định kiểm.
+
+**7. Đưa quá nhiều ca vào integration test.** Bộ test 20 phút thì không ai chạy trước khi push, và giá trị của nó về 0.
+
+## Mẹo nhớ
+
+> **Phòng thí nghiệm dùng chung: mỗi test một bàn riêng, hoặc lau bàn trước mỗi lượt.**
+>
+> **Mỗi test tự dựng dữ liệu của nó, và dữ liệu phải DUY NHẤT.**
+>
+> **Logic nghiệp vụ → unit test. Tầng dữ liệu → integration test.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Bốn loại lỗi mà chỉ integration test bắt được?
+2. Ba cách cô lập test, và cách nào nhanh nhất?
+3. Vì sao "dùng chung dữ liệu ở `beforeAll`" gây test chập chờn?
+4. Vì sao dọn dẹp phải nằm trong `afterEach` chứ không ở cuối test?
+5. Vì sao dữ liệu test phải sinh giá trị duy nhất?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết bộ test cho một repository:
+
+```text
+- luu(don) rồi tim(id) phải trả về đúng đơn đó
+- tim(id không tồn tại) trả về null
+- luu hai đơn cùng mã → vi phạm ràng buộc
+- xoa(id) rồi tim(id) trả về null
+```
+
+Tự kiểm: `beforeEach`/`afterEach` của bạn làm gì, và hai test chạy **song song** có đụng nhau không?
+
+## Thử sức
+
+CI của bạn đỏ ngẫu nhiên khoảng 1 lần mỗi 20 lần chạy, luôn ở những test khác nhau. Chạy lại thì xanh. Ở máy cá nhân thì không bao giờ đỏ.
+
+Nêu **ba** giả thuyết, xếp theo khả năng. Rồi mô tả cách **tái hiện được** lỗi ở máy bạn — vì không tái hiện được thì không sửa được. Gợi ý: có một cờ dòng lệnh làm chuyện này dễ hơn nhiều.
