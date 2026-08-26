@@ -272,6 +272,94 @@
     "order": 2
   },
   {
+    "id": "topic-ai-coding",
+    "name": "Lập trình cùng AI",
+    "slug": "lap-trinh-cung-ai",
+    "description": "Dùng trợ lý AI mà vẫn giữ được chất lượng, quyền kiểm soát và khả năng review.",
+    "categoryId": "cat-ai",
+    "order": 1
+  },
+  {
+    "id": "topic-llm",
+    "name": "Nền tảng LLM",
+    "slug": "llm-nen-tang",
+    "description": "Token, context window, nhiệt độ, và vì sao mô hình bịa ra thứ nghe rất hợp lý.",
+    "categoryId": "cat-ai",
+    "order": 2
+  },
+  {
+    "id": "topic-prompt",
+    "name": "Prompt Engineering",
+    "slug": "prompt-engineering",
+    "description": "Viết prompt như viết đặc tả: rõ ràng, có ví dụ, có định dạng đầu ra kiểm được.",
+    "categoryId": "cat-ai",
+    "order": 3
+  },
+  {
+    "id": "topic-rag",
+    "name": "RAG",
+    "slug": "rag",
+    "description": "Nối mô hình với dữ liệu của bạn: chia đoạn, truy hồi, xếp hạng lại và trích dẫn.",
+    "categoryId": "cat-ai",
+    "order": 4
+  },
+  {
+    "id": "topic-embed",
+    "name": "Embeddings và Vector Database",
+    "slug": "embeddings-va-vector-db",
+    "description": "Biểu diễn ý nghĩa bằng vector, đo khoảng cách, và chọn chỉ mục cho tìm kiếm.",
+    "categoryId": "cat-ai",
+    "order": 5
+  },
+  {
+    "id": "topic-tool",
+    "name": "Function Calling và Tool Use",
+    "slug": "function-calling-va-tool-use",
+    "description": "Cho mô hình gọi mã của bạn — khai báo, xác thực đầu vào, và giới hạn thiệt hại.",
+    "categoryId": "cat-ai",
+    "order": 6
+  },
+  {
+    "id": "topic-agent",
+    "name": "Kiến trúc AI Agent",
+    "slug": "kien-truc-ai-agent",
+    "description": "Vòng lặp lập kế hoạch — hành động — quan sát, bộ nhớ, và khi nào KHÔNG cần agent.",
+    "categoryId": "cat-ai",
+    "order": 7
+  },
+  {
+    "id": "topic-mcp",
+    "name": "MCP — Model Context Protocol",
+    "slug": "mcp",
+    "description": "Chuẩn kết nối mô hình với công cụ và dữ liệu: kiến trúc, cách viết server, và bảo mật.",
+    "categoryId": "cat-ai",
+    "order": 8
+  },
+  {
+    "id": "topic-llm-app",
+    "name": "Kiến trúc ứng dụng LLM",
+    "slug": "kien-truc-ung-dung-llm",
+    "description": "Streaming, chi phí, độ trễ, cache, dự phòng — phần kỹ thuật quanh lời gọi mô hình.",
+    "categoryId": "cat-ai",
+    "order": 9
+  },
+  {
+    "id": "topic-ai-eval",
+    "name": "Đánh giá và độ tin cậy AI",
+    "slug": "danh-gia-va-do-tin-cay-ai",
+    "description": "Đo chất lượng đầu ra không xác định: bộ eval, LLM-as-judge, và chặn hồi quy.",
+    "categoryId": "cat-ai",
+    "order": 10
+  },
+  {
+    "id": "topic-ai-sec",
+    "name": "Bảo mật ứng dụng AI",
+    "slug": "bao-mat-ung-dung-ai",
+    "description": "Prompt injection, rò rỉ dữ liệu, lạm dụng công cụ — và các lớp phòng thủ thật sự có tác dụng.",
+    "categoryId": "cat-ai",
+    "order": 11
+  },
+  {
     "id": "topic-decisions",
     "name": "Quyết định và chất lượng",
     "slug": "quyet-dinh-va-chat-luong",

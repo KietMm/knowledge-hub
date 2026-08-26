@@ -285,6 +285,82 @@
       ]
     },
     {
+      "id": "cat-ai",
+      "name": "AI cho lập trình viên",
+      "slug": "ai",
+      "description": "Từ hiểu LLM hoạt động ra sao tới xây, đánh giá và bảo vệ một ứng dụng AI chạy thật.",
+      "icon": "Sparkles",
+      "color": "orange",
+      "topics": [
+        {
+          "id": "topic-ai-coding",
+          "name": "Lập trình cùng AI",
+          "slug": "lap-trinh-cung-ai",
+          "description": "Dùng trợ lý AI mà vẫn giữ được chất lượng, quyền kiểm soát và khả năng review."
+        },
+        {
+          "id": "topic-llm",
+          "name": "Nền tảng LLM",
+          "slug": "llm-nen-tang",
+          "description": "Token, context window, nhiệt độ, và vì sao mô hình bịa ra thứ nghe rất hợp lý."
+        },
+        {
+          "id": "topic-prompt",
+          "name": "Prompt Engineering",
+          "slug": "prompt-engineering",
+          "description": "Viết prompt như viết đặc tả: rõ ràng, có ví dụ, có định dạng đầu ra kiểm được."
+        },
+        {
+          "id": "topic-rag",
+          "name": "RAG",
+          "slug": "rag",
+          "description": "Nối mô hình với dữ liệu của bạn: chia đoạn, truy hồi, xếp hạng lại và trích dẫn."
+        },
+        {
+          "id": "topic-embed",
+          "name": "Embeddings và Vector Database",
+          "slug": "embeddings-va-vector-db",
+          "description": "Biểu diễn ý nghĩa bằng vector, đo khoảng cách, và chọn chỉ mục cho tìm kiếm."
+        },
+        {
+          "id": "topic-tool",
+          "name": "Function Calling và Tool Use",
+          "slug": "function-calling-va-tool-use",
+          "description": "Cho mô hình gọi mã của bạn — khai báo, xác thực đầu vào, và giới hạn thiệt hại."
+        },
+        {
+          "id": "topic-agent",
+          "name": "Kiến trúc AI Agent",
+          "slug": "kien-truc-ai-agent",
+          "description": "Vòng lặp lập kế hoạch — hành động — quan sát, bộ nhớ, và khi nào KHÔNG cần agent."
+        },
+        {
+          "id": "topic-mcp",
+          "name": "MCP — Model Context Protocol",
+          "slug": "mcp",
+          "description": "Chuẩn kết nối mô hình với công cụ và dữ liệu: kiến trúc, cách viết server, và bảo mật."
+        },
+        {
+          "id": "topic-llm-app",
+          "name": "Kiến trúc ứng dụng LLM",
+          "slug": "kien-truc-ung-dung-llm",
+          "description": "Streaming, chi phí, độ trễ, cache, dự phòng — phần kỹ thuật quanh lời gọi mô hình."
+        },
+        {
+          "id": "topic-ai-eval",
+          "name": "Đánh giá và độ tin cậy AI",
+          "slug": "danh-gia-va-do-tin-cay-ai",
+          "description": "Đo chất lượng đầu ra không xác định: bộ eval, LLM-as-judge, và chặn hồi quy."
+        },
+        {
+          "id": "topic-ai-sec",
+          "name": "Bảo mật ứng dụng AI",
+          "slug": "bao-mat-ung-dung-ai",
+          "description": "Prompt injection, rò rỉ dữ liệu, lạm dụng công cụ — và các lớp phòng thủ thật sự có tác dụng."
+        }
+      ]
+    },
+    {
       "id": "cat-leadership",
       "name": "Dẫn dắt kỹ thuật",
       "slug": "dan-dat-ky-thuat",

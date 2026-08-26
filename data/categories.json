@@ -72,12 +72,21 @@
     "order": 8
   },
   {
+    "id": "cat-ai",
+    "name": "AI cho lập trình viên",
+    "slug": "ai",
+    "description": "Từ hiểu LLM hoạt động ra sao tới xây, đánh giá và bảo vệ một ứng dụng AI chạy thật.",
+    "icon": "Sparkles",
+    "color": "orange",
+    "order": 9
+  },
+  {
     "id": "cat-leadership",
     "name": "Dẫn dắt kỹ thuật",
     "slug": "dan-dat-ky-thuat",
     "description": "Phần việc của tech lead mà trình biên dịch không kiểm được.",
     "icon": "Users",
     "color": "fuchsia",
-    "order": 9
+    "order": 10
   }
 ]
