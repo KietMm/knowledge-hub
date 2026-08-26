@@ -4,166 +4,195 @@ slug: xoa-mem-va-vong-doi-ban-ghi
 summary: Khi nào nên xoá mềm, cái giá phải trả, và cách xử lý dữ liệu tham chiếu tới bản ghi đã xoá.
 level: trung-cap
 tags: [database, xoa-mem, thiet-ke, vong-doi]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** quyết định được xoá cứng hay xoá mềm, và tránh những bug mà xoá mềm luôn kéo theo.
+> **Sau bài này bạn sẽ:** quyết định được có nên xoá mềm hay không bằng một câu hỏi, và biết trước ba cái giá bạn sẽ phải trả.
 
-## Vì sao không xoá thẳng
+## Ý tưởng chính
 
-`DELETE FROM users WHERE id = 'u-1'` là thao tác không hoàn tác được. Bốn lý do thực tế để không làm vậy:
+Xoá thẳng (`DELETE`) là thao tác **không thể hoàn tác**. Với dữ liệu nghiệp vụ, đó thường là quyết định sai:
 
-- **Người dùng bấm nhầm** và muốn phục hồi
-- **Kiểm toán** — cần biết ai từng tồn tại và bị xoá lúc nào
-- **Dữ liệu tham chiếu** — đơn hàng cũ trỏ tới sản phẩm này; xoá cứng thì hoá đơn năm ngoái mất tên sản phẩm
-- **Quy định** — nhiều ngành buộc giữ dữ liệu N năm
-
-## Xoá mềm: thêm cột thời điểm, đừng thêm cột boolean
-
-```sql
-ALTER TABLE bai_viet ADD COLUMN deleted_at TIMESTAMPTZ;
+```text
+· Người dùng bấm nhầm và muốn khôi phục
+· Kế toán cần chứng từ ba năm trước
+· Điều tra sự cố cần dữ liệu tại thời điểm đó
+· Luật pháp yêu cầu lưu trữ
 ```
 
-`deleted_at NULL` = còn sống. Có giá trị = đã xoá, **và biết luôn lúc nào**.
+Xoá mềm là đánh dấu bản ghi *"đã xoá"* thay vì xoá thật. Nhưng nó **không miễn phí** — và phần lớn người ta chỉ nhìn thấy lợi ích.
+
+## Mental model
+
+Hãy nghĩ tới **thùng rác trên máy tính**.
+
+> Bấm xoá không xoá thật — file vào thùng rác. Khôi phục được, và đó là lý do tính năng này tồn tại.
+>
+> Nhưng thùng rác cũng có giá: nó **vẫn chiếm ổ cứng**, nó **vẫn hiện trong kết quả tìm kiếm** nếu công cụ tìm kiếm không biết bỏ qua nó, và nếu bạn quên dọn thì nó phình ra mãi.
+
+Ba cái giá đó tương ứng chính xác với ba vấn đề của xoá mềm: **dung lượng**, **mọi truy vấn phải nhớ lọc**, và **ràng buộc `UNIQUE` bị phá**.
+
+## Ví dụ nhỏ
 
 ```sql
--- ❌ is_deleted BOOLEAN: mất thông tin thời điểm, vẫn phải thêm cột nữa để biết
--- ✅ deleted_at: một cột, hai thông tin
-UPDATE bai_viet SET deleted_at = now() WHERE id = 'p-1';
+-- ✅ Cột thời điểm, không phải cột boolean
+ALTER TABLE nguoi_dung ADD COLUMN xoa_luc TIMESTAMPTZ;
+
+-- Xoá
+UPDATE nguoi_dung SET xoa_luc = NOW() WHERE id = ?;
+
+-- Khôi phục
+UPDATE nguoi_dung SET xoa_luc = NULL WHERE id = ?;
 ```
 
-Cần biết *ai* xoá thì thêm `deleted_by`.
+Vì sao **thời điểm** thay vì `da_xoa BOOLEAN`: nó trả lời thêm hai câu hỏi miễn phí — *xoá lúc nào*, và *có xoá không* (`IS NULL`). Boolean chỉ trả lời câu thứ hai.
 
-## Cái giá: mọi truy vấn phải nhớ lọc
+## Code chạy thế nào
 
-Đây là vấn đề thật của xoá mềm, và nó không nhỏ:
+**Cái giá số một: mọi truy vấn phải nhớ lọc.**
 
 ```sql
-SELECT * FROM bai_viet;                              -- ❌ có cả bài đã xoá
-SELECT * FROM bai_viet WHERE deleted_at IS NULL;     -- ✅
+SELECT * FROM nguoi_dung WHERE email = ?;                       -- ❌ lấy cả bản đã xoá
+SELECT * FROM nguoi_dung WHERE email = ? AND xoa_luc IS NULL;   -- ✅
 ```
 
-Quên một lần là bài đã xoá hiện lên trước mặt người dùng. Ba chỗ đặc biệt dễ quên: `COUNT(*)` cho thống kê, `JOIN` sang bảng khác, và các báo cáo viết tay sau này.
+Chỉ cần **quên một chỗ** là người dùng đã xoá hiện lại trong một danh sách nào đó. Và bạn sẽ quên — vì điều kiện này phải lặp lại ở hàng trăm truy vấn.
 
-Hai cách chống quên:
-
-**View cho dữ liệu sống** — code thường chỉ dùng view, cần dữ liệu đã xoá thì mới chạm bảng gốc:
+Hai cách giảm rủi ro:
 
 ```sql
-CREATE VIEW bai_viet_song AS
-SELECT * FROM bai_viet WHERE deleted_at IS NULL;
+-- ① View: mặc định chỉ thấy bản ghi sống
+CREATE VIEW nguoi_dung_song AS
+SELECT * FROM nguoi_dung WHERE xoa_luc IS NULL;
 ```
-
-**Bộ lọc mặc định ở tầng repository** — đúng cách repo này tổ chức: mọi truy cập dữ liệu đi qua `src/lib/db/*.repo.ts`, nên bộ lọc đặt một lần ở đó và không có đường nào lách qua:
 
 ```ts
-export async function listAll(): Promise<BaiViet[]> {
-  const all = await readCollection(FILE, BaiVietSchema)
-  return all.filter((b) => b.deletedAt === null)      // mặc định: chỉ bản sống
-}
-
-export async function listAllIncludingDeleted(): Promise<BaiViet[]> {
-  return readCollection(FILE, BaiVietSchema)          // tường minh mới lấy được bản đã xoá
-}
+// ② ORM: đặt bộ lọc mặc định ở tầng truy cập dữ liệu
+// Prisma: middleware; TypeORM: @DeleteDateColumn
 ```
 
-Điểm quan trọng của thiết kế này: **an toàn là mặc định**, còn muốn thấy dữ liệu đã xoá thì phải gọi hàm có tên nói rõ điều đó.
+Cách nào cũng được, miễn là **quyết định một lần ở một chỗ** thay vì trông chờ mọi người nhớ.
 
-## Xoá mềm phá vỡ ràng buộc UNIQUE
-
-Bug này gặp gần như chắc chắn:
+**Cái giá số hai: `UNIQUE` bị phá.**
 
 ```sql
-CREATE TABLE users (
-  email TEXT UNIQUE,
-  deleted_at TIMESTAMPTZ
-);
+UNIQUE (email)
+-- Người dùng A (đã xoá mềm) giữ email a@x.com
+-- A muốn đăng ký lại → ❌ bị chặn, dù bản ghi cũ "đã xoá"
 ```
-
-Xoá mềm `k@example.com`, người đó muốn đăng ký lại → **lỗi trùng email**, dù bản ghi cũ đã "xoá".
-
-Cách sửa: unique có điều kiện, chỉ áp cho bản ghi còn sống.
 
 ```sql
--- PostgreSQL: partial unique index
-CREATE UNIQUE INDEX users_email_song
-ON users (email)
-WHERE deleted_at IS NULL;
+-- ✅ Chỉ áp dụng UNIQUE cho bản ghi chưa xoá
+CREATE UNIQUE INDEX ON nguoi_dung (email) WHERE xoa_luc IS NULL;
 ```
 
-Giờ nhiều bản ghi đã xoá cùng email đều hợp lệ, nhưng chỉ tối đa một bản ghi *sống* giữ email đó.
+Index một phần là cách gọn nhất. Không có nó, bạn phải đổi email cũ thành `a@x.com.deleted.1699...` — cách này chạy được nhưng làm bẩn dữ liệu và phá luôn khả năng truy vết.
 
-## Dữ liệu tham chiếu: đóng băng cái cần đóng băng
+## Cú pháp
 
-Xoá mềm sản phẩm nhưng đơn hàng vẫn `JOIN` sang bảng sản phẩm để lấy tên và giá — sai về nghiệp vụ, kể cả khi truy vấn chạy được. Giá sản phẩm hôm nay không phải giá lúc khách mua.
+**Ba trạng thái, không phải hai.** Đây là chỗ nhiều người dừng lại quá sớm:
+
+```text
+Đang hoạt động  →  Đã xoá (khôi phục được)  →  Xoá vĩnh viễn (hết hạn giữ)
+```
 
 ```sql
-CREATE TABLE order_items (
-  order_id    TEXT NOT NULL REFERENCES orders(id),
-  product_id  TEXT REFERENCES products(id),   -- để đối chiếu về sau
-  -- Ảnh chụp tại thời điểm mua: hoá đơn phải bất biến
-  ten_luc_mua  TEXT NOT NULL,
-  gia_luc_mua  BIGINT NOT NULL
-);
+-- Job định kỳ: xoá thật những gì đã ở "thùng rác" quá 90 ngày
+DELETE FROM nguoi_dung WHERE xoa_luc < NOW() - INTERVAL '90 days';
 ```
 
-Nguyên tắc chung: **bản ghi giao dịch phải tự đủ nghĩa**. Hoá đơn, hợp đồng, bảng lương không được đổi nội dung khi dữ liệu tham chiếu đổi. Với những bảng này, xoá cứng bản ghi được tham chiếu không còn là vấn đề — bản sao đã nằm trong giao dịch.
+Không có bước thứ ba, bảng của bạn phình vô hạn — và bạn trả tiền lưu trữ cho dữ liệu không ai cần, đồng thời làm mọi truy vấn chậm dần.
 
-## Ba trạng thái, không phải hai
+Với dữ liệu cá nhân, bước ba còn là **yêu cầu pháp lý**: người dùng có quyền yêu cầu xoá thật, và "đã xoá mềm" không phải là đã xoá.
 
-Nhiều hệ thống thực tế cần phân biệt "ẩn" và "đã xoá":
+## Tại sao cần nó
+
+Vì **dữ liệu tham chiếu tới bản ghi đã xoá** là vấn đề khó nhất, và nó không có lời giải chung — chỉ có nguyên tắc:
+
+> **Đóng băng cái cần đóng băng.**
 
 ```sql
-status TEXT NOT NULL CHECK (status IN ('draft', 'published', 'archived')),
-deleted_at TIMESTAMPTZ
+-- ❌ Hoá đơn trỏ tới sản phẩm; sản phẩm bị xoá ⇒ hoá đơn cũ trống thông tin
+dong_don(don_id, san_pham_id)
+
+-- ✅ Chép lại thứ KHÔNG ĐƯỢC ĐỔI vào lúc giao dịch xảy ra
+dong_don(don_id, san_pham_id, ten_luc_mua, gia_luc_mua)
 ```
 
-- `draft` / `published` — trạng thái nghiệp vụ, người dùng điều khiển
-- `archived` — không hiện nữa nhưng vẫn là dữ liệu hợp lệ, tìm được
-- `deleted_at` — đã xoá, chỉ còn cho phục hồi và kiểm toán
+Đây không phải phi chuẩn hoá tuỳ tiện — đó là ghi nhận rằng *"tên sản phẩm hiện tại"* và *"tên sản phẩm lúc khách mua"* là **hai sự thật khác nhau** ([[chuan-hoa-va-khi-nao-pha-vo]]).
 
-Trộn ba thứ này vào một cột `is_deleted` là nguồn của những câu điều kiện không ai hiểu nổi sáu tháng sau.
+Với cách này, xoá sản phẩm không còn nguy hiểm: hoá đơn cũ vẫn đầy đủ thông tin, và bạn thậm chí có thể dùng `DELETE` thật cho bảng `san_pham`.
 
-## Dọn thật sự
+## So sánh
 
-Xoá mềm không phải là giữ mãi mãi. Định trước thời hạn và dọn định kỳ:
+Câu hỏi để quyết định:
 
-```sql
--- Chạy theo lịch: xoá cứng những gì đã xoá mềm quá 90 ngày
-DELETE FROM bai_viet
-WHERE deleted_at < now() - INTERVAL '90 days';
-```
+> **"Xoá nhầm cái này thì hậu quả là gì?"**
 
-Không có bước này thì bảng phình vô hạn, index to dần, và bạn giữ dữ liệu cá nhân lâu hơn mức được phép — nhiều quy định về bảo vệ dữ liệu yêu cầu xoá thật khi người dùng đề nghị.
-
-## Khi nào đừng xoá mềm
-
-Xoá mềm có giá. Bỏ qua nó khi:
-
-- Bảng log, cache, session — hết hạn thì xoá thẳng
-- Bảng rất lớn ghi liên tục — dùng phân vùng theo thời gian rồi `DROP PARTITION`
-- Dữ liệu không ai muốn phục hồi (bản nháp tự lưu, dữ liệu tạm)
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
+| Loại dữ liệu | Cách xoá | Vì sao |
 |---|---|---|
-| Quên `WHERE deleted_at IS NULL` | Bản ghi đã xoá hiện cho người dùng | View hoặc lọc ở repository |
-| `UNIQUE` thường trên bảng có xoá mềm | Không đăng ký lại được sau khi xoá | Partial unique index |
-| Dùng `is_deleted BOOLEAN` | Mất thông tin thời điểm xoá | `deleted_at TIMESTAMPTZ` |
-| `JOIN` lấy tên/giá cho hoá đơn cũ | Hoá đơn đổi nội dung theo thời gian | Đóng băng vào bản ghi giao dịch |
-| Xoá mềm rồi giữ mãi | Bảng phình, vi phạm quy định lưu trữ | Dọn theo hạn |
-| Trộn trạng thái nghiệp vụ với xoá | Điều kiện rối, không ai hiểu | Tách `status` và `deleted_at` |
-| Quên lọc trong `COUNT(*)` | Thống kê sai âm thầm | Đếm qua view |
+| Đơn hàng, giao dịch, hoá đơn | **Không bao giờ xoá** | Chứng từ — chỉ đổi trạng thái |
+| Tài khoản người dùng | Xoá mềm + hết hạn 90 ngày | Khôi phục được, rồi xoá thật |
+| Bài viết, bình luận | Xoá mềm | Người dùng hay bấm nhầm |
+| Phiên đăng nhập, cache | `DELETE` thẳng | Không ai cần khôi phục |
+| Log, sự kiện | `DELETE` theo phân vùng | Khối lượng lớn, xoá theo thời gian |
 
-## Ghi nhớ
+Dòng đầu quan trọng: với chứng từ, câu trả lời không phải "xoá mềm" mà là **không có khái niệm xoá**. Đơn hàng bị huỷ thì `trang_thai = 'huy'` — đó là một trạng thái nghiệp vụ, không phải một thao tác xoá.
 
-- `deleted_at` chứ không phải `is_deleted` — một cột, hai thông tin.
-- Cái giá của xoá mềm là mọi truy vấn phải lọc; đặt bộ lọc ở một chỗ duy nhất.
-- Xoá mềm cần partial unique index, nếu không không đăng ký lại được.
-- Hoá đơn và bản ghi giao dịch phải đóng băng dữ liệu, không `JOIN`.
+## Dễ nhầm
 
-## Tự kiểm tra
+**1. Xoá mềm mọi bảng "cho chắc".** Bảng phiên đăng nhập, bảng cache, bảng hàng đợi — không ai cần khôi phục, và xoá mềm chỉ làm chúng phình ra.
 
-1. Vì sao `deleted_at` tốt hơn `is_deleted`?
-2. Người dùng xoá tài khoản rồi đăng ký lại cùng email và bị lỗi trùng. Sửa thế nào?
-3. Vì sao `order_items` nên lưu `gia_luc_mua` thay vì `JOIN` sang `products`?
+**2. Dùng `da_xoa BOOLEAN`.** Mất thông tin thời điểm, và không phân biệt được "chưa xoá" với "dữ liệu cũ chưa có cột này".
+
+**3. Quên lọc `xoa_luc IS NULL`.** Bản ghi đã xoá hiện lại ở đâu đó — thường là ở một báo cáo hoặc một API ít dùng.
+
+**4. Quên index một phần cho `UNIQUE`.** Người dùng không đăng ký lại được bằng email cũ.
+
+**5. Không có bước xoá vĩnh viễn.** Bảng phình mãi, và bạn vi phạm yêu cầu về dữ liệu cá nhân.
+
+**6. Xoá mềm mà không xử lý dữ liệu liên quan.** Xoá mềm người dùng nhưng phiên đăng nhập của họ **vẫn hoạt động** — họ vẫn dùng được hệ thống bình thường.
+
+**7. Quên rằng xoá mềm không phải xoá.** Khi người dùng yêu cầu "xoá tài khoản của tôi" theo luật bảo vệ dữ liệu, đánh dấu `xoa_luc` **không đáp ứng** yêu cầu đó.
+
+## Mẹo nhớ
+
+> **Thùng rác: khôi phục được, nhưng vẫn chiếm chỗ và vẫn hiện ra nếu quên lọc.**
+>
+> **Dùng cột THỜI ĐIỂM, không dùng boolean.**
+>
+> **Ba trạng thái: sống → thùng rác → xoá thật.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Câu hỏi nào quyết định có nên xoá mềm hay không?
+2. Vì sao dùng `xoa_luc TIMESTAMPTZ` tốt hơn `da_xoa BOOLEAN`?
+3. Ba cái giá của xoá mềm?
+4. Vì sao `UNIQUE (email)` xung đột với xoá mềm, và cách sửa?
+5. Vì sao đơn hàng **không** nên xoá mềm mà nên đổi trạng thái?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, thiết kế cách xoá cho từng bảng, **nêu lý do**:
+
+```text
+a) nguoi_dung        b) phien_dang_nhap      c) don_hang
+d) binh_luan         e) log_su_kien          f) gio_hang
+```
+
+Tự kiểm: với (a), bạn xử lý (b) thế nào khi người dùng bị xoá mềm? Và với (c), "xoá" nghĩa là gì?
+
+## Thử sức
+
+Bạn xoá mềm người dùng `A`. Ba tuần sau, bộ phận hỗ trợ báo:
+
+```text
+· A vẫn nhận được email khuyến mãi hằng tuần
+· A vẫn đăng nhập được bằng phiên cũ
+· Tên A vẫn hiện trong danh sách bình luận cũ
+· A không đăng ký lại được bằng email của mình
+```
+
+Bốn vấn đề, bốn nguyên nhân khác nhau. Chẩn đoán từng cái và nêu cách sửa. Câu khó nhất: vấn đề thứ ba — bạn **có nên** ẩn tên A khỏi bình luận cũ không, và điều đó phụ thuộc yếu tố gì?

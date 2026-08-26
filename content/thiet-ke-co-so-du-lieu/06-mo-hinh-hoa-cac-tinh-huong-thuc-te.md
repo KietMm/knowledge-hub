@@ -4,145 +4,224 @@ slug: mo-hinh-hoa-cac-tinh-huong-thuc-te
 summary: Cây phân cấp, đa hình, phiên bản, audit log và multi-tenant — năm bài toán lặp lại ở mọi hệ thống.
 level: nang-cao
 tags: [database, thiet-ke, mo-hinh]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** có sẵn phương án cho những bài toán thiết kế xuất hiện ở gần như mọi dự án.
+> **Sau bài này bạn sẽ:** nhận ra năm bài toán mô hình hoá lặp lại ở mọi dự án, và chọn được lời giải phù hợp thay vì tự nghĩ lại từ đầu.
 
-## 1. Cây phân cấp
+## Ý tưởng chính
 
-Danh mục nhiều cấp, sơ đồ tổ chức, bình luận lồng nhau.
+Năm bài toán dưới đây xuất hiện ở gần như mọi hệ thống, dù lĩnh vực khác nhau hoàn toàn. Chúng đã có lời giải chuẩn, kèm đánh đổi đã biết.
 
-**Adjacency list** — đơn giản nhất:
-```sql
-danh_muc (id, ten, cha_id REFERENCES danh_muc(id))
+Nhận ra chúng giúp bạn không phải tự phát minh — và quan trọng hơn, **không phải tự phát hiện những cái bẫy mà người khác đã trả giá rồi**.
+
+## Mental model
+
+Hãy nghĩ tới **các mẫu nhà có sẵn của kiến trúc sư**.
+
+> Không ai thiết kế lại cầu thang từ đầu cho mỗi ngôi nhà. Có vài mẫu cầu thang chuẩn, mỗi mẫu hợp một loại không gian, và **mỗi mẫu có nhược điểm đã biết**.
+>
+> Việc của bạn là **nhận ra không gian của mình thuộc loại nào**, rồi chọn mẫu — không phải nghĩ lại từ đầu.
+
+Năm bài dưới đây là năm mẫu như vậy.
+
+## Ví dụ nhỏ
+
+```text
+① Cây phân cấp    danh mục nhiều cấp, sơ đồ tổ chức, cây bình luận
+② Đa hình         bình luận gắn vào bài viết HOẶC video HOẶC sản phẩm
+③ Phiên bản       lưu lịch sử chỉnh sửa của một tài liệu
+④ Audit log       ai đã đổi gì, lúc nào
+⑤ Multi-tenant    nhiều khách hàng dùng chung một hệ thống
 ```
-Đọc con trực tiếp: dễ. Đọc cả cây: cần CTE đệ quy. Đây là lựa chọn mặc định đúng cho hầu hết trường hợp.
 
-**Materialized path** — nhanh khi đọc cả nhánh:
+## Code chạy thế nào
+
+**① Cây phân cấp** — ba cách, ba đánh đổi:
+
 ```sql
-danh_muc (id, ten, duong_dan TEXT)   -- '/1/5/12/'
-WHERE duong_dan LIKE '/1/5/%'        -- toàn bộ nhánh, một truy vấn
+-- A. Adjacency list: mỗi nút trỏ tới cha
+danh_muc(id, ten, cha_id)
 ```
-Đổi lại: chuyển nhánh phải cập nhật đường dẫn của mọi con cháu.
 
-**Closure table** — mạnh nhất, tốn chỗ nhất:
-```sql
-quan_he (to_tien_id, con_chau_id, khoang_cach)
+```text
+✅ Ghi cực đơn giản, đổi cha chỉ sửa một dòng
+❌ Lấy toàn bộ cây con cần CTE đệ quy ([[subquery-va-cte]])
 ```
-Mọi câu hỏi về cây trả lời bằng một JOIN, nhưng số dòng tăng theo bình phương độ sâu.
 
-Chọn: mặc định adjacency list; đổi sang materialized path khi truy vấn "cả nhánh" trở thành nút thắt.
-
-## 2. Quan hệ đa hình
-
-"Bình luận gắn được vào bài viết, video, hoặc sản phẩm."
-
-**Cách sai** — không ràng buộc được:
 ```sql
-binh_luan (id, doi_tuong_loai TEXT, doi_tuong_id BIGINT)
+-- B. Materialized path: lưu cả đường đi
+danh_muc(id, ten, duong_dan)     -- '/dien-tu/dien-thoai/iphone'
+SELECT * FROM danh_muc WHERE duong_dan LIKE '/dien-tu/%';   -- cây con: một truy vấn
 ```
-CSDL không có cách nào đảm bảo `doi_tuong_id` trỏ tới dòng có thật.
 
-**Cách đúng** — cột khoá ngoại riêng, chỉ một cột khác NULL:
+```text
+✅ Lấy cây con rất nhanh, index prefix dùng được
+❌ Chuyển một nhánh sang chỗ khác ⇒ phải cập nhật đường dẫn của MỌI con cháu
+```
+
 ```sql
-CREATE TABLE binh_luan (
-  id          BIGSERIAL PRIMARY KEY,
-  noi_dung    TEXT NOT NULL,
-  bai_viet_id BIGINT REFERENCES bai_viet(id),
-  video_id    BIGINT REFERENCES video(id),
-  san_pham_id BIGINT REFERENCES san_pham(id),
-  CONSTRAINT chk_mot_doi_tuong CHECK (
-    (bai_viet_id IS NOT NULL)::int +
-    (video_id    IS NOT NULL)::int +
-    (san_pham_id IS NOT NULL)::int = 1
-  )
+-- C. Closure table: lưu MỌI cặp tổ tiên–con cháu
+cay(to_tien_id, con_chau_id, khoang_cach)
+```
+
+```text
+✅ Mọi truy vấn cây đều nhanh, kể cả "tất cả tổ tiên của X"
+❌ Tốn chỗ (n² trường hợp xấu), ghi phức tạp
+```
+
+Chọn: **A** cho cây nông và ít truy vấn cây con; **B** cho danh mục sản phẩm (đọc nhiều, ít đổi cấu trúc); **C** khi truy vấn cây là nghiệp vụ chính.
+
+**② Quan hệ đa hình** — bình luận gắn vào nhiều loại đối tượng:
+
+```sql
+-- ❌ Cột đa hình: KHÔNG có khoá ngoại nào bảo vệ được
+binh_luan(id, doi_tuong_loai, doi_tuong_id)
+```
+
+```sql
+-- ✅ Bảng nối riêng cho từng loại: giữ được ràng buộc
+binh_luan(id, noi_dung, tac_gia_id)
+binh_luan_bai_viet(binh_luan_id REFERENCES binh_luan, bai_viet_id REFERENCES bai_viet)
+binh_luan_video(binh_luan_id REFERENCES binh_luan, video_id REFERENCES video)
+```
+
+Cách thứ nhất là thứ mọi ORM khuyến khích, và nó **hỏng âm thầm**: không ràng buộc nào ngăn `doi_tuong_id` trỏ tới bản ghi không tồn tại, và bạn tích luỹ dữ liệu mồ côi trong nhiều năm.
+
+Cách thứ hai dài dòng hơn nhưng cơ sở dữ liệu **bảo đảm được** tính đúng đắn. Với 2–4 loại đối tượng, đây là lựa chọn đúng.
+
+## Cú pháp
+
+**③ Lịch sử phiên bản:**
+
+```sql
+tai_lieu(id, tieu_de, noi_dung, phien_ban_hien_tai)
+tai_lieu_phien_ban(tai_lieu_id, so_phien_ban, noi_dung, tao_boi, tao_luc,
+                   PRIMARY KEY (tai_lieu_id, so_phien_ban))
+```
+
+Bảng chính giữ **bản hiện tại** (đọc nhanh, không cần tìm max), bảng phiên bản giữ lịch sử. Lưu cả nội dung mỗi bản tốn chỗ nhưng đơn giản; lưu diff tiết kiệm chỗ nhưng khôi phục phải ghép lại từ đầu — chỉ đáng khi tài liệu rất lớn.
+
+**④ Audit log:**
+
+```sql
+CREATE TABLE audit_log (
+  id         BIGSERIAL PRIMARY KEY,
+  bang       TEXT NOT NULL,
+  ban_ghi_id TEXT NOT NULL,
+  hanh_dong  TEXT NOT NULL CHECK (hanh_dong IN ('them','sua','xoa')),
+  truoc      JSONB,
+  sau        JSONB,
+  boi        UUID,
+  luc        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
 
-**Cách đúng thứ hai** — bảng cha chung:
-```sql
-noi_dung (id, loai)                      -- bảng gốc
-bai_viet (noi_dung_id PRIMARY KEY REFERENCES noi_dung(id), ...)
-binh_luan (id, noi_dung_id REFERENCES noi_dung(id), ...)
-```
-Sạch về mặt mô hình, đổi lại thêm một lần JOIN ở mọi truy vấn.
+Hai cách ghi, và khác biệt quan trọng:
 
-## 3. Lịch sử phiên bản
+```text
+Trigger ở CSDL   ✅ bắt được MỌI đường ghi, kể cả script chạy tay
+                 ❌ không biết "ai" nếu ứng dụng không truyền thông tin xuống
 
-**Bảng lịch sử riêng** — cách phổ biến nhất:
-```sql
-bai_viet         (id, tieu_de, noi_dung, phien_ban INT, ngay_cap_nhat)
-bai_viet_lich_su (id, bai_viet_id, tieu_de, noi_dung, phien_ban, ngay_luu, nguoi_sua_id)
-```
-Trigger `BEFORE UPDATE` chép bản cũ sang bảng lịch sử. Bảng chính vẫn gọn và nhanh.
-
-**Temporal table** — mỗi dòng có khoảng hiệu lực:
-```sql
-gia_san_pham (san_pham_id, gia, hieu_luc TSTZRANGE,
-  EXCLUDE USING GIST (san_pham_id WITH =, hieu_luc WITH &&))
-```
-Truy vấn "giá tại thời điểm X" trở nên tự nhiên: `WHERE hieu_luc @> '2026-01-15'::timestamptz`.
-
-## 4. Audit log
-
-```sql
-CREATE TABLE nhat_ky (
-  id           BIGSERIAL PRIMARY KEY,
-  bang         TEXT        NOT NULL,
-  ban_ghi_id   TEXT        NOT NULL,
-  hanh_dong    TEXT        NOT NULL CHECK (hanh_dong IN ('them','sua','xoa')),
-  nguoi_dung_id BIGINT,
-  gia_tri_cu   JSONB,
-  gia_tri_moi  JSONB,
-  thoi_diem    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX idx_nhat_ky_ban_ghi ON nhat_ky (bang, ban_ghi_id, thoi_diem DESC);
+Ở tầng ứng dụng  ✅ biết người dùng, biết ngữ cảnh nghiệp vụ
+                 ❌ BỎ SÓT mọi đường ghi không đi qua ứng dụng
 ```
 
-Bảng này chỉ **thêm**, không bao giờ sửa hay xoá — đó là điều làm nó đáng tin. Nó lớn rất nhanh, nên hãy phân vùng theo tháng và có chính sách lưu trữ ngay từ đầu.
+Với audit phục vụ tuân thủ pháp lý, trigger là lựa chọn đúng — vì yêu cầu là *"không bỏ sót"*.
 
-Cân nhắc: ghi log bằng trigger (bắt được cả thay đổi từ script sửa tay) hay từ tầng ứng dụng (biết được ai làm và trong ngữ cảnh nào). Nhiều hệ thống dùng cả hai cho các mục đích khác nhau.
+**⑤ Multi-tenant** — ba mức cô lập:
 
-## 5. Multi-tenant
+| Cách | Cô lập | Chi phí | Hợp với |
+|---|---|---|---|
+| Cột `tenant_id` chung bảng | Thấp | Rẻ nhất | SaaS nhiều khách nhỏ |
+| Schema riêng mỗi tenant | Vừa | Vừa | Vài chục–vài trăm khách |
+| Database riêng mỗi tenant | Cao | Đắt | Khách lớn, yêu cầu tuân thủ |
 
-| Cách | Cô lập | Chi phí vận hành |
-|---|---|---|
-| Cột `tenant_id` chung bảng | Thấp — phụ thuộc code | Thấp nhất |
-| Schema riêng mỗi tenant | Trung bình | Trung bình |
-| Database riêng mỗi tenant | Cao nhất | Cao nhất |
-
-Với cách phổ biến nhất (cột `tenant_id`), rủi ro lớn nhất là **quên điều kiện lọc** ở một truy vấn — dữ liệu khách hàng này lộ sang khách hàng khác. Postgres có Row Level Security để chốt ở tầng CSDL:
+Với cách một, rủi ro lớn nhất là **quên `WHERE tenant_id = ?`** — và hậu quả là khách hàng A thấy dữ liệu của khách hàng B. Đây là loại lỗi nghiêm trọng nhất một hệ SaaS có thể mắc.
 
 ```sql
+-- Postgres: bắt CSDL tự lọc, không phụ thuộc lập trình viên nhớ
 ALTER TABLE don_hang ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY tenant_isolation ON don_hang
-  USING (tenant_id = current_setting('app.tenant_id')::bigint);
+  USING (tenant_id = current_setting('app.tenant_id')::uuid);
 ```
 
-Giờ dù truy vấn quên `WHERE tenant_id = ...`, CSDL vẫn chỉ trả về dữ liệu đúng tenant. Đây là ví dụ tốt nhất cho nguyên tắc "đặt ràng buộc ở tầng thấp nhất có thể".
+Row Level Security biến điều kiện lọc từ **kỷ luật** thành **cơ chế** — cùng tinh thần với ràng buộc ở [[rang-buoc-va-toan-ven-du-lieu]].
 
-Nhớ đưa `tenant_id` vào **mọi** index tổ hợp, đặt ở vị trí đầu tiên.
+## Tại sao cần nó
 
-## Lỗi hay gặp
+Vì mỗi mẫu ở trên đều có một cái bẫy mà bạn chỉ phát hiện sau nhiều tháng:
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Đa hình bằng `(loai, id)` | Không ràng buộc, dữ liệu mồ côi | Cột FK riêng + CHECK |
-| Closure table cho cây nhỏ | Phức tạp không cần thiết | Adjacency list |
-| Lịch sử lưu chung bảng chính | Bảng phình, truy vấn chậm | Tách bảng lịch sử |
-| Audit log không phân vùng | Bảng khổng lồ, backup chậm | Phân vùng theo tháng |
-| Multi-tenant chỉ lọc ở code | Một chỗ quên là lộ dữ liệu | Row Level Security |
+```text
+Cây          → đổi vị trí một nhánh (materialized path) tốn kém bất ngờ
+Đa hình      → dữ liệu mồ côi tích luỹ âm thầm, không ràng buộc nào bắt được
+Phiên bản    → bảng lịch sử lớn gấp 10 bảng chính, phải có kế hoạch dọn
+Audit log    → ghi ở ứng dụng thì bỏ sót; ghi ở trigger thì thiếu ngữ cảnh
+Multi-tenant → quên một chỗ lọc là rò rỉ dữ liệu giữa khách hàng
+```
 
-## Ghi nhớ
+Biết trước năm cái bẫy này đáng giá hơn nhiều so với biết cú pháp của năm mẫu.
 
-- Adjacency list là mặc định cho cây; đổi khi có nút thắt cụ thể.
-- Đa hình phải giữ được khoá ngoại thật.
-- Audit log chỉ thêm, phân vùng theo thời gian.
-- Cô lập tenant nên được đảm bảo ở tầng CSDL, không chỉ ở code.
+## So sánh
 
-## Tự kiểm tra
+Câu hỏi để chọn nhanh:
 
-1. Bình luận gắn vào ba loại nội dung — thiết kế bảng và giải thích lựa chọn.
-2. Lưu lịch sử giá sản phẩm để truy vấn được "giá ngày 15/1" — dùng mô hình nào?
-3. Vì sao Row Level Security an toàn hơn việc luôn nhớ thêm `WHERE tenant_id`?
+```text
+Cây      → "tôi truy vấn cây con thường xuyên không?" Có ⇒ B hoặc C
+Đa hình  → "có bao nhiêu loại đối tượng?" Ít (2-4) ⇒ bảng nối riêng
+Phiên bản → "cần xem lại bản cũ hay chỉ cần biết ai sửa?" Chỉ cần biết ⇒ audit log là đủ
+Audit    → "phục vụ tuân thủ hay phục vụ gỡ lỗi?" Tuân thủ ⇒ trigger
+Tenant   → "khách lớn cỡ nào, yêu cầu cô lập ra sao?"
+```
+
+## Dễ nhầm
+
+**1. Dùng cột đa hình vì ORM gợi ý.** Mất hết ràng buộc — xem ở trên.
+
+**2. Materialized path cho cây hay thay đổi cấu trúc.** Mỗi lần chuyển nhánh là cập nhật hàng nghìn dòng.
+
+**3. Lưu phiên bản mà không có kế hoạch dọn.** Bảng lịch sử phình gấp nhiều lần bảng chính.
+
+**4. Audit log ghi vào cùng bảng dữ liệu.** Bảng chính phình ra và mọi truy vấn chậm theo. Tách bảng riêng, và cân nhắc phân vùng theo tháng.
+
+**5. Multi-tenant bằng cột mà không có RLS hoặc kiểm tra tự động.** Sớm muộn có một truy vấn quên lọc.
+
+**6. Chọn database riêng mỗi tenant khi có 10.000 khách nhỏ.** Chi phí vận hành 10.000 database vượt xa lợi ích.
+
+**7. Áp mẫu trước khi hiểu bài toán.** Cây ba tầng cố định (tỉnh → huyện → xã) không cần closure table — ba bảng thường là đủ và rõ hơn.
+
+## Mẹo nhớ
+
+> **Năm bài toán này lặp lại ở mọi hệ thống — nhận ra mẫu, đừng nghĩ lại từ đầu.**
+>
+> **Đa hình bằng cột = mất ràng buộc = dữ liệu mồ côi.**
+>
+> **Multi-tenant: biến việc lọc từ KỶ LUẬT thành CƠ CHẾ.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Ba cách mô hình cây, và đánh đổi của từng cách?
+2. Vì sao cột đa hình (`doi_tuong_loai`, `doi_tuong_id`) nguy hiểm?
+3. Audit log ghi bằng trigger và ghi ở ứng dụng — mỗi cách bỏ sót gì?
+4. Ba mức cô lập multi-tenant và tiêu chí chọn?
+5. Rủi ro lớn nhất của multi-tenant bằng cột `tenant_id`, và cách biến nó thành cơ chế?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, thiết kế bảng cho:
+
+```text
+Hệ thống quản lý tài liệu nội bộ: tài liệu xếp theo thư mục nhiều cấp, mỗi lần
+sửa lưu lại phiên bản, mọi thao tác đều phải ghi log ai làm gì, và hệ thống
+phục vụ 50 công ty khách hàng dùng chung.
+```
+
+Tự kiểm: bạn dùng mẫu nào cho cây thư mục, và **vì sao** — dựa trên câu hỏi nào về nghiệp vụ?
+
+## Thử sức
+
+Hệ SaaS của bạn dùng `tenant_id` chung bảng. Một khách hàng báo họ **nhìn thấy một đơn hàng của công ty khác** trong kết quả tìm kiếm.
+
+Nêu **ba** chỗ trong hệ thống có thể gây ra rò rỉ này (chỉ một trong ba là "quên `WHERE`"). Rồi thiết kế biện pháp sao cho lỗi này **không thể lặp lại** — không phải sửa một truy vấn.

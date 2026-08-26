@@ -4,179 +4,225 @@ slug: truy-cap-dong-thoi-va-khoa
 summary: Lost update, khoá lạc quan và bi quan, và vì sao đọc-rồi-ghi luôn là một cuộc đua.
 level: nang-cao
 tags: [database, dong-thoi, khoa, transaction]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** nhận ra mẫu code tạo ra race condition ở tầng dữ liệu, và chọn được cơ chế khoá phù hợp.
+> **Sau bài này bạn sẽ:** nhận ra mẫu "đọc rồi ghi" là một cuộc đua, và chọn được một trong bốn cách chặn nó.
 
-## Lost update: bug kinh điển
+## Ý tưởng chính
 
-Hai người mua cùng lúc, kho còn 1 sản phẩm:
+Mọi bug về truy cập đồng thời đều có **cùng một hình dạng**:
 
-```
-Thời điểm  Giao dịch A                  Giao dịch B
-   t1      SELECT so_luong → 1
-   t2                                   SELECT so_luong → 1
-   t3      còn hàng ✅                   còn hàng ✅
-   t4      UPDATE ... SET so_luong = 0
-   t5                                   UPDATE ... SET so_luong = 0
+```text
+① Đọc giá trị
+② Tính toán dựa trên giá trị đó
+③ Ghi kết quả
 ```
 
-Bán hai lần một sản phẩm. Kho về 0 chứ không phải -1, nên **không có lỗi nào được ghi lại** — bạn chỉ phát hiện khi khách phàn nàn.
+Giữa ① và ③ có một **khe hở**, và trong khe hở đó người khác có thể đã ghi. Kết quả của họ bị bạn ghi đè — gọi là **lost update**, và nó không bao giờ báo lỗi.
 
-Nguồn của bug: mẫu **đọc → quyết định → ghi** trong khi giá trị có thể đổi giữa bước đọc và bước ghi.
+## Mental model
 
-Quan trọng: bọc trong `BEGIN`/`COMMIT` **không cứu được**. Ở mức cô lập mặc định của PostgreSQL (`READ COMMITTED`), cả hai giao dịch đọc đều hợp lệ và cả hai ghi đều thành công.
+Hãy nghĩ tới **hai người cùng sửa một tấm bảng số dư**.
 
-## Cách 1 — ghi bằng biểu thức, đừng đọc rồi ghi
+```text
+Bảng ghi: 100
 
-Cách rẻ nhất và tốt nhất: để database tự tính, và đặt điều kiện ngay trong `WHERE`.
+An   đọc "100"  ─────────────────────────► ghi "100 - 30 = 70"
+Bình     đọc "100" ────► ghi "100 - 50 = 50"
 
-```sql
--- ❌ Đọc rồi ghi: có khoảng trống cho cuộc đua
-SELECT so_luong FROM kho WHERE id = 'p-1';       -- 1
-UPDATE kho SET so_luong = 0 WHERE id = 'p-1';
-
--- ✅ Một câu duy nhất, nguyên tử
-UPDATE kho
-SET so_luong = so_luong - 1
-WHERE id = 'p-1' AND so_luong >= 1;
+Kết quả trên bảng: 70
+Thực tế đã rút:    80
+⇒ 50 nghìn biến mất, và không ai biết
 ```
 
-Điểm mấu chốt là kiểm tra `số dòng bị ảnh hưởng`:
+> Vấn đề không phải ai đó làm sai. Cả hai đều làm đúng — dựa trên **thông tin đã cũ**.
+
+Bốn cách chữa dưới đây đều chỉ làm một việc: **loại bỏ khe hở**, hoặc **phát hiện ra rằng thông tin đã cũ**.
+
+## Ví dụ nhỏ
 
 ```ts
-const { rowCount } = await db.query(
-  'UPDATE kho SET so_luong = so_luong - 1 WHERE id = $1 AND so_luong >= 1',
-  [productId],
-)
-// 0 dòng = hết hàng HOẶC có người vừa lấy trước. Cả hai đều là "không bán được".
-if (rowCount === 0) throw new HetHang()
-```
-
-Database đảm bảo `UPDATE` này nguyên tử: dòng bị khoá trong lúc ghi, giao dịch thứ hai chờ rồi đọc lại giá trị mới và điều kiện `>= 1` thất bại. Không mất update nào.
-
-Áp dụng được cho hầu hết bộ đếm: số lượng kho, số ghế còn, hạn mức, số lần thử.
-
-## Cách 2 — khoá lạc quan (optimistic)
-
-Khi thao tác không gói được vào một câu — ví dụ người dùng mở form, sửa 10 phút, rồi lưu:
-
-```sql
-ALTER TABLE bai_viet ADD COLUMN version INT NOT NULL DEFAULT 1;
+// ❌ Có khe hở giữa đọc và ghi
+const tk = await db.query('SELECT so_du FROM tai_khoan WHERE id = $1', [id])
+const moi = tk.so_du - 30
+await db.query('UPDATE tai_khoan SET so_du = $1 WHERE id = $2', [moi, id])
 ```
 
 ```sql
-UPDATE bai_viet
-SET tieu_de = $1, noi_dung = $2, version = version + 1
-WHERE id = $3 AND version = $4;      -- $4 = version lúc người dùng MỞ form
+-- ✅ Không còn khe hở: một lệnh duy nhất
+UPDATE tai_khoan SET so_du = so_du - 30 WHERE id = $1 AND so_du >= 30;
 ```
 
-`rowCount = 0` nghĩa là có người đã lưu trước bạn. Lúc này báo cho người dùng — **đừng âm thầm ghi đè**:
+## Code chạy thế nào
+
+Vì sao cách thứ hai an toàn:
+
+```text
+UPDATE ... SET so_du = so_du - 30 WHERE so_du >= 30
+
+Cơ sở dữ liệu tự KHOÁ dòng trong lúc thực hiện lệnh này.
+An và Bình không thể cùng chạy nó trên cùng một dòng — một người phải chờ.
+
+An chạy trước:   100 → 70
+Bình chạy sau:   đọc lại giá trị MỚI NHẤT (70) → 70 - 50 = 20  ✅
+
+Và nếu số dư không đủ:
+Bình:  WHERE so_du >= 50  không khớp  →  0 DÒNG bị ảnh hưởng
+```
+
+Điểm mấu chốt: **phải kiểm số dòng bị ảnh hưởng**.
 
 ```ts
-if (rowCount === 0) {
-  throw new XungDot('Người khác đã sửa bài này. Tải lại để xem thay đổi mới nhất.')
-}
+const kq = await db.query('UPDATE ... WHERE id = $1 AND so_du >= $2', [id, 30])
+if (kq.rowCount === 0) throw new Error('Không đủ số dư')
 ```
 
-Gọi là "lạc quan" vì nó cho rằng xung đột **hiếm**: không khoá gì, chỉ phát hiện lúc ghi. Đúng cho hầu hết ứng dụng web. Đây cũng là hình dạng của `409 Conflict` ở [[loi-versioning-va-tai-lieu]].
+`UPDATE` với 0 dòng bị ảnh hưởng **không phải lỗi** — nó chạy thành công. Không kiểm thì bạn tưởng đã trừ tiền.
 
-## Cách 3 — khoá bi quan (pessimistic)
+## Cú pháp
 
-Khi xung đột thường xuyên và việc làm lại thì đắt:
+**Khoá lạc quan** — dùng khi tranh chấp hiếm:
+
+```sql
+-- Thêm cột version
+ALTER TABLE tai_lieu ADD COLUMN version INT NOT NULL DEFAULT 1;
+
+-- Đọc kèm version
+SELECT noi_dung, version FROM tai_lieu WHERE id = 1;   -- version = 5
+
+-- Ghi: chỉ thành công nếu KHÔNG AI sửa từ lúc bạn đọc
+UPDATE tai_lieu SET noi_dung = $1, version = version + 1
+WHERE id = 1 AND version = 5;
+-- 0 dòng ⇒ ai đó đã sửa ⇒ báo người dùng, hoặc đọc lại và thử lại
+```
+
+Gọi là "lạc quan" vì nó **giả định sẽ không có xung đột** và chỉ kiểm tra lúc ghi. Với tài liệu, form nhiều bước, hồ sơ cá nhân — nơi hai người hiếm khi sửa cùng lúc — đây là lựa chọn tốt: không khoá gì cả, không ai phải chờ.
+
+Ưu điểm quan trọng: khi phát hiện xung đột, bạn **báo cho người dùng** *"tài liệu đã bị người khác sửa"* thay vì âm thầm ghi đè.
+
+**Khoá bi quan** — dùng khi tranh chấp cao:
 
 ```sql
 BEGIN;
-SELECT so_du FROM tai_khoan WHERE id = 'a-1' FOR UPDATE;   -- khoá dòng này
--- Mọi giao dịch khác chạm 'a-1' phải CHỜ tới khi COMMIT
-UPDATE tai_khoan SET so_du = so_du - 100 WHERE id = 'a-1';
-COMMIT;
+  SELECT * FROM ghe WHERE id = 'A5' FOR UPDATE;   -- ← khoá dòng, người khác PHẢI CHỜ
+  -- kiểm tra, xử lý
+  UPDATE ghe SET da_dat = true WHERE id = 'A5';
+COMMIT;                                            -- ← nhả khoá
 ```
-
-`FOR UPDATE` khoá dòng cho tới hết giao dịch. Chắc chắn nhưng đắt: các giao dịch khác **xếp hàng**, và đây là chỗ sinh ra deadlock.
-
-Không muốn chờ:
 
 ```sql
 SELECT ... FOR UPDATE NOWAIT;         -- lỗi ngay nếu đang bị khoá
-SELECT ... FOR UPDATE SKIP LOCKED;    -- bỏ qua dòng đang bị khoá
+SELECT ... FOR UPDATE SKIP LOCKED;    -- BỎ QUA dòng đang bị khoá
 ```
 
-`SKIP LOCKED` là cách chuẩn để làm hàng đợi công việc trong database: nhiều worker cùng `SELECT ... LIMIT 1 FOR UPDATE SKIP LOCKED`, mỗi worker lấy được một việc khác nhau mà không cái nào phải chờ.
+`SKIP LOCKED` là công cụ tuyệt vời cho **hàng đợi công việc**: nhiều worker cùng lấy việc, mỗi worker nhận việc khác nhau, không ai chờ ai.
 
-## Deadlock và cách tránh
-
-```
-Giao dịch A: khoá dòng 1 → xin khoá dòng 2
-Giao dịch B: khoá dòng 2 → xin khoá dòng 1
-                → cả hai chờ nhau vĩnh viễn
+```sql
+-- Mỗi worker lấy 10 việc chưa ai xử lý
+SELECT * FROM cong_viec WHERE trang_thai = 'cho'
+ORDER BY tao_luc LIMIT 10 FOR UPDATE SKIP LOCKED;
 ```
 
-PostgreSQL tự phát hiện và **giết một trong hai** với `deadlock detected`.
+## Tại sao cần nó
 
-Cách tránh hiệu quả nhất là **luôn khoá theo cùng một thứ tự**:
+Vì **ràng buộc `UNIQUE` cũng là công cụ chống đua**, và đây là cách gọn nhất cho một lớp bài toán:
 
 ```ts
-// Chuyển tiền giữa hai tài khoản: sắp id trước khi khoá.
-// Không sắp thì A→B và B→A chạy đồng thời là deadlock chắc chắn.
-const [dau, sau] = [tuId, denId].sort()
-await tx.query('SELECT 1 FROM tai_khoan WHERE id IN ($1,$2) ORDER BY id FOR UPDATE', [dau, sau])
+// ❌ Kiểm rồi tạo — có khe hở, hai request cùng lọt
+if (await db.nguoiDung.findByEmail(email)) throw new Error('Đã tồn tại')
+await db.nguoiDung.create({ email })
 ```
 
-Và giữ giao dịch **ngắn**: không gọi API bên ngoài, không gửi email, không chờ người dùng bên trong một transaction đang giữ khoá.
-
-## Ràng buộc UNIQUE là công cụ chống đua
-
-Đừng kiểm tra tồn tại bằng `SELECT` rồi `INSERT`:
-
 ```ts
-// ❌ Hai request đồng thời đều thấy "chưa có" và đều insert
-const co = await db.users.findUnique({ where: { email } })
-if (co !== null) throw new TrungEmail()
-await db.users.create({ data: { email } })
-
-// ✅ Để database phán quyết
+// ✅ Cứ tạo, để CSDL từ chối
 try {
-  await db.users.create({ data: { email } })
-} catch (loi) {
-  if (laLoiUnique(loi)) throw new TrungEmail()
-  throw loi
+  await db.nguoiDung.create({ email })
+} catch (e) {
+  if (laLoiTrungKhoa(e)) throw new LoiNghiepVu('Email đã tồn tại')
+  throw e
 }
 ```
 
-Chỉ ràng buộc `UNIQUE` mới đảm bảo được điều này — xem [[rang-buoc-va-toan-ven-du-lieu]]. Kiểm tra ở tầng ứng dụng luôn có khoảng trống giữa lúc đọc và lúc ghi.
+Mẫu này gọi là *"xin lỗi dễ hơn xin phép"*, và nó đúng vì `UNIQUE` là kiểm tra **nguyên tử** ở tầng thấp nhất — không có khe hở nào.
 
-## Chọn cái nào
+Cùng cách với idempotency key ([[idempotency-va-thu-lai]]): thay vì kiểm "đã xử lý chưa" rồi mới xử lý, bạn `INSERT ... ON CONFLICT DO NOTHING` và xem có dòng nào được tạo không.
 
-| Tình huống | Dùng |
-|---|---|
-| Bộ đếm, kho, hạn mức | `UPDATE` có biểu thức + `WHERE` điều kiện |
-| Người dùng sửa form rồi lưu | Khoá lạc quan (cột `version`) |
-| Chuyển tiền, đặt ghế | `FOR UPDATE` |
-| Hàng đợi công việc nhiều worker | `FOR UPDATE SKIP LOCKED` |
-| Chống trùng khi tạo mới | Ràng buộc `UNIQUE` + bắt lỗi |
+## So sánh
 
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
+| Cách | Chi phí | Dùng khi |
 |---|---|---|
-| Đọc rồi ghi ngoài khoá | Lost update, không có lỗi nào báo | `UPDATE` có biểu thức |
-| Tin rằng `BEGIN/COMMIT` là đủ | `READ COMMITTED` vẫn cho cả hai ghi | Cần khoá hoặc điều kiện |
-| Không kiểm tra `rowCount` | Không biết update đã trượt | Luôn kiểm tra |
-| `SELECT` kiểm tra tồn tại rồi `INSERT` | Trùng khi có hai request đồng thời | `UNIQUE` + bắt lỗi |
-| Khoá theo thứ tự khác nhau | Deadlock | Sắp id trước khi khoá |
-| Gọi API bên ngoài trong transaction | Giữ khoá hàng giây, mọi thứ xếp hàng | Ra ngoài transaction |
-| Khoá lạc quan mà âm thầm ghi đè khi trượt | Mất công sức của người kia | Báo xung đột cho người dùng |
+| Ghi bằng biểu thức (`so_du - 30`) | Rẻ nhất | ✅ Mặc định — luôn thử trước |
+| Ràng buộc `UNIQUE` | Rẻ | Chống tạo trùng |
+| Khoá lạc quan (`version`) | Rẻ, có thể phải thử lại | Tranh chấp **hiếm**, cần báo người dùng |
+| Khoá bi quan (`FOR UPDATE`) | Đắt — người khác chờ | Tranh chấp **cao**, thao tác ngắn |
+| `SERIALIZABLE` | Đắt nhất | Logic nhiều bảng, khó tự bảo đảm |
 
-## Ghi nhớ
+Thứ tự nên thử: **từ trên xuống**. Rất nhiều trường hợp dừng ở dòng đầu.
 
-- Đọc → quyết định → ghi luôn là một cuộc đua nếu không có khoá.
-- Rẻ nhất và tốt nhất: `UPDATE ... SET x = x - 1 WHERE ... AND x >= 1`, rồi kiểm tra `rowCount`.
-- Lạc quan cho xung đột hiếm, `FOR UPDATE` cho xung đột thường.
-- Deadlock tránh được bằng cách luôn khoá theo cùng thứ tự.
+**Deadlock** — hai transaction chờ nhau vòng tròn:
 
-## Tự kiểm tra
+```text
+T1: khoá A ──► chờ B
+T2: khoá B ──► chờ A
+⇒ CSDL phát hiện và HUỶ một cái
+```
 
-1. Vì sao bọc `BEGIN/COMMIT` quanh `SELECT` rồi `UPDATE` không chặn được lost update?
-2. `rowCount = 0` với khoá lạc quan nghĩa là gì, và nên phản hồi người dùng thế nào?
-3. Hai luồng chuyển tiền A→B và B→A cùng lúc. Vì sao deadlock, và sửa ra sao?
+Cách phòng đơn giản và hiệu quả: **luôn khoá theo cùng một thứ tự** (ví dụ id tăng dần) ở mọi nơi trong code. Nó loại bỏ hẳn khả năng vòng chờ.
+
+```ts
+const ids = [idA, idB].sort()      // luôn khoá theo thứ tự này
+```
+
+## Dễ nhầm
+
+**1. Đọc rồi ghi thành hai lệnh.** Mẫu gây lost update — luôn có khe hở.
+
+**2. Không kiểm số dòng bị ảnh hưởng.** `UPDATE` 0 dòng vẫn là "thành công".
+
+**3. Giữ khoá quá lâu.** Gọi API, gửi mail bên trong transaction ⇒ khoá dòng suốt thời gian đó, và mọi người xếp hàng.
+
+**4. Khoá theo thứ tự khác nhau ở các chỗ khác nhau.** Deadlock ngẫu nhiên, rất khó tái hiện.
+
+**5. Dùng khoá bi quan khi tranh chấp hiếm.** Bạn trả giá bằng việc mọi người phải chờ, để phòng một chuyện gần như không xảy ra.
+
+**6. Không xử lý xung đột lạc quan.** `version` không khớp thì phải **báo cho người dùng** hoặc thử lại — không được im lặng bỏ qua.
+
+**7. Tin rằng transaction tự chống được lost update.** Ở mức `READ COMMITTED` (mặc định Postgres), **không** — xem [[transaction-va-acid]].
+
+## Mẹo nhớ
+
+> **Đọc rồi ghi = một cuộc đua. Khe hở giữa đọc và ghi là chỗ dữ liệu biến mất.**
+>
+> **Thử theo thứ tự: biểu thức → UNIQUE → lạc quan → bi quan.**
+>
+> **`UPDATE` 0 dòng không phải lỗi — bạn PHẢI kiểm.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Hình dạng chung của mọi bug đồng thời?
+2. Vì sao `UPDATE ... SET so_du = so_du - 30` an toàn còn đọc-rồi-ghi thì không?
+3. Khoá lạc quan và bi quan khác nhau ở **thời điểm** kiểm tra xung đột?
+4. `SKIP LOCKED` giải quyết bài toán nào?
+5. Cách đơn giản nhất để phòng deadlock?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết SQL/mã giả cho từng tình huống, **nêu cách bạn chọn**:
+
+```text
+a) Trừ tồn kho khi đặt hàng
+b) Hai biên tập viên cùng sửa một bài viết
+c) 5 worker cùng lấy việc từ hàng đợi
+d) Đăng ký tài khoản, chống trùng email
+```
+
+Tự kiểm: câu (b) — khi phát hiện xung đột, bạn **hiện gì** cho người dùng thứ hai?
+
+## Thử sức
+
+Hệ thống bán vé của bạn thỉnh thoảng bán **quá số ghế**. Log cho thấy hai request cách nhau 8 mili giây, cả hai đều "thành công".
+
+Truy nguyên nhân, rồi đưa ra **hai** cách sửa với đánh đổi khác nhau. Câu khó nhất: cách nào giữ được trải nghiệm tốt khi 5000 người cùng bấm mua vé concert trong một giây — và cách kia hỏng thế nào ở quy mô đó?

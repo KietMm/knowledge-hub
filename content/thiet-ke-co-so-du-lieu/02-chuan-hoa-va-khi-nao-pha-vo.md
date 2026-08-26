@@ -4,125 +4,199 @@ slug: chuan-hoa-va-khi-nao-pha-vo
 summary: Ba dạng chuẩn giải thích bằng ví dụ thật, và những trường hợp phi chuẩn hoá là lựa chọn đúng.
 level: trung-cap
 tags: [database, chuan-hoa, thiet-ke]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** nhận ra dữ liệu chưa chuẩn hoá qua các dị thường cập nhật, và biết khi nào cố tình trùng lặp là hợp lý.
+> **Sau bài này bạn sẽ:** nhận ra ba dạng chuẩn qua **triệu chứng** thay vì qua định nghĩa, và biết khi nào phi chuẩn hoá là lựa chọn đúng.
 
-## Vấn đề mà chuẩn hoá giải quyết
+## Ý tưởng chính
 
-Bảng sai:
+Chuẩn hoá giải quyết đúng một vấn đề: **cùng một sự thật được lưu ở nhiều chỗ**.
 
-| don_id | khach_ten | khach_email | san_pham | gia |
-|---|---|---|---|---|
-| 1 | An | an@x.com | Áo, Quần | 100k, 200k |
-| 2 | An | an@x.com | Áo | 100k |
+Khi sự thật đó đổi, bạn phải sửa mọi chỗ — và chỉ cần quên một chỗ là dữ liệu **mâu thuẫn với chính nó**. Không có cách nào biết chỗ nào đúng.
 
-Ba loại dị thường:
+## Mental model
 
-- **Cập nhật** — An đổi email, phải sửa mọi dòng. Sót một dòng là dữ liệu mâu thuẫn.
-- **Chèn** — không thêm được khách hàng chưa có đơn nào.
-- **Xoá** — xoá đơn cuối của An là mất luôn thông tin về An.
+Hãy nghĩ tới **số điện thoại của một người ghi trong ba cuốn sổ**.
 
-## 1NF — mỗi ô một giá trị
+> Sổ khách hàng ghi `0901234567`. Sổ đơn hàng ghi lại. Sổ giao hàng cũng ghi lại.
+>
+> Người đó đổi số. Bạn sửa sổ khách hàng, quên hai sổ kia.
+>
+> Bây giờ **ba cuốn sổ nói ba chuyện khác nhau**, và không cuốn nào tự nhận là sai.
 
-Vi phạm: `"Áo, Quần"` trong một ô.
+Chuẩn hoá là nguyên tắc: **mỗi sự thật ghi ở đúng một chỗ**, chỗ khác chỉ **trỏ tới** nó.
 
-```sql
--- Sai
-san_pham TEXT   -- 'Áo, Quần'
+Và phi chuẩn hoá là quyết định có ý thức chép lại — chấp nhận rủi ro lệch để đổi lấy tốc độ, hoặc để **đóng băng lịch sử**.
 
--- Đúng: tách thành dòng riêng ở bảng chi tiết
-CREATE TABLE chi_tiet_don (
-  don_hang_id BIGINT, san_pham_id BIGINT, so_luong INT
-);
+## Ví dụ nhỏ
+
+```text
+❌ Chưa chuẩn hoá
+don_hang(id, khach_ten, khach_sdt, san_pham_ten, gia)
+  1  An  0901  Áo thun  200000
+  2  An  0901  Quần jean 500000     ← tên và số của An lặp lại
+
+✅ Chuẩn hoá
+khach(id, ten, sdt)
+don_hang(id, khach_id)
+dong_don(don_id, san_pham_id, gia_luc_mua)
 ```
 
-Dấu hiệu vi phạm: bạn phải dùng `LIKE '%...%'` hoặc `split_part()` để tìm dữ liệu bên trong một ô.
+## Code chạy thế nào
 
-## 2NF — không phụ thuộc một phần khoá
+Ba dạng chuẩn, nhận ra qua **triệu chứng** chứ không qua định nghĩa:
 
-Chỉ liên quan khi khoá chính gồm nhiều cột.
+**1NF — mỗi ô một giá trị:**
 
-```sql
--- Sai: ten_san_pham phụ thuộc san_pham_id, không phụ thuộc cả khoá (don_id, san_pham_id)
-chi_tiet_don (don_id, san_pham_id, so_luong, ten_san_pham)
+```text
+❌ the = "áo, nam, khuyến mãi"     ← nhiều giá trị trong một ô
 
--- Đúng: ten_san_pham về bảng san_pham
-chi_tiet_don (don_id, san_pham_id, so_luong)
-san_pham (id, ten)
+Triệu chứng: bạn phải dùng LIKE '%nam%' để lọc
+Hậu quả: không index được, "nam" khớp cả "nam giới" lẫn "vải nam"
 ```
 
-## 3NF — không phụ thuộc bắc cầu
-
 ```sql
--- Sai: ten_thanh_pho phụ thuộc thanh_pho_id, mà thanh_pho_id lại phụ thuộc id
-khach_hang (id, ten, thanh_pho_id, ten_thanh_pho)
-
--- Đúng
-khach_hang (id, ten, thanh_pho_id)
-thanh_pho (id, ten)
+CREATE TABLE san_pham_the (san_pham_id UUID, the_id UUID, PRIMARY KEY (san_pham_id, the_id));
 ```
 
-Câu tóm tắt kinh điển: *mọi cột không khoá phải phụ thuộc vào khoá, toàn bộ khoá, và không gì ngoài khoá.*
+**2NF — không phụ thuộc một phần khoá:**
 
-Trong thực tế, 3NF là đủ cho gần như mọi hệ thống nghiệp vụ. Các dạng chuẩn cao hơn (BCNF, 4NF) hiếm khi cần tới.
+```text
+❌ dong_don(don_id, san_pham_id, so_luong, san_pham_ten)
+                                            ↑ chỉ phụ thuộc san_pham_id,
+                                              không phụ thuộc cả khoá (don_id, san_pham_id)
 
-## Khi nào cố tình phi chuẩn hoá
-
-Chuẩn hoá tối ưu cho **tính đúng đắn**. Đôi khi phải đánh đổi lấy tốc độ đọc — nhưng chỉ khi có lý do đo được:
-
-**1. Ảnh chụp dữ liệu lịch sử** (không phải phi chuẩn hoá thật sự):
-```sql
-chi_tiet_don (..., gia_luc_mua NUMERIC)   -- giá đã đổi cũng không ảnh hưởng hoá đơn cũ
+Triệu chứng: đổi tên sản phẩm phải cập nhật hàng nghìn dòng đơn hàng
 ```
 
-**2. Cột đếm sẵn** cho bảng đọc rất nhiều:
-```sql
-bai_viet (..., so_binh_luan INT NOT NULL DEFAULT 0)
+**3NF — không phụ thuộc bắc cầu:**
+
+```text
+❌ nhan_vien(id, ten, phong_id, phong_ten)
+                              ↑ phong_ten phụ thuộc phong_id, phong_id phụ thuộc id
+                                ⇒ bắc cầu
+
+Triệu chứng: đổi tên phòng phải sửa mọi nhân viên trong phòng đó
 ```
-Đổi lại: phải cập nhật ở mọi nơi thêm/xoá bình luận. Dùng trigger hoặc cập nhật trong cùng transaction để không lệch. Chỉ làm khi `COUNT(*)` đã thật sự chậm.
 
-**3. Materialized view** cho báo cáo nặng:
-```sql
-CREATE MATERIALIZED VIEW doanh_thu_thang AS
-SELECT DATE_TRUNC('month', ngay_dat) AS thang, SUM(tong_tien) AS tong
-FROM don_hang GROUP BY 1;
+Ba triệu chứng đều cùng một hình dạng: **sửa một sự thật mà phải chạm vào nhiều dòng**. Thấy dấu hiệu đó là biết cần tách bảng.
 
-REFRESH MATERIALIZED VIEW CONCURRENTLY doanh_thu_thang;
+## Cú pháp
+
+Ba loại bất thường mà chuẩn hoá ngăn — thuộc ba cái tên này thì bạn hiểu được vì sao chuẩn hoá tồn tại:
+
+```text
+Bất thường khi SỬA   đổi số điện thoại phải sửa 500 dòng, sót một dòng là lệch
+Bất thường khi THÊM  chưa có nhân viên nào thì không tạo được phòng ban
+                     (vì thông tin phòng chỉ tồn tại trong bảng nhân viên)
+Bất thường khi XOÁ   xoá nhân viên cuối cùng của phòng ⇒ mất luôn thông tin phòng
 ```
-Đây là cách phi chuẩn hoá **sạch nhất**: dữ liệu gốc vẫn chuẩn, bản tổng hợp tách riêng và dựng lại được bất cứ lúc nào.
 
-**4. JSONB cho thuộc tính thưa và thay đổi liên tục:**
+Hai loại sau ít người nghĩ tới nhưng rất thật: chúng nói rằng **thông tin phòng ban không có chỗ ở riêng**, và điều đó là sai về mặt mô hình.
+
+## Tại sao cần nó
+
+Vì có **bốn trường hợp phi chuẩn hoá là đúng**, và biết chúng quan trọng ngang biết chuẩn hoá:
+
+**① Bản chụp lịch sử — bắt buộc, không phải tối ưu:**
+
 ```sql
-san_pham (id, ten, gia, thuoc_tinh JSONB)   -- màu áo, dung lượng pin, số trang sách...
+dong_don(don_id, san_pham_id, ten_luc_mua, gia_luc_mua)
 ```
-Ranh giới: dữ liệu bạn cần `JOIN`, ràng buộc, hoặc lọc thường xuyên thì phải là **cột thật**. JSONB cho phần còn lại.
 
-## Nguyên tắc
+Giá sản phẩm đổi hằng tuần; hoá đơn tháng trước **phải giữ giá lúc mua**. Đây không phải chép dữ liệu cho nhanh — đây là **hai sự thật khác nhau**: "giá hiện tại" và "giá đã bán".
 
-> Chuẩn hoá trước. Phi chuẩn hoá sau, chỉ khi có số đo, và luôn ghi lại lý do.
+**② Số đếm được tính sẵn:**
 
-Phi chuẩn hoá sớm là một trong những cách chắc chắn nhất tạo ra dữ liệu mâu thuẫn — mà dữ liệu sai thì không có bản vá nào sửa được về sau.
+```sql
+bai_viet(id, tieu_de, so_binh_luan)     -- thay vì COUNT(*) mỗi lần hiển thị
+```
 
-## Lỗi hay gặp
+Đổi lại: phải cập nhật khi thêm/xoá bình luận, và số có thể lệch nếu cập nhật thất bại. Chấp nhận được khi trang danh sách được xem hàng nghìn lần mỗi phút.
 
-| Lỗi | Hậu quả | Sửa thế nào |
+**③ Bảng báo cáo tổng hợp sẵn:**
+
+```sql
+bao_cao_ngay(ngay, tong_don, doanh_thu)   -- tính bằng job đêm
+```
+
+Truy vấn tổng hợp trên 50 triệu dòng mất vài giây; đọc bảng tổng hợp mất vài mili giây.
+
+**④ Chép trường hay JOIN:**
+
+```sql
+don_hang(id, khach_id, khach_ten)   -- để danh sách đơn khỏi JOIN bảng khách
+```
+
+Đây là loại **rủi ro nhất** — nó có thể lệch. Chỉ làm khi đã đo và JOIN thật sự là điểm nghẽn.
+
+## So sánh
+
+| | Chuẩn hoá | Phi chuẩn hoá |
 |---|---|---|
-| Danh sách trong một ô (CSV) | Không query, không ràng buộc được | Tách bảng con |
-| Sao chép tên/email sang bảng khác | Dữ liệu mâu thuẫn theo thời gian | Chỉ lưu khoá ngoại |
-| Phi chuẩn hoá "cho nhanh" từ đầu | Bug dữ liệu, không đo được lợi ích | Chuẩn hoá trước, đo sau |
-| Cột đếm không cập nhật đồng bộ | Số hiển thị sai | Trigger hoặc cùng transaction |
-| Nhét mọi thứ vào JSONB | Mất ràng buộc và index | Cột thật cho dữ liệu quan trọng |
+| Sự thật lưu ở | Một chỗ | Nhiều chỗ |
+| Nguy cơ mâu thuẫn | Không | **Có** |
+| Ghi | Nhanh, gọn | Phải cập nhật nhiều chỗ |
+| Đọc | Cần JOIN | Đọc thẳng |
+| Dung lượng | Nhỏ | Lớn hơn |
 
-## Ghi nhớ
+Nguyên tắc thực dụng:
 
-- 1NF: mỗi ô một giá trị. 2NF: không phụ thuộc một phần khoá. 3NF: không phụ thuộc bắc cầu.
-- 3NF đủ cho gần như mọi hệ thống nghiệp vụ.
-- Lưu ảnh chụp dữ liệu lịch sử không phải là vi phạm chuẩn hoá.
-- Materialized view là cách phi chuẩn hoá an toàn nhất.
+```text
+① Chuẩn hoá tới 3NF làm mặc định
+② Đo — nếu JOIN thật sự là điểm nghẽn
+③ Phi chuẩn hoá CÓ CHỦ ĐÍCH, và ghi lại lý do
+④ Có cơ chế giữ đồng bộ (trigger, job, hoặc cùng transaction)
+```
 
-## Tự kiểm tra
+Bước ④ hay bị bỏ, và đó là lý do dữ liệu phi chuẩn hoá dần lệch: không ai chịu trách nhiệm giữ nó đúng.
 
-1. Bảng `don_hang(id, khach_ten, khach_email, tinh_thanh, ma_vung)` vi phạm dạng chuẩn nào?
-2. Vì sao lưu `gia_luc_mua` không phải là trùng lặp dữ liệu sai?
-3. Khi nào nên thêm cột `so_binh_luan` thay vì đếm bằng `COUNT(*)`?
+## Dễ nhầm
+
+**1. Phi chuẩn hoá "cho nhanh" mà chưa đo.** JOIN có index thường rất rẻ. Bạn đang trả bằng nguy cơ dữ liệu mâu thuẫn để mua một thứ có thể không cần.
+
+**2. Chuẩn hoá tới mức cực đoan.** Tách mọi thứ thành bảng riêng, và một truy vấn đơn giản cần JOIN 8 bảng. Chuẩn hoá là phương tiện, không phải mục tiêu.
+
+**3. Nhầm bản chụp lịch sử với dữ liệu trùng lặp.** `gia_luc_mua` **không** vi phạm chuẩn hoá — nó là một sự thật khác với `gia hiện tại`.
+
+**4. Phi chuẩn hoá mà không có cơ chế đồng bộ.** Số đếm lệch dần và không ai biết từ lúc nào.
+
+**5. Nhồi JSON để né việc thiết kế.** Cột JSON là công cụ hợp lệ cho dữ liệu thật sự phi cấu trúc — nhưng dùng nó vì lười thiết kế thì bạn mất ràng buộc, mất index, mất khả năng truy vấn ([[chon-kieu-du-lieu]]).
+
+**6. Không ghi lại lý do phi chuẩn hoá.** Người sau thấy dữ liệu trùng, "dọn dẹp" nó, và làm hỏng báo cáo lịch sử.
+
+## Mẹo nhớ
+
+> **Một sự thật, một chỗ ghi — chỗ khác chỉ trỏ tới.**
+>
+> **Triệu chứng cần tách bảng: sửa MỘT sự thật mà phải chạm NHIỀU dòng.**
+>
+> **Bản chụp lịch sử không phải trùng lặp — đó là sự thật khác.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Chuẩn hoá giải quyết vấn đề gì — nói bằng một câu?
+2. Triệu chứng của mỗi dạng 1NF, 2NF, 3NF bị vi phạm?
+3. Ba loại bất thường, và hai loại nào ít người nghĩ tới?
+4. Vì sao `gia_luc_mua` không vi phạm chuẩn hoá?
+5. Bốn bước của nguyên tắc thực dụng khi cân nhắc phi chuẩn hoá?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, chỉ ra bảng này vi phạm dạng chuẩn nào và tách lại:
+
+```text
+dat_ve(id, khach_ten, khach_email, phim_ten, phim_thoi_luong,
+       rap_ten, rap_dia_chi, ghe, gia, ngay_chieu)
+```
+
+Tự kiểm: cột `gia` — bạn để lại ở `dat_ve` hay chuyển sang bảng khác? Nêu lý do (gợi ý: câu trả lời liên quan tới bản chụp lịch sử).
+
+## Thử sức
+
+Bảng `bai_viet` có cột `so_binh_luan` được cập nhật mỗi khi thêm/xoá bình luận. Sau một năm, bạn phát hiện **khoảng 3% bài có số đếm lệch** so với đếm thật.
+
+Nêu **ba** nguyên nhân có thể gây lệch. Rồi thiết kế cách sửa sao cho nó **không lệch lại** — và nói rõ cách của bạn đánh đổi gì.
