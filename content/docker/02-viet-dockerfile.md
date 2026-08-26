@@ -4,174 +4,226 @@ slug: viet-dockerfile
 summary: Mỗi lệnh tạo một lớp — thứ tự các lệnh quyết định build nhanh hay chậm và image to hay nhỏ.
 level: co-ban
 tags: [docker, dockerfile]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** viết Dockerfile tận dụng được cache, và biết vì sao thứ tự `COPY` lại quan trọng đến vậy.
+> **Sau bài này bạn sẽ:** sắp xếp Dockerfile theo đúng thứ tự cache, và biết vì sao đổi một dòng code lại khiến build mất năm phút.
 
-## Các lệnh chính
+## Ý tưởng chính
+
+Mỗi lệnh trong Dockerfile tạo ra **một lớp**. Docker cache từng lớp và tái sử dụng khi lệnh đó cùng nội dung đầu vào.
+
+Nhưng cache có một quy tắc không khoan nhượng: **một lớp hỏng cache thì mọi lớp sau nó cũng hỏng theo**.
+
+Vì thế thứ tự các lệnh không phải chuyện phong cách — nó quyết định build mất 5 giây hay 5 phút.
+
+## Mental model
+
+Hãy nghĩ tới **chồng bánh pancake xếp theo tần suất thay đổi**.
+
+> Bạn xếp bánh từ dưới lên. Muốn thay một cái bánh ở **giữa** chồng, bạn phải nhấc bỏ mọi cái nằm trên nó rồi xếp lại.
+>
+> Nên bạn xếp cái **ít thay đổi nhất xuống dưới cùng** (hệ điều hành, thư viện), cái **hay thay đổi nhất lên trên cùng** (mã nguồn của bạn).
+>
+> Đổi mã nguồn ⇒ chỉ xếp lại cái trên cùng. Đổi thư viện ⇒ xếp lại từ giữa.
+
+Toàn bộ nghệ thuật viết Dockerfile nằm ở một câu hỏi: *"dòng này thay đổi bao nhiêu lần mỗi ngày?"* — và sắp xếp theo câu trả lời.
+
+## Ví dụ nhỏ
 
 ```dockerfile
-FROM node:22-alpine              # image nền
-WORKDIR /app                     # thư mục làm việc (tự tạo nếu chưa có)
-COPY package.json pnpm-lock.yaml ./
-RUN corepack enable && pnpm install --frozen-lockfile
-COPY . .
-RUN pnpm build
-ENV NODE_ENV=production
-EXPOSE 3000                      # chỉ là tài liệu, không mở cổng thật
-USER node                        # không chạy bằng root
-CMD ["node", "server.js"]        # lệnh mặc định khi container chạy
+FROM node:20-alpine
+WORKDIR /app
+
+COPY package*.json ./       # ← chỉ file phụ thuộc, TRƯỚC
+RUN npm ci                  # lớp đắt tiền: được cache
+
+COPY . .                    # ← mã nguồn, SAU
+RUN npm run build
+
+CMD ["node", "dist/server.js"]
 ```
 
-## Cache theo lớp — điều quan trọng nhất
+## Code chạy thế nào
 
-Mỗi lệnh tạo một lớp. Docker dùng lại lớp cũ nếu lệnh **và** file liên quan không đổi. Một lớp thay đổi thì **mọi lớp sau nó** phải build lại.
+**Vì sao tách `COPY package*.json` ra khỏi `COPY . .`:**
+
+```text
+❌ Cách sai:
+   COPY . .          ← đổi một ký tự trong code ⇒ lớp này hỏng cache
+   RUN npm ci        ← và lớp này BUỘC chạy lại. 3 phút. Mỗi lần.
+
+✅ Cách đúng:
+   COPY package*.json ./   ← chỉ hỏng cache khi ĐỔI PHỤ THUỘC
+   RUN npm ci              ← cache giữ được hàng tuần
+   COPY . .                ← đổi code chỉ hỏng từ đây trở đi
+```
+
+Kết quả trong thực tế: build sau khi sửa code giảm từ ~3 phút xuống ~10 giây. Đây là một dòng đổi chỗ.
+
+**Multi-stage — vì sao image cuối cùng nhỏ đi hàng trăm MB:**
 
 ```dockerfile
-# CHẬM: sửa một dòng code là cài lại toàn bộ dependency
+# Giai đoạn 1: có đủ đồ nghề để build
+FROM node:20 AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci                     # gồm cả devDependencies
 COPY . .
-RUN pnpm install
+RUN npm run build
 
-# NHANH: chỉ cài lại khi package.json/lockfile đổi
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
-COPY . .
+# Giai đoạn 2: image THẬT — chỉ chép sang thứ cần để chạy
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --omit=dev          # KHÔNG có devDependencies
+COPY --from=builder /app/dist ./dist
+USER node                      # không chạy bằng root
+CMD ["node", "dist/server.js"]
 ```
 
-Quy tắc: **thứ ít thay đổi đặt trước, thứ hay thay đổi đặt sau**. Đây là một thay đổi hai dòng, nhưng nó biến build 3 phút thành build 15 giây.
+```text
+Cái KHÔNG có mặt trong image cuối:
+  TypeScript, webpack, eslint, toàn bộ devDependencies,
+  mã nguồn .ts, file test, cache của trình build.
 
-## `.dockerignore`
-
+1.2 GB  →  180 MB
 ```
+
+Điều quan trọng: mọi thứ ở giai đoạn `builder` **biến mất hoàn toàn**, kể cả các lớp trung gian. Nên nếu bạn lỡ `COPY` một file secret vào giai đoạn build rồi xoá đi, nó vẫn không lọt vào image cuối — miễn là bạn không chép nó sang.
+
+## Cú pháp
+
+```dockerfile
+FROM node:20-alpine       # ảnh nền — CỐ ĐỊNH phiên bản, không dùng latest
+WORKDIR /app              # cd, và tự tạo thư mục nếu chưa có
+COPY nguon dich           # chép từ máy build vào image
+RUN <lệnh>                # chạy LÚC BUILD, tạo một lớp
+ENV NODE_ENV=production   # biến môi trường, có cả lúc chạy
+EXPOSE 3000               # chỉ là tài liệu — KHÔNG mở cổng
+USER node                 # đổi user, đặt sau khi đã cài xong
+CMD ["node", "server.js"] # chạy LÚC KHỞI ĐỘNG container
+```
+
+**`RUN` chạy lúc build, `CMD` chạy lúc khởi động** — nhầm hai cái này là lỗi của mọi người mới.
+
+**Dạng exec và dạng shell:**
+
+```dockerfile
+CMD node server.js              # dạng shell: chạy qua /bin/sh -c
+                                # ⇒ PID 1 là sh, KHÔNG chuyển SIGTERM
+CMD ["node", "server.js"]       # dạng exec ✅ node là PID 1, nhận tín hiệu
+```
+
+Hệ quả rất thật: với dạng shell, `docker stop` gửi SIGTERM cho `sh`, `sh` không chuyển tiếp, Docker đợi 10 giây rồi SIGKILL — ứng dụng của bạn **không bao giờ được thoát sạch** ([[tien-trinh-va-dich-vu]]).
+
+**`.dockerignore` — luôn phải có:**
+
+```text
 node_modules
 .git
-.next
+.env
 dist
-.env*
 *.log
-coverage
 ```
 
-File này rất hay bị quên. Không có nó, `COPY . .` chép cả `node_modules` của máy bạn vào image — vừa chậm, vừa có thể chứa binary biên dịch cho hệ điều hành khác, vừa dễ đưa `.env` vào image.
+Không có nó, `COPY . .` gửi toàn bộ `node_modules` và `.git` vào build context: chậm, image to, và **`.env` lọt vào image**.
 
-## Build nhiều giai đoạn
+## Tại sao cần nó
 
-Đây là kỹ thuật giảm kích thước image mạnh nhất:
+Vì ba hậu quả của một Dockerfile viết ẩu đều đắt:
+
+```text
+Sai thứ tự lớp     ⇒ mỗi lần sửa code phải chờ 3 phút.
+                     Nhân với số lần build mỗi ngày, nhân với cả đội.
+
+Không multi-stage  ⇒ image 1.2 GB: đẩy chậm, kéo chậm,
+                     và mọi công cụ build đều là bề mặt tấn công.
+
+Không .dockerignore ⇒ secret nằm trong image, và image
+                      được đẩy lên registry.
+```
+
+**Nhiều `RUN` gộp lại làm một** khi chúng thuộc cùng một việc:
 
 ```dockerfile
-# --- Giai đoạn 1: cài dependency đầy đủ ---
-FROM node:22-alpine AS deps
-WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
-RUN corepack enable && pnpm install --frozen-lockfile
+# ❌ Ba lớp; lớp 3 xoá file nhưng lớp 2 VẪN CÒN trong image
+RUN apt-get update
+RUN apt-get install -y curl
+RUN rm -rf /var/lib/apt/lists/*
 
-# --- Giai đoạn 2: build ---
-FROM node:22-alpine AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-RUN corepack enable && pnpm build
-
-# --- Giai đoạn 3: chỉ những gì cần để CHẠY ---
-FROM node:22-alpine AS runner
-WORKDIR /app
-ENV NODE_ENV=production
-
-RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
-
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
-
-USER nextjs
-EXPOSE 3000
-CMD ["node", "server.js"]
+# ✅ Một lớp — cái bị xoá thực sự không nằm trong image
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl \
+ && rm -rf /var/lib/apt/lists/*
 ```
 
-Kết quả: image cuối chỉ chứa mã đã build và dependency runtime — không có mã nguồn, không có devDependency, không có công cụ build. Từ ~1,2GB xuống ~150MB.
+Lý do sâu hơn ở đây: lớp là **bất biến và cộng dồn**. Xoá một file ở lớp sau không làm nó biến mất khỏi lớp trước — nó chỉ bị che đi, và ai cũng lấy lại được. Đây cũng là lý do **không bao giờ `COPY` secret vào một lớp**, kể cả khi bạn xoá nó ngay sau đó.
 
-Lợi ích không chỉ là dung lượng: ít thứ trong image nghĩa là ít lỗ hổng tiềm ẩn và ít thứ cho kẻ tấn công dùng nếu chiếm được container.
+## So sánh
 
-## Chọn image nền
+| | `RUN` | `CMD` | `ENTRYPOINT` |
+|---|---|---|---|
+| Chạy lúc | build | khởi động container | khởi động container |
+| Tạo lớp | ✅ | ❌ | ❌ |
+| Ghi đè bằng `docker run` | không | ✅ dễ | khó (cần `--entrypoint`) |
+| Dùng cho | cài đặt, build | lệnh mặc định | lệnh cố định của image |
 
-| Image | Kích thước | Ghi chú |
-|---|---|---|
-| `node:22` | ~1,1GB | Debian đầy đủ, có mọi công cụ |
-| `node:22-slim` | ~250MB | Debian gọn — mặc định tốt |
-| `node:22-alpine` | ~130MB | Alpine, dùng musl libc |
-| `gcr.io/distroless/nodejs22` | ~110MB | Không có shell — an toàn nhất |
+## Dễ nhầm
 
-Alpine nhỏ nhưng dùng `musl` thay `glibc`: một số thư viện native (sharp, canvas, bcrypt bản gốc) có thể lỗi hoặc chậm hơn. Nếu gặp lỗi lạ liên quan tới thư viện native, thử `slim` trước khi mất thời gian gỡ.
+**1. `COPY . .` trước khi cài phụ thuộc.** Mất cache, build chậm mãi mãi.
 
-Distroless không có shell nghĩa là không `docker exec ... sh` được — an toàn hơn nhưng khó gỡ lỗi hơn.
+**2. Không có `.dockerignore`.** Image to, và secret lọt vào.
 
-## `CMD` và `ENTRYPOINT`
+**3. `CMD` dạng shell.** PID 1 là `sh`, ứng dụng không nhận SIGTERM.
 
-```dockerfile
-CMD ["node", "server.js"]              # dạng exec — ĐÚNG
-CMD node server.js                     # dạng shell — tránh
+**4. Nhầm `RUN` với `CMD`.**
+
+**5. Tưởng `EXPOSE` mở cổng.** Nó chỉ là tài liệu; `-p` mới mở.
+
+**6. `COPY` secret vào một lớp rồi `RUN rm`.** Nó vẫn nằm trong lớp trước.
+
+**7. Không multi-stage.** Image gấp 5–10 lần cần thiết.
+
+**8. Chạy bằng root.** Thêm `USER node` sau khi cài xong.
+
+**9. `FROM node:latest`.** Build hôm nay và tháng sau ra hai kết quả khác nhau.
+
+**10. `npm install` thay vì `npm ci`.** `ci` cài đúng theo lockfile — đó chính là điều bạn muốn khi build image.
+
+## Mẹo nhớ
+
+> **Xếp lớp theo TẦN SUẤT THAY ĐỔI: ít đổi ở dưới, hay đổi ở trên.**
+>
+> **`COPY package*.json` trước, `npm ci`, rồi mới `COPY . .`.**
+>
+> **`CMD` dạng exec `["a","b"]` — dạng shell làm mất tín hiệu.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Vì sao tách `COPY package*.json` khỏi `COPY . .`? Tiết kiệm được cái gì?
+2. Một lớp hỏng cache thì các lớp sau ra sao?
+3. `RUN` khác `CMD` ở điểm nào?
+4. Vì sao `CMD` dạng shell gây vấn đề khi dừng container?
+5. Vì sao xoá secret ở một `RUN` sau vẫn không an toàn?
+
+## Tự viết lại
+
+Không nhìn lại, viết Dockerfile multi-stage cho một ứng dụng Python FastAPI:
+
+```text
+① cài phụ thuộc từ requirements.txt (được cache)
+② image cuối không chứa công cụ build
+③ chạy bằng user không phải root
+④ CMD dạng exec
 ```
 
-Dạng shell chạy lệnh qua `/bin/sh -c`, nghĩa là tiến trình chính là `sh`, không phải `node`. Hệ quả: `SIGTERM` gửi tới `sh` và **không** được chuyển tiếp tới ứng dụng — container bị `SIGKILL` sau 10 giây mỗi lần dừng.
+Tự kiểm: nếu bạn chỉ sửa một dòng trong `main.py`, build lại chạy từ dòng nào trong Dockerfile của bạn?
 
-`ENTRYPOINT` cố định lệnh, `CMD` là tham số mặc định có thể ghi đè:
+## Thử sức
 
-```dockerfile
-ENTRYPOINT ["node"]
-CMD ["server.js"]
-# docker run image worker.js  ->  node worker.js
-```
+Image của đội bạn nặng **1.4 GB** và mỗi lần build mất **6 phút**, kể cả khi chỉ sửa một dòng code.
 
-## Healthcheck
-
-```dockerfile
-HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
-  CMD wget -qO- http://localhost:3000/api/health || exit 1
-```
-
-Orchestrator dựa vào đây để biết container **thật sự sẵn sàng**, không chỉ là "tiến trình còn sống". Endpoint health nên kiểm tra được cả kết nối CSDL.
-
-## Bảo mật
-
-```dockerfile
-# 1. Không chạy bằng root
-USER node
-
-# 2. Không dùng ARG/ENV cho secret — chúng nằm trong lịch sử image
-#    Dùng BuildKit secret mount:
-RUN --mount=type=secret,id=npmrc \
-    cp /run/secrets/npmrc ~/.npmrc && pnpm install && rm ~/.npmrc
-
-# 3. Ghim phiên bản image nền theo digest
-FROM node:22-alpine@sha256:...
-```
-
-Điểm 2 rất hay bị vi phạm: `ARG NPM_TOKEN` rồi dùng trong `RUN` khiến token nằm vĩnh viễn trong lớp image, ai `docker history` cũng đọc được.
-
-```bash
-docker scout cves ung-dung:1.0      # quét lỗ hổng
-trivy image ung-dung:1.0
-```
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| `COPY . .` trước `install` | Cache hỏng, build lại từ đầu mỗi lần | Copy manifest trước |
-| Thiếu `.dockerignore` | Image to, có thể lọt `.env` | Tạo file |
-| Chạy bằng root | Chiếm container là chiếm nhiều quyền | `USER` |
-| `CMD` dạng shell | `SIGTERM` không tới ứng dụng | Dạng exec `["..."]` |
-| Secret qua `ARG` | Nằm trong lịch sử image | BuildKit secret |
-
-## Ghi nhớ
-
-- Thứ ít đổi đặt trước để tận dụng cache.
-- Build nhiều giai đoạn cắt image đi gần 90%.
-- `CMD` dạng exec để tín hiệu tới đúng tiến trình.
-- Secret không bao giờ đi qua `ARG`/`ENV`.
-
-## Tự kiểm tra
-
-1. Vì sao `COPY package.json` trước `COPY . .` lại làm build nhanh hơn nhiều?
-2. `CMD node server.js` và `CMD ["node","server.js"]` khác nhau ở điều gì quan trọng?
-3. Cần token riêng tư để cài package — làm sao không để nó lọt vào image?
+Ba câu để trả lời: hai thay đổi có tác động lớn nhất, theo thứ tự ưu tiên; bạn **đo** cải thiện bằng cách nào; và bạn kiểm tra bằng gì rằng image mới **không thiếu** thứ gì để chạy. Câu khó nhất: nếu sau khi tách lớp mà build vẫn chậm mỗi lần, dòng nào trong Dockerfile có thể đang **âm thầm** hỏng cache?

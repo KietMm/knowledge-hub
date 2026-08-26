@@ -4,174 +4,238 @@ slug: toi-uu-va-van-hanh-container
 summary: Giảm kích thước image, giới hạn tài nguyên, xử lý log và quét lỗ hổng.
 level: nang-cao
 tags: [docker, hieu-nang, van-hanh, bao-mat]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** đưa image từ 1GB xuống dưới 200MB, và cấu hình container chạy ổn định lâu dài.
+> **Sau bài này bạn sẽ:** biết bốn việc phải làm trước khi đưa container lên production, và lý do của từng cái.
 
-## Đo trước
+## Ý tưởng chính
 
-```bash
-docker images                        # kích thước tổng
-docker history ung-dung:1.0          # lớp nào chiếm chỗ
-dive ung-dung:1.0                    # công cụ xem chi tiết từng lớp
-```
+Container chạy được ở máy dev và container **chạy được ở production** khác nhau ở bốn điểm: kích thước, giới hạn tài nguyên, log, và bề mặt tấn công.
 
-`docker history` cho biết ngay nên tối ưu chỗ nào — thường là một lớp `RUN` cài công cụ build.
+Không cái nào trong bốn cái đó gây lỗi lúc bạn thử ở máy mình. Chúng chỉ gây lỗi khi có tải thật, và thường vào lúc bất tiện nhất.
 
-## Giảm kích thước
+## Mental model
 
-**1. Build nhiều giai đoạn** — hiệu quả nhất, đã nói ở bài Dockerfile.
+Hãy nghĩ tới **hành lý mang lên máy bay**.
 
-**2. Gộp lệnh `RUN` và dọn trong cùng lệnh:**
+> Ở nhà, bạn nhét vào vali mọi thứ "biết đâu cần" — không tốn gì cả.
+>
+> Ở sân bay, mỗi ký đều tính tiền, mỗi món đều bị soi, và mỗi món **không dùng đến** vẫn phải mang vác suốt chuyến đi.
 
-```dockerfile
-# SAI: apt cache nằm lại trong lớp trước, xoá ở lớp sau không giảm được gì
-RUN apt-get update && apt-get install -y curl
-RUN rm -rf /var/lib/apt/lists/*
+Image production cũng vậy: mỗi gói không dùng tới vẫn phải tải xuống ở mọi lần triển khai, vẫn nằm trên mọi máy chủ, và vẫn là một dòng trong báo cáo quét lỗ hổng — **kể cả khi ứng dụng của bạn không bao giờ gọi tới nó**.
 
-# ĐÚNG: dọn trong CÙNG một lớp
-RUN apt-get update \
- && apt-get install -y --no-install-recommends curl \
- && rm -rf /var/lib/apt/lists/*
-```
-
-Đây là hệ quả trực tiếp của mô hình lớp: file đã vào một lớp thì lớp sau xoá đi chỉ **che** nó, dung lượng image không giảm.
-
-**3. Chỉ cài dependency production:**
+## Ví dụ nhỏ
 
 ```dockerfile
-RUN pnpm install --prod --frozen-lockfile
+FROM node:20-alpine        # 180 MB thay vì 1.1 GB của node:20
+RUN apk add --no-cache tini
+USER node
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["node", "server.js"]
 ```
 
-**4. Dùng `standalone` output của Next.js** — nó gói đúng những module thật sự được dùng.
+## Code chạy thế nào
 
-**5. Kiểm tra image nền:** `alpine` hoặc `distroless` cho image cuối.
+**Bốn cách giảm kích thước, theo thứ tự hiệu quả:**
 
-## Giới hạn tài nguyên
+```text
+① Multi-stage build          1.2 GB → 200 MB   ← lớn nhất
+   Công cụ build không đi vào image cuối ([[viet-dockerfile]])
+
+② Đổi ảnh nền
+   node:20         1.1 GB
+   node:20-slim    ~250 MB   ← mặc định tốt
+   node:20-alpine  ~180 MB   ← nhỏ nhất, nhưng dùng musl thay glibc
+   distroless      ~120 MB   ← không có cả shell
+
+③ Chỉ cài phụ thuộc production
+   npm ci --omit=dev
+
+④ Gộp RUN và dọn cache trong CÙNG một lớp
+   RUN apt-get install ... && rm -rf /var/lib/apt/lists/*
+```
+
+Về Alpine: nó dùng **musl** thay cho **glibc**. Phần lớn ứng dụng không thấy khác biệt, nhưng các gói có mã native biên dịch sẵn (`sharp`, `bcrypt`, một số thư viện Python khoa học) có thể chậm hơn hoặc không chạy. Gặp lỗi lạ trên Alpine mà không trên slim ⇒ nghi ngay chỗ này.
+
+Distroless đi xa hơn: **không có shell, không có package manager**. Kẻ tấn công vào được cũng không có công cụ nào để dùng. Đổi lại, `docker exec ... sh` không còn dùng được để gỡ lỗi.
+
+**Giới hạn tài nguyên — vì sao bắt buộc:**
 
 ```yaml
-services:
-  app:
-    deploy:
-      resources:
-        limits:       { cpus: '1.0', memory: 512M }
-        reservations: { cpus: '0.25', memory: 256M }
+deploy:
+  resources:
+    limits: { cpus: '1.0', memory: 512M }
+    reservations: { memory: 256M }
 ```
 
-Không có giới hạn, một container rò rỉ bộ nhớ sẽ ăn hết RAM máy chủ và OOM killer sẽ giết **một tiến trình bất kỳ** — có thể là CSDL.
+```text
+Không giới hạn:
+  Một container rò rỉ bộ nhớ → ăn hết RAM máy chủ
+  → OOM killer của nhân chọn nạn nhân theo điểm số
+  → Nó thường giết CSDL (tiến trình chiếm RAM nhiều nhất)
+  ⇒ Một dịch vụ phụ làm sập dịch vụ chính.
 
-Với Node, nhớ cả giới hạn heap của V8:
+Có giới hạn:
+  Container vượt 512M → CHỈ NÓ bị giết
+  → restart: always bật lại
+  ⇒ Sự cố bị nhốt trong ranh giới của nó.
+```
+
+Đây là ý nghĩa thật của giới hạn tài nguyên: không phải để tiết kiệm, mà để **cách ly hỏng hóc**.
+
+Với ứng dụng JVM hoặc Node, nhớ cả một chi tiết: nhiều runtime đọc RAM của **máy chủ** chứ không phải giới hạn của container, rồi tự đặt heap quá lớn ⇒ bị giết ngay khi có tải. Cần khai rõ (`--max-old-space-size`, `-XX:MaxRAMPercentage`).
+
+## Cú pháp
+
+**Log: ghi ra stdout, không ghi ra file:**
+
+```text
+File log bên trong container:
+  → mất khi container bị xoá
+  → không xoay vòng ⇒ đầy đĩa
+  → không tập trung được
+
+stdout/stderr:
+  → Docker thu, chuyển tới nơi thu gom log
+  → xoay vòng được bằng cấu hình driver
+```
+
+```yaml
+logging:
+  driver: json-file
+  options: { max-size: '10m', max-file: '3' }   # tối đa 30MB mỗi container
+```
+
+Không đặt hai tuỳ chọn này là một trong những cách phổ biến nhất làm đầy đĩa máy chủ — và đĩa đầy thì gây ra đủ loại triệu chứng không liên quan ([[go-loi-tren-may-chu]]).
+
+**Healthcheck — để hệ thống biết container còn *dùng được*, không chỉ *còn sống*:**
 
 ```dockerfile
-ENV NODE_OPTIONS="--max-old-space-size=384"
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+  CMD wget -qO- http://localhost:3000/health || exit 1
 ```
 
-Đặt thấp hơn giới hạn container (384 < 512) để V8 dọn rác trước khi Docker giết container. Không có dòng này, Node tưởng mình có toàn bộ RAM máy chủ.
+`--start-period` quan trọng: nó cho ứng dụng thời gian khởi động mà không bị tính là thất bại.
 
-## Log
+**Bảo mật — bốn dòng có tác động lớn nhất:**
+
+```dockerfile
+USER node                        # ① không chạy bằng root
+```
 
 ```yaml
-services:
-  app:
-    logging:
-      driver: json-file
-      options: { max-size: "10m", max-file: "3" }
+read_only: true                  # ② hệ thống file chỉ đọc
+tmpfs: ['/tmp']                  #    (cấp chỗ ghi tạm riêng)
+cap_drop: [ALL]                  # ③ bỏ mọi đặc quyền của nhân
+security_opt: ['no-new-privileges:true']   # ④ không leo thang được
 ```
 
-Không cấu hình, log Docker tăng vô hạn cho tới khi đầy đĩa — một trong những nguyên nhân "máy chủ tự nhiên hỏng" phổ biến nhất.
+`read_only: true` mạnh hơn vẻ ngoài của nó: kẻ tấn công chạy được mã cũng không **ghi** được gì vào hệ thống file, nên không cài được backdoor tồn tại lâu.
 
-Nguyên tắc: ứng dụng trong container ghi log ra **stdout/stderr**, không ghi vào file. Việc thu thập, xoay vòng và lưu trữ là của nền tảng.
-
-## Healthcheck và tự phục hồi
-
-```yaml
-services:
-  app:
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
-      interval: 30s
-      timeout: 3s
-      start_period: 20s
-      retries: 3
-```
-
-`start_period` là khoảng thời gian khởi động mà healthcheck thất bại **không** bị tính — thiếu nó, ứng dụng khởi động chậm sẽ bị giết trong vòng lặp vô tận.
-
-Endpoint health nên kiểm tra cả phụ thuộc quan trọng:
-
-```ts
-export async function GET() {
-  try {
-    await db.$queryRaw`SELECT 1`
-    return Response.json({ ok: true })
-  } catch {
-    return Response.json({ ok: false }, { status: 503 })
-  }
-}
-```
-
-## Bảo mật khi chạy
-
-```yaml
-services:
-  app:
-    user: "1001:1001"
-    read_only: true                  # hệ thống file chỉ đọc
-    tmpfs: ["/tmp"]                  # trừ /tmp
-    cap_drop: [ALL]                  # bỏ mọi đặc quyền nhân
-    security_opt: ["no-new-privileges:true"]
-```
-
-`read_only: true` là biện pháp mạnh và rẻ: kẻ tấn công vào được container cũng không ghi được webshell hay sửa mã nguồn.
+**Quét lỗ hổng, đưa vào CI:**
 
 ```bash
-docker scout cves ung-dung:1.0
-trivy image --severity HIGH,CRITICAL ung-dung:1.0
+docker scout cves my-app:1.4.2
+trivy image my-app:1.4.2 --severity HIGH,CRITICAL
 ```
 
-Đưa việc quét vào CI và cho fail khi có lỗ hổng mức cao.
+Phần lớn CVE trong image đến từ **ảnh nền**, không phải mã của bạn — nên cập nhật ảnh nền định kỳ là hành động có hiệu quả cao nhất ([[secret-va-quyen-trong-ci]]).
 
-## Build đa kiến trúc
+## Tại sao cần nó
 
-```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t ung-dung:1.0 --push .
+Vì `tini` giải quyết một vấn đề âm thầm mà ai cũng gặp:
+
+```text
+PID 1 trong Linux có trách nhiệm ĐẶC BIỆT: thu dọn tiến trình con mồ côi.
+Ứng dụng của bạn (node, python) KHÔNG được viết để làm việc đó.
+
+⇒ Tiến trình zombie tích tụ.
+⇒ Và PID 1 không xử lý tín hiệu theo mặc định
+  ⇒ SIGTERM bị bỏ qua ⇒ docker stop đợi 10s rồi SIGKILL mỗi lần.
 ```
 
-Cần khi máy dev là Mac Apple Silicon (arm64) còn máy chủ là amd64. Không có bước này, image build trên Mac sẽ không chạy trên máy chủ — hoặc chạy qua giả lập, chậm hơn nhiều lần.
+`tini` là một init tí hon đứng làm PID 1, chuyển tín hiệu xuống và thu dọn zombie. Cách dùng nhanh nhất: `docker run --init`.
 
-## Checklist trước khi đưa lên production
+Đặt cạnh nhau, đây là danh sách trước khi lên production:
 
-- [ ] Build nhiều giai đoạn, image dưới 300MB
-- [ ] `USER` không phải root
-- [ ] Ghim phiên bản image nền (tốt nhất là theo digest)
-- [ ] Giới hạn CPU và bộ nhớ; `NODE_OPTIONS` khớp
-- [ ] Healthcheck có `start_period`
-- [ ] `restart: unless-stopped`
-- [ ] Giới hạn dung lượng log
-- [ ] Xử lý `SIGTERM` để dừng tử tế
-- [ ] Không có secret trong image (`docker history` để kiểm tra)
-- [ ] Đã quét lỗ hổng
+```text
+□ Multi-stage, ảnh nền slim/alpine, cố định phiên bản
+□ USER không phải root
+□ Giới hạn CPU và RAM
+□ restart: always
+□ Log ra stdout, có max-size và max-file
+□ HEALTHCHECK có start-period
+□ read_only + cap_drop ALL
+□ Quét CVE trong CI
+□ Xử lý SIGTERM (hoặc dùng --init)
+□ Không secret trong image
+```
 
-## Lỗi hay gặp
+## So sánh
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Dọn cache ở lớp khác | Image không nhỏ đi | Dọn trong cùng `RUN` |
-| Không giới hạn log | Đầy đĩa máy chủ | `max-size` + `max-file` |
-| Không đặt `NODE_OPTIONS` | Node bị OOM kill bất ngờ | Đặt thấp hơn giới hạn container |
-| Healthcheck không có `start_period` | Container bị giết lúc khởi động | Thêm `start_period` |
-| Build trên Mac M-series cho máy chủ x86 | Image không chạy được | `buildx --platform` |
+| Ảnh nền | Kích thước | Có shell | Ghi chú |
+|---|---|---|---|
+| `node:20` | ~1.1 GB | ✅ | chỉ dùng cho giai đoạn build |
+| `node:20-slim` | ~250 MB | ✅ | mặc định tốt, glibc |
+| `node:20-alpine` | ~180 MB | ✅ | musl — cẩn thận với gói native |
+| `distroless` | ~120 MB | ❌ | an toàn nhất, khó gỡ lỗi nhất |
 
-## Ghi nhớ
+## Dễ nhầm
 
-- Xoá file ở lớp sau không giảm dung lượng — phải dọn trong cùng lớp.
-- Giới hạn bộ nhớ container **và** heap của runtime.
-- Log ra stdout, giới hạn dung lượng ở tầng Docker.
-- `read_only` + `cap_drop: ALL` là hai dòng tăng an toàn đáng kể.
+**1. Không giới hạn tài nguyên.** Một container kéo sập cả máy chủ.
 
-## Tự kiểm tra
+**2. Ghi log ra file bên trong container.** Mất log, và đầy đĩa.
 
-1. Vì sao `RUN rm -rf /var/lib/apt/lists/*` ở lớp riêng không giảm kích thước image?
-2. Đặt `--max-old-space-size` thế nào cho container giới hạn 1GB? Vì sao?
-3. Nêu ba biện pháp làm container an toàn hơn lúc chạy.
+**3. Không đặt `max-size` cho log.** Đầy đĩa kiểu khác.
+
+**4. Chạy bằng root.** Thoát container thành chiếm máy.
+
+**5. Không xử lý SIGTERM và không dùng `--init`.** Mỗi lần deploy cắt ngang request.
+
+**6. Đổi sang Alpine mà không kiểm thử.** Gói native có thể hỏng.
+
+**7. Runtime tự đặt heap theo RAM máy chủ** thay vì theo giới hạn container.
+
+**8. `HEALTHCHECK` không có `start-period`.** Container bị coi là hỏng khi mới khởi động.
+
+**9. Không bao giờ cập nhật ảnh nền.** CVE tích tụ dù mã của bạn không đổi.
+
+**10. Đưa secret vào image bằng `ENV`.** `docker history` đọc được.
+
+## Mẹo nhớ
+
+> **Giới hạn tài nguyên không để tiết kiệm — để NHỐT hỏng hóc lại một chỗ.**
+>
+> **Log ra stdout, và luôn đặt `max-size`.**
+>
+> **PID 1 phải chuyển được tín hiệu: xử lý SIGTERM hoặc dùng `--init`.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Bốn cách giảm kích thước image, cái nào hiệu quả nhất?
+2. Điều gì xảy ra khi một container không giới hạn RAM bị rò rỉ bộ nhớ?
+3. Vì sao log phải ra stdout thay vì file?
+4. `tini` (hoặc `--init`) giải quyết hai vấn đề gì?
+5. Alpine đánh đổi điều gì để nhỏ hơn?
+
+## Tự viết lại
+
+Không nhìn lại, viết cấu hình production cho một dịch vụ Node, gồm:
+
+```text
+① Dockerfile: multi-stage, ảnh nền nhỏ, user không phải root
+② compose: giới hạn tài nguyên, restart, log có giới hạn
+③ healthcheck
+④ hai tuỳ chọn bảo mật
+```
+
+Tự kiểm: nếu ứng dụng của bạn cần ghi file tạm, `read_only: true` có làm nó hỏng không — và bạn xử lý thế nào?
+
+## Thử sức
+
+Production sập lúc 2 giờ sáng. Nguyên nhân: một container xử lý ảnh rò rỉ bộ nhớ, ăn hết RAM, và **OOM killer giết Postgres**.
+
+Ba câu để trả lời: **một dòng cấu hình** nào đã ngăn được toàn bộ chuyện này; ba biện pháp khác bạn thêm vào; và bạn phát hiện vấn đề **sớm hơn** bằng cách nào. Câu khó nhất: sau khi giới hạn RAM cho container đó, nó sẽ bị giết và khởi động lại liên tục — vì sao đó **vẫn tốt hơn** hiện trạng, và bạn làm gì tiếp theo?

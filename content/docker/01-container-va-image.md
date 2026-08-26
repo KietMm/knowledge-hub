@@ -4,124 +4,198 @@ slug: container-va-image
 summary: Container không phải máy ảo — hiểu điều đó giải thích vì sao nó nhẹ, nhanh và có những giới hạn gì.
 level: co-ban
 tags: [docker, container, co-ban]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** phân biệt image với container, và chạy được một ứng dụng trong container mà không phải sao chép lệnh từ đâu đó.
+> **Sau bài này bạn sẽ:** giải thích được image khác container thế nào, và vì sao container khởi động trong một giây còn máy ảo mất một phút.
 
-## Container khác máy ảo thế nào
+## Ý tưởng chính
 
-| | Máy ảo | Container |
+**Image** là bản đóng gói bất biến: mã nguồn, thư viện, hệ điều hành tối giản. Nó nằm yên, không chạy.
+
+**Container** là một image **đang chạy**. Một image sinh ra được nhiều container cùng lúc, mỗi cái độc lập.
+
+Quan hệ đó giống hệt quan hệ giữa **class và object**, hoặc giữa file `.exe` và tiến trình.
+
+## Mental model
+
+Hãy nghĩ tới **máy ảo là căn nhà riêng, container là căn hộ chung cư**.
+
+> **Máy ảo**: mỗi cái tự có móng, tường chịu lực, hệ thống điện nước riêng — tức là **một hệ điều hành hoàn chỉnh** với nhân riêng. Xây tốn thời gian, chiếm nhiều đất.
+>
+> **Container**: các căn hộ **dùng chung móng và khung nhà** — dùng chung nhân của máy chủ. Mỗi căn có cửa riêng, khoá riêng, không nhìn thấy nhau. Nhưng nếu khung nhà rung thì mọi căn cùng rung.
+
+Từ hình ảnh này suy ra được gần hết đặc tính của container: nhẹ vì không dựng lại khung; khởi động nhanh vì chỉ mở cửa chứ không xây; và **không chạy được container Linux trên nhân Windows** — vì khung nhà không tương thích.
+
+## Ví dụ nhỏ
+
+```bash
+docker run -d -p 8080:80 --name web nginx:1.27
+# -d      chạy nền
+# -p 8080:80   cổng 8080 của máy → cổng 80 trong container
+# nginx:1.27   image:tag
+```
+
+## Code chạy thế nào
+
+**Chuyện gì xảy ra khi bạn gõ `docker run nginx`:**
+
+```text
+① Có image nginx trên máy chưa?
+   Chưa → tải từ registry (Docker Hub), TỪNG LỚP một
+② Tạo một lớp ghi mới, mỏng, đặt lên trên các lớp của image
+③ Cấp namespace riêng: tiến trình, mạng, filesystem
+④ Đặt giới hạn tài nguyên bằng cgroup
+⑤ Chạy lệnh khai trong CMD/ENTRYPOINT
+   → Tiến trình này là PID 1 bên trong container
+⑥ PID 1 kết thúc ⇒ CONTAINER DỪNG
+```
+
+Bước ⑥ giải thích một hiểu lầm phổ biến: container không "chạy mãi", nó sống đúng bằng vòng đời của tiến trình chính. `docker run ubuntu` thoát ngay lập tức vì bash không có gì để làm.
+
+**Vì sao container nhẹ và nhanh — so sánh trực tiếp:**
+
+```text
+MÁY ẢO                          CONTAINER
+────────────────────────────────────────────────────
+Nhân riêng (~vài trăm MB)       Dùng chung nhân máy chủ
+Khởi động: 30–60 giây           Khởi động: < 1 giây
+Ảnh đĩa: GB                     Image: chục–trăm MB
+Cách ly: phần cứng ảo (mạnh)    Cách ly: namespace (yếu hơn)
+```
+
+Dòng cuối là cái giá phải trả: cách ly bằng namespace là **cách ly ở tầng nhân**, không phải phần cứng. Một lỗ hổng thoát container ảnh hưởng tới máy chủ theo cách mà lỗ hổng trong máy ảo không làm được.
+
+**Hệ thống lớp — vì sao image chia sẻ được với nhau:**
+
+```text
+image A: node:20 → npm install → mã của tôi
+image B: node:20 → npm install → mã khác
+
+Hai lớp đầu GIỐNG NHAU ⇒ lưu MỘT lần trên đĩa,
+tải MỘT lần từ registry.
+```
+
+Mỗi lớp là bất biến và được định danh bằng hash nội dung. Đó là nền tảng của toàn bộ chuyện cache khi build ([[viet-dockerfile]]).
+
+## Cú pháp
+
+```bash
+docker ps                  # container đang chạy
+docker ps -a               # cả những cái đã dừng
+docker images              # image trên máy
+
+docker logs -f web         # xem log
+docker exec -it web sh     # mở shell BÊN TRONG container đang chạy
+docker stop web            # SIGTERM, đợi 10s, rồi SIGKILL
+docker rm web              # xoá container đã dừng
+
+docker system df           # Docker đang chiếm bao nhiêu đĩa
+docker system prune -a     # dọn — CẨN THẬN: xoá cả image không dùng
+```
+
+`docker exec -it <tên> sh` là lệnh gỡ lỗi quan trọng nhất: nó đưa bạn vào **bên trong** để nhìn tận mắt biến môi trường, file cấu hình, và những gì thực sự có ở đó.
+
+**Tag — chỗ sai lặng lẽ nhất:**
+
+```bash
+docker run nginx           # ngầm hiểu là nginx:latest
+docker run nginx:latest    # KHÔNG phải phiên bản cố định!
+docker run nginx:1.27.2    # ✅ cố định, tái lập được
+```
+
+`latest` chỉ là một cái tên tag, không có nghĩa "mới nhất" theo cách đáng tin: nó trỏ tới bất cứ đâu người phát hành muốn, và **đổi theo thời gian**. Cùng một Dockerfile build hôm nay và tháng sau cho ra hai thứ khác nhau.
+
+## Tại sao cần nó
+
+Vì nó giải quyết đúng một câu nói: *"chạy được trên máy tôi mà"*.
+
+```text
+Không container:  cài Node 20, Postgres 16, Redis, đúng phiên bản,
+                  đúng biến môi trường... trên MỖI máy.
+                  Lệch một chút ⇒ lỗi chỉ xảy ra ở một nơi.
+
+Có container:     `docker compose up` — cùng một image,
+                  chạy giống hệt nhau ở mọi nơi.
+```
+
+Và điều đó có giá trị lớn nhất **ở chỗ khác biệt lớn nhất**: giữa laptop của bạn và máy chủ production.
+
+**Container là phù du — đây là điều phải nhớ:**
+
+```text
+Container bị xoá ⇒ mọi thứ ghi bên trong nó BIẾN MẤT.
+
+⇒ Dữ liệu phải nằm ngoài: volume hoặc CSDL.
+⇒ Log phải ra stdout, không ghi vào file bên trong.
+⇒ Không "sửa nóng" bên trong container đang chạy —
+  lần deploy sau là mất.
+```
+
+Đây không phải hạn chế mà là **thiết kế**: container dùng một lần rồi vứt là điều làm cho việc mở rộng và quay lui trở nên đơn giản ([[volume-va-du-lieu]]).
+
+## So sánh
+
+| | Image | Container |
 |---|---|---|
-| Ảo hoá | Cả phần cứng | Chỉ tiến trình |
-| Nhân hệ điều hành | Riêng cho mỗi VM | **Dùng chung** với máy chủ |
-| Kích thước | Vài GB | Vài chục MB |
-| Khởi động | Vài chục giây | Chưa tới một giây |
-| Cô lập | Rất mạnh | Ở mức tiến trình |
+| Bản chất | bản đóng gói bất biến | một lần chạy của image |
+| Tương tự | class, file `.exe` | object, tiến trình |
+| Số lượng | 1 image | → nhiều container |
+| Thay đổi khi chạy | không | có (ở lớp ghi mỏng, và **mất khi xoá**) |
 
-Container thực chất chỉ là một **tiến trình Linux thường** được cô lập bằng hai cơ chế của nhân: `namespace` (thấy hệ thống file, mạng, danh sách tiến trình riêng) và `cgroup` (giới hạn CPU, bộ nhớ).
+## Dễ nhầm
 
-Hai hệ quả quan trọng của việc dùng chung nhân:
+**1. Coi container là máy ảo nhỏ.** Nó là **tiến trình bị cách ly**, không phải máy.
 
-1. Container Linux **không chạy được** trên nhân Windows/macOS — Docker Desktop chạy một máy ảo Linux ẩn bên dưới.
-2. Cô lập yếu hơn máy ảo. Với workload không tin cậy (chạy code người lạ), cần thêm lớp như gVisor hoặc microVM.
+**2. Dùng tag `latest`.** Không tái lập được, và hỏng vào lúc bạn ít ngờ nhất.
 
-## Image và container
+**3. Ghi dữ liệu vào bên trong container.** Mất khi xoá.
 
-- **Image** — bản mẫu chỉ đọc, gồm nhiều lớp xếp chồng. Giống một class.
-- **Container** — một lần chạy của image, có thêm lớp ghi ở trên cùng. Giống một instance.
+**4. Cài thêm gói bằng `docker exec` rồi coi là xong.** Lần deploy sau biến mất — phải sửa Dockerfile.
 
-Từ một image tạo được nhiều container, mỗi cái có lớp ghi riêng.
+**5. Tưởng container tự chạy mãi.** Nó sống bằng vòng đời của PID 1.
 
-**Container là phù du.** Xoá container là mất mọi thứ ghi trong lớp ghi của nó. Dữ liệu cần giữ phải nằm ở volume — đây là hiểu lầm số một của người mới.
+**6. Quên `-p` rồi ngạc nhiên vì không truy cập được.** Cổng không tự mở ra ngoài.
 
-## Các lệnh cần thiết
+**7. Tin rằng container an toàn như máy ảo.** Cách ly yếu hơn — chung nhân.
 
-```bash
-# Image
-docker pull node:22-alpine
-docker images
-docker build -t ung-dung:1.0 .
-docker rmi ung-dung:1.0
+**8. Container Linux chạy trên nhân Windows.** Không được; Docker Desktop lặng lẽ dựng một máy ảo Linux để làm việc đó.
 
-# Container
-docker run -d --name web -p 3000:3000 ung-dung:1.0
-docker ps                 # đang chạy
-docker ps -a              # cả đã dừng
-docker logs -f web
-docker exec -it web sh    # mở shell bên trong
-docker stop web && docker rm web
+**9. `docker system prune -a` bừa.** Xoá cả image bạn còn cần và phải tải lại.
 
-# Dọn dẹp
-docker system df          # đang chiếm bao nhiêu dung lượng
-docker system prune -a    # xoá mọi thứ không dùng — cẩn thận
+## Mẹo nhớ
+
+> **Image là class, container là object.**
+>
+> **Container = tiến trình bị cách ly, dùng CHUNG nhân — nên nhẹ và nhanh.**
+>
+> **Container là phù du: dữ liệu phải nằm ngoài nó.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Image khác container ở điểm nào? Một phép so sánh từ lập trình?
+2. Vì sao container khởi động dưới 1 giây còn máy ảo mất cả phút?
+3. Container dừng khi nào?
+4. Vì sao `latest` không phải phiên bản cố định?
+5. Điều gì xảy ra với dữ liệu ghi bên trong container khi nó bị xoá?
+
+## Tự viết lại
+
+Không nhìn lại, viết lệnh cho từng việc:
+
+```text
+① Chạy Postgres 16 ở nền, cổng 5432, đặt mật khẩu qua biến môi trường
+② Xem log của nó, theo dõi liên tục
+③ Mở shell psql bên trong container đó
+④ Dừng và xoá nó
 ```
 
-`docker exec -it <ten> sh` là lệnh dùng nhiều nhất khi gỡ lỗi: nó cho bạn vào bên trong xem file và biến môi trường thật sự là gì.
+Tự kiểm: sau bước ④, dữ liệu trong CSDL còn không? Nếu bạn muốn nó còn thì phải thêm gì ở bước ①?
 
-## Các cờ của `docker run`
+## Thử sức
 
-```bash
-docker run \
-  -d                              `# chạy nền` \
-  --name web                      `# đặt tên, dễ thao tác sau này` \
-  -p 3000:3000                    `# cổng máy chủ : cổng container` \
-  -e NODE_ENV=production          `# biến môi trường` \
-  --env-file .env                 `# nhiều biến từ file` \
-  -v du-lieu:/app/data            `# volume` \
-  --restart unless-stopped        `# tự chạy lại` \
-  --memory 512m --cpus 1          `# giới hạn tài nguyên` \
-  ung-dung:1.0
-```
+Đồng nghiệp báo: *"Container chạy được, `docker ps` thấy nó, nhưng mở `localhost:3000` thì không có gì."*
 
-Thứ tự `-p` là **cổng-ngoài:cổng-trong**. Nhớ sai thứ tự là lỗi phổ biến nhất khi mới học.
-
-`--restart unless-stopped` cần cho production: container chết là tự lên lại, và máy chủ khởi động lại cũng vậy.
-
-Luôn đặt `--memory`: không có nó, một container rò rỉ bộ nhớ sẽ kéo sập cả máy chủ.
-
-## Vòng đời
-
-```
-created → running → paused → stopped → removed
-```
-
-`docker stop` gửi `SIGTERM`, chờ 10 giây rồi mới `SIGKILL`. Ứng dụng phải bắt `SIGTERM` để đóng kết nối tử tế — nếu không, mỗi lần triển khai là một số request bị cắt giữa chừng.
-
-## Tag: đừng dùng `latest`
-
-```bash
-docker pull node:22.11.0-alpine3.20    # cụ thể — dựng lại được y hệt
-docker pull node:22-alpine             # chấp nhận được
-docker pull node:latest                # nguy hiểm: hôm nay khác hôm qua
-```
-
-`latest` không có nghĩa là "mới nhất" — nó chỉ là tag mặc định. Dùng nó nghĩa là build của bạn không tái lập được, và CI có thể hỏng vì một thay đổi bạn không hề biết.
-
-Trong production, ghim theo digest để chắc chắn tuyệt đối:
-
-```dockerfile
-FROM node:22-alpine@sha256:abc123...
-```
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Lưu dữ liệu trong container | Xoá container là mất sạch | Dùng volume |
-| `-p 3000:80` nhầm thứ tự | Không truy cập được | Ngoài:trong |
-| Dùng tag `latest` | Build không tái lập được | Ghim phiên bản |
-| Không giới hạn bộ nhớ | Một container kéo sập máy chủ | `--memory` |
-| Không xử lý `SIGTERM` | Request bị cắt khi triển khai | Đóng máy chủ tử tế |
-
-## Ghi nhớ
-
-- Container là tiến trình cô lập, dùng chung nhân với máy chủ.
-- Image là bản mẫu, container là một lần chạy — và nó phù du.
-- Dữ liệu cần giữ luôn nằm ở volume.
-- Ghim phiên bản image; `latest` không tái lập được.
-
-## Tự kiểm tra
-
-1. Vì sao container khởi động nhanh hơn máy ảo rất nhiều?
-2. `docker run -p 8080:3000` — ứng dụng bên trong nghe cổng nào, truy cập từ ngoài bằng cổng nào?
-3. Điều gì xảy ra với dữ liệu khi `docker rm` một container CSDL không có volume?
+Ba câu để trả lời: liệt kê **ba nguyên nhân** khác nhau có thể gây ra điều này; với mỗi nguyên nhân, **một lệnh** để xác nhận; và bạn kiểm tra theo thứ tự nào. Câu khó nhất: nếu ứng dụng bên trong lắng nghe ở `127.0.0.1:3000` thay vì `0.0.0.0:3000`, vì sao `-p 3000:3000` vẫn không cứu được?
