@@ -1,157 +1,215 @@
 ---
-title: Thiết kế: lồng nhau hay tham chiếu
+title: "Thiết kế: lồng nhau hay tham chiếu"
 slug: thiet-ke-lang-nhau-hay-tham-chieu
 summary: Quy tắc chọn giữa lồng dữ liệu và tham chiếu, cách nhân bản dữ liệu có kiểm soát, $lookup, và các mẫu phản diện thường gặp.
 level: trung-cap
 tags: [mongodb, thiet-ke, mo-hinh-du-lieu]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** quyết định được từng quan hệ nên lồng hay tham chiếu dựa trên truy vấn thật, và biết khi nào nhân bản dữ liệu là thiết kế đúng chứ không phải cẩu thả.
+> **Sau bài này bạn sẽ:** quyết định từng quan hệ nên lồng hay tham chiếu bằng bốn câu hỏi, và biết khi nào nhân bản dữ liệu là **thiết kế đúng** chứ không phải cẩu thả.
 
-## Đảo ngược thứ tự thiết kế
+## Ý tưởng chính
 
-Với CSDL quan hệ, bạn mô hình hoá thực thể trước, viết truy vấn sau — chuẩn hoá bảo vệ bạn, JOIN lo phần còn lại (xem [[chuan-hoa-va-khi-nao-pha-vo]]).
+Với cơ sở dữ liệu quan hệ, bạn mô hình hoá thực thể trước, viết truy vấn sau — chuẩn hoá bảo vệ bạn, JOIN lo phần còn lại ([[chuan-hoa-va-khi-nao-pha-vo]]).
 
-Với MongoDB, thứ tự **ngược lại**: bắt đầu từ *các truy vấn hệ thống sẽ chạy nhiều nhất*, rồi thiết kế document sao cho mỗi truy vấn đó đọc càng ít document càng tốt. Đây không phải phong cách — nó là hệ quả trực tiếp của việc Mongo không có JOIN rẻ.
+Với MongoDB, **thứ tự ngược lại**: bắt đầu từ *các truy vấn hệ thống sẽ chạy nhiều nhất*, rồi thiết kế document sao cho mỗi truy vấn đó đọc càng ít document càng tốt.
 
-Nên câu hỏi đầu tiên luôn là: **"trang nào của ứng dụng đọc dữ liệu này, và nó cần gì trong một lần đọc?"**
+Đây không phải phong cách — nó là hệ quả trực tiếp của việc Mongo **không có JOIN rẻ**.
 
-## Quy tắc quyết định
+## Mental model
 
-Với mỗi quan hệ, chạy qua bốn câu hỏi:
+Hãy nghĩ tới **đóng gói hành lý cho một chuyến đi**.
 
-**1. Nó có được đọc cùng nhau không?** Trang chi tiết đơn hàng luôn cần các dòng đơn hàng ⇒ lồng. Trang đơn hàng gần như không bao giờ cần toàn bộ lịch sử mua của khách ⇒ tham chiếu.
+> Thứ bạn dùng **cùng lúc** thì để chung một túi: bàn chải, kem đánh răng, khăn mặt — mở túi ra là đủ.
+>
+> Thứ **dùng riêng, hoặc quá nhiều** thì để riêng: bạn không nhét cả tủ quần áo vào túi đồ vệ sinh, dù cả hai đều là "đồ của bạn".
+>
+> Và có thứ bạn **cố ý mang hai bản**: bản sao hộ chiếu để trong ví, bản gốc trong két. Không phải vì bất cẩn — vì **hai bản phục vụ hai mục đích khác nhau**.
 
-**2. Phía "nhiều" có trần không?** Đơn hàng có 1–50 dòng ⇒ lồng an toàn. Người dùng có số bài viết không giới hạn ⇒ tham chiếu (nhắc lại bài [[document-collection-va-kieu-bson]]: mảng vô hạn là bẫy).
+Câu cuối chính là "nhân bản có kiểm soát", và nó là phần khó chấp nhận nhất với người quen SQL.
 
-**3. Nó có được truy cập độc lập không?** Nếu có trang riêng cho từng bình luận, hoặc bình luận cần phân trang, thì nó là thực thể riêng ⇒ collection riêng.
+## Ví dụ nhỏ
 
-**4. Nó thay đổi thường xuyên hơn phần bao ngoài không?** Tồn kho đổi từng phút trong khi thông tin sản phẩm đổi từng tháng ⇒ tách, để lần ghi tồn kho không phải viết lại cả document sản phẩm.
+```js
+// Lồng: dòng đơn hàng luôn đọc cùng đơn, có trần (1-50 dòng)
+{ _id: ..., ma_don: "DH-42", dong: [ { sku: "AO-XL", so_luong: 2 } ] }
 
-Dạng bảng, để dán vào tài liệu thiết kế:
+// Tham chiếu: bài viết của một tác giả — không trần, có trang riêng
+{ _id: ..., tieu_de: "...", tac_gia_id: ObjectId("...") }
+```
+
+## Code chạy thế nào
+
+**Bốn câu hỏi**, chạy qua cho từng quan hệ:
+
+```text
+① Nó có được ĐỌC CÙNG NHAU không?
+   Trang chi tiết đơn luôn cần các dòng đơn        ⇒ LỒNG
+   Trang đơn không cần toàn bộ lịch sử mua của khách ⇒ THAM CHIẾU
+
+② Phía "nhiều" có TRẦN không?
+   Đơn có 1-50 dòng          ⇒ LỒNG an toàn
+   Người dùng có vô hạn bài  ⇒ THAM CHIẾU
+
+③ Nó có được TRUY CẬP ĐỘC LẬP không?
+   Bình luận có trang riêng, cần phân trang ⇒ collection riêng
+
+④ Nó có ĐỔI THƯỜNG XUYÊN HƠN phần bao ngoài không?
+   Tồn kho đổi từng phút, thông tin sản phẩm đổi từng tháng ⇒ TÁCH
+   (để lần ghi tồn kho không phải viết lại cả document sản phẩm)
+```
+
+Câu ④ là câu ít người nghĩ tới nhưng ảnh hưởng hiệu năng nhiều nhất — nhắc lại điều đã nói ở [[document-collection-va-kieu-bson]]: **mỗi lần cập nhật là ghi lại cả document**.
+
+## Cú pháp
+
+**Nhân bản có kiểm soát** — có **hai loại**, và phân biệt chúng là mấu chốt:
+
+```js
+// Loại ① — BẢN CHỤP LỊCH SỬ: bắt buộc, không phải tối ưu
+{
+  ma_don: "DH-42",
+  khach: { id: ObjectId("..."), ten: "Trần Minh", sdt: "0901234567" },
+  dong: [{ sku: "AO-XL", ten: "Áo thun đen XL", gia: 199000, so_luong: 2 }],
+}
+```
+
+Ở đây nhân bản **đúng về nghiệp vụ**: hoá đơn phải giữ tên và giá *tại thời điểm mua*. Tra sang bảng sản phẩm để lấy giá hiện tại sẽ làm hoá đơn tháng trước đổi số khi bạn tăng giá. Cả hệ SQL nghiêm túc cũng làm thế.
+
+```js
+// Loại ② — CACHE CHO TỐC ĐỘ: cần đồng bộ, có thể lệch
+{ tieu_de: "...", tac_gia: { id: ObjectId("..."), ten: "Trần Minh" } }
+```
+
+Với loại ②, phải trả lời trước: **lệch bao lâu thì chấp nhận được?** Ba lựa chọn, theo thứ tự nên thử:
+
+```text
+① KHÔNG nhân bản — đọc thêm một truy vấn theo danh sách id
+   find({ _id: { $in: ids } }) cho 20 bài viết gần như miễn phí, và LUÔN ĐÚNG
+   ⇒ đây là mặc định nên chọn
+
+② Nhân bản, cập nhật LƯỜI — chấp nhận lệch, job đêm đồng bộ lại
+   chỉ cho dữ liệu hiển thị mà lệch không gây hại
+
+③ Nhân bản, cập nhật NGAY — đổi tên thì updateMany mọi bản nhúng
+   chỉ đúng khi số bản nhúng nhỏ và có trần
+```
+
+**Nguyên tắc:** nhân bản để *nhanh hơn* là **tối ưu**, và tối ưu cần số đo trước. Nhân bản vì *nghiệp vụ cần bản chụp* thì làm ngay từ đầu.
+
+## Tại sao cần nó
+
+Vì `$lookup` **không phải JOIN của SQL**, và hiểu nhầm điều đó dẫn tới thiết kế sai:
+
+```js
+db.don_hang.aggregate([
+  { $match: { trang_thai: "moi" } },      // ← LỌC TRƯỚC
+  { $lookup: { from: "khach_hang", localField: "khach.id", foreignField: "_id", as: "kh" } },
+  { $unwind: "$kh" },
+])
+```
+
+```text
+Ba điều phải biết:
+
+① Về bản chất là MỘT TRUY VẤN vào collection kia CHO MỖI document đi vào
+   ⇒ foreignField BẮT BUỘC phải có index, nếu không đây là vòng lặp quét toàn bộ
+
+② Chạy tốt khi số document đi vào NHỎ (sau $match và $limit)
+   Đặt $lookup trước khi lọc là lỗi hiệu năng phổ biến nhất ([[aggregation-pipeline]])
+
+③ Cần $lookup ở MỌI truy vấn chính = tín hiệu dữ liệu này vốn quan hệ
+   ⇒ có lẽ nó nên nằm ở CSDL quan hệ
+```
+
+## So sánh
 
 | Tình huống | Chọn |
 |---|---|
 | 1–1, luôn đọc cùng nhau (địa chỉ của khách) | Lồng |
-| 1–ít, có trần, đọc cùng nhau (dòng đơn hàng, biến thể) | Lồng |
+| 1–ít, có trần, đọc cùng nhau (dòng đơn, biến thể) | Lồng |
 | 1–nhiều không trần (bài viết, log, giao dịch) | Tham chiếu |
 | Nhiều–nhiều (sản phẩm ↔ danh mục) | Tham chiếu bằng mảng id |
-| Thực thể có trang riêng, cần phân trang | Tham chiếu |
-| Cần sửa một chỗ và thấy ở mọi nơi | Tham chiếu |
+| Có trang riêng, cần phân trang | Tham chiếu |
+| Sửa một chỗ, thấy ở mọi nơi | Tham chiếu |
 | Đọc rất nhiều, gần như không đổi | Lồng, hoặc nhân bản |
 
-## Nhân bản dữ liệu có kiểm soát
-
-Đây là chỗ khó chấp nhận nhất với người quen SQL, và cũng là chỗ Mongo thật sự khác: **sao chép một ít dữ liệu vào nơi cần đọc là thiết kế đúng, nếu bạn làm có ý thức.**
+**Ví dụ hoàn chỉnh — blog:**
 
 ```js
-// don_hang: giữ bản chụp thông tin khách và giá tại thời điểm mua
+// bai_viet
 {
-  _id: ObjectId("..."),
-  khach: {
-    id: ObjectId("6620ff..."),      // vẫn giữ tham chiếu để tra nguồn
-    ten: "Trần Minh",               // bản chụp, không đồng bộ về sau
-    sdt: "0901234567",
-  },
-  dong: [{ sku: "AO-XL-DEN", ten: "Áo thun đen XL", gia: 199000, so_luong: 2 }],
-}
-```
-
-Ở đây nhân bản không chỉ để nhanh — nó **đúng về nghiệp vụ**. Hoá đơn phải giữ tên và giá *tại thời điểm mua*. Nếu JOIN sang bảng sản phẩm để lấy giá hiện tại, hoá đơn tháng trước sẽ đổi số khi bạn tăng giá. Loại nhân bản này gọi là *bản chụp lịch sử*, và cả hệ thống SQL nghiêm túc cũng làm thế.
-
-Phân biệt với loại nhân bản thứ hai — **cache cho tốc độ** — cần đồng bộ:
-
-```js
-// bai_viet: nhúng tên tác giả để trang danh sách không phải đọc thêm collection
-{ _id: ..., tieu_de: "...", tac_gia: { id: ObjectId("..."), ten: "Trần Minh" } }
-```
-
-Khi người dùng đổi tên, các bản nhúng lệch. Trước khi chọn cách này, hãy trả lời: **lệch bao lâu thì chấp nhận được?** Ba lựa chọn, theo thứ tự nên thử:
-
-1. **Không nhân bản** — `$lookup` khi cần, hoặc đọc thêm một truy vấn theo danh sách id. Với danh sách 20 bài viết, một truy vấn `find({ _id: { $in: ids } })` gần như miễn phí và luôn đúng. **Đây là mặc định nên chọn.**
-2. **Nhân bản, cập nhật lười** — chấp nhận lệch, đồng bộ bằng job định kỳ. Chỉ dùng cho dữ liệu hiển thị mà lệch không gây hại.
-3. **Nhân bản, cập nhật ngay** — khi đổi tên thì `updateMany` mọi bản nhúng. Chỉ đúng khi số bản nhúng nhỏ và có trần.
-
-Nguyên tắc: nhân bản để *nhanh hơn* là tối ưu, và tối ưu cần số đo trước. Nhân bản vì *nghiệp vụ cần bản chụp* thì làm ngay từ đầu.
-
-## `$lookup`: JOIN của Mongo
-
-`$lookup` trong aggregation pipeline làm được việc của LEFT JOIN:
-
-```js
-db.don_hang.aggregate([
-  { $match: { trang_thai: "moi" } },
-  { $lookup: {
-      from: "khach_hang",
-      localField: "khach.id",
-      foreignField: "_id",
-      as: "khach_day_du",
-  } },
-  { $unwind: "$khach_day_du" },
-])
-```
-
-Ba điều cần biết trước khi dùng nó thay cho thiết kế:
-
-- Nó **không nhanh như JOIN của CSDL quan hệ**. Về bản chất là một truy vấn vào `khach_hang` cho mỗi document đi vào — nên `foreignField` **bắt buộc** phải có index, nếu không đây là vòng lặp quét toàn bộ collection.
-- Nó chạy tốt khi số document đi vào nhỏ (sau `$match` và `$limit`). Đặt `$lookup` trước khi lọc là lỗi hiệu năng phổ biến nhất trong pipeline — xem [[aggregation-pipeline]].
-- Cần `$lookup` ở *mọi* truy vấn chính là một tín hiệu: có thể dữ liệu này vốn quan hệ và nên nằm ở CSDL quan hệ.
-
-## Mẫu phản diện
-
-**Bê nguyên schema quan hệ.** Sáu collection, mọi truy vấn ba `$lookup`. Bạn mất JOIN thật, mất ràng buộc khoá ngoại, và không được gì. Nếu thiết kế cuối cùng trông như vậy thì câu trả lời đúng là dùng Postgres.
-
-**Ngược lại: lồng tất cả vào một document.** Một `nguoi_dung` chứa mọi đơn hàng, mọi phiên đăng nhập, mọi thông báo. Document phình theo thời gian, mỗi lần ghi viết lại vài trăm KB, và đọc thông tin hiển thị cũng kéo về toàn bộ.
-
-**Mảng không trần.** Đã nói ở bài trước, nhưng nó là lỗi thiết kế Mongo phổ biến nhất nên nhắc lại: `binh_luan: []`, `luot_xem: []`, `su_kien: []` đều sẽ thành sự cố.
-
-**Dùng chung một collection cho mọi loại document** vì "Mongo linh hoạt mà". Không index nào phục vụ tốt cho tất cả, không validator nào viết được, và mọi truy vấn phải mang thêm điều kiện `loai`. Một collection cho một loại thực thể.
-
-## Ví dụ hoàn chỉnh: blog
-
-Yêu cầu: trang danh sách bài (20 bài, tiêu đề + tác giả + số bình luận), trang chi tiết bài (nội dung + 20 bình luận đầu, phân trang), trang tác giả.
-
-```js
-// bai_viet — lồng thẻ (có trần), nhúng tên tác giả (đọc rất nhiều), giữ số đếm
-{
-  _id: ObjectId("..."),
-  tieu_de: "Thiết kế document trong MongoDB",
-  slug: "thiet-ke-document-trong-mongodb",
+  _id: ..., tieu_de: "...", slug: "...",
   noi_dung: "...",                                    // chỉ trang chi tiết cần
   tac_gia: { id: ObjectId("..."), ten: "Trần Minh" },  // nhúng, cập nhật lười
   the: ["mongodb", "thiet-ke"],                        // lồng: có trần
-  so_binh_luan: 42,                                    // đếm sẵn, tránh count mỗi lần
-  xuat_ban_luc: ISODate("2026-08-20T02:00:00Z"),
+  so_binh_luan: 42,                                    // đếm sẵn
 }
 
 // binh_luan — collection riêng: không trần, cần phân trang
-{
-  _id: ObjectId("..."),
-  bai_viet_id: ObjectId("..."),      // index
-  tac_gia: { id: ObjectId("..."), ten: "Lê An" },
-  noi_dung: "...",
-  tao_luc: ISODate("..."),
-}
+{ _id: ..., bai_viet_id: ObjectId("..."), noi_dung: "...", tao_luc: ... }
 ```
 
-Quyết định và lý do, viết ra để người sau hiểu:
+Quyết định và lý do — nên viết ra để người sau hiểu:
 
-- `the` lồng vì có trần và luôn hiển thị cùng bài.
-- `noi_dung` ở cùng document nhưng bị loại khỏi projection ở trang danh sách.
-- `binh_luan` tách vì không trần và cần phân trang độc lập.
-- `so_binh_luan` là số đếm nhân bản, cập nhật bằng `$inc` trong cùng lệnh với việc thêm bình luận — rẻ hơn `countDocuments` ở mỗi lần render danh sách.
-- `tac_gia.ten` nhúng, chấp nhận lệch khi đổi tên; job đêm đồng bộ lại.
+```text
+the           lồng — có trần, luôn hiển thị cùng bài
+noi_dung      cùng document nhưng bị loại khỏi projection ở trang danh sách
+binh_luan     tách — không trần, cần phân trang độc lập
+so_binh_luan  đếm nhân bản, cập nhật bằng $inc cùng lúc thêm bình luận
+tac_gia.ten   nhúng, chấp nhận lệch; job đêm đồng bộ
+```
 
-## Ghi nhớ
+## Dễ nhầm
 
-- Thiết kế từ truy vấn ngược về document, không phải từ thực thể xuống bảng.
-- Lồng khi: đọc cùng nhau, có trần, không truy cập độc lập.
-- Nhân bản vì nghiệp vụ (bản chụp giá, tên trên hoá đơn) là đúng; nhân bản vì tốc độ cần số đo và một câu trả lời cho "lệch bao lâu thì được".
-- `$lookup` cần index ở `foreignField` và nên đứng sau `$match`.
-- Cần `$lookup` ở mọi truy vấn ⇒ xem lại có nên dùng Mongo.
+**1. Bê nguyên schema quan hệ vào Mongo.** Sáu collection, mọi truy vấn ba `$lookup`. Bạn mất JOIN thật, mất ràng buộc, và không được gì.
 
-## Tự kiểm tra
+**2. Lồng tất cả vào một document.** `nguoi_dung` chứa mọi đơn hàng, mọi phiên, mọi thông báo — document phình theo thời gian.
 
-1. Sản phẩm có tồn kho đổi từng phút. Lồng tồn kho vào document sản phẩm hay tách? Vì sao?
-2. Hoá đơn nên lưu giá tại thời điểm mua hay tham chiếu giá hiện tại? Nêu hậu quả của lựa chọn sai.
-3. Thiết kế của bạn có 5 collection và mọi truy vấn cần 3 `$lookup`. Kết luận gì?
+**3. Mảng không trần.** `binh_luan: []`, `luot_xem: []` — lỗi thiết kế Mongo phổ biến nhất.
+
+**4. Dùng chung một collection cho mọi loại document** vì "Mongo linh hoạt mà". Không index nào phục vụ tốt cho tất cả, không validator nào viết được, và mọi truy vấn phải mang thêm điều kiện `loai`.
+
+**5. Nhân bản mà không quyết định trước cách đồng bộ.** Dữ liệu lệch dần và không ai biết từ lúc nào.
+
+**6. Quên index cho `foreignField` của `$lookup`.** Quét toàn bộ collection cho mỗi document đi vào.
+
+**7. Nhầm bản chụp lịch sử với nhân bản cẩu thả.** `gia_luc_mua` là **sự thật khác** với giá hiện tại — không phải trùng lặp.
+
+## Mẹo nhớ
+
+> **Thứ dùng cùng lúc để chung túi; thứ quá nhiều hoặc dùng riêng thì để riêng.**
+>
+> **Thiết kế từ TRUY VẤN ngược về document, không phải từ thực thể xuống bảng.**
+>
+> **Cần `$lookup` ở mọi truy vấn ⇒ xem lại có nên dùng Mongo.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Vì sao thiết kế Mongo đi ngược so với thiết kế quan hệ?
+2. Bốn câu hỏi quyết định lồng hay tham chiếu?
+3. Hai loại nhân bản khác nhau ở chỗ nào — loại nào **bắt buộc**?
+4. Ba điều phải biết về `$lookup` trước khi dùng nó?
+5. Dấu hiệu nào cho biết dữ liệu của bạn vốn thuộc về CSDL quan hệ?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, thiết kế document cho một ứng dụng đặt món:
+
+```text
+- Nhà hàng có thực đơn (20-100 món), mỗi món có giá và ảnh
+- Khách đặt đơn gồm nhiều món, giá lúc đặt phải giữ nguyên
+- Mỗi nhà hàng có đánh giá từ khách (không giới hạn số lượng)
+- Trang chủ hiển thị danh sách nhà hàng kèm điểm trung bình
+```
+
+Tự kiểm: điểm trung bình bạn tính lúc đọc hay lưu sẵn? Nêu lý do và cách giữ nó đúng.
+
+## Thử sức
+
+Sản phẩm của bạn có `ton_kho` nằm trong document `san_pham` cùng với tên, mô tả, và mảng 30 ảnh. Tồn kho được cập nhật khoảng 200 lần mỗi phút.
+
+Chỉ ra **hai** vấn đề với thiết kế này. Rồi đề xuất cách sửa, và trả lời câu khó: sau khi tách tồn kho ra, trang danh sách sản phẩm (cần hiện "còn hàng/hết hàng") có bị chậm đi không — và bạn xử lý thế nào?

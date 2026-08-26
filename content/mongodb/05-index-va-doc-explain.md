@@ -4,129 +4,136 @@ slug: index-va-doc-explain
 summary: Index đơn, index kép và quy tắc ESR, covered query, và cách đọc explain để biết truy vấn có dùng index hay đang quét cả collection.
 level: trung-cap
 tags: [mongodb, index, hieu-nang, explain]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** biết thứ tự field trong index kép quan trọng thế nào, đọc được `explain` để phát hiện quét toàn bộ collection, và biết khi nào **không** nên thêm index.
+> **Sau bài này bạn sẽ:** đặt đúng thứ tự field trong index kép bằng quy tắc ESR, và đọc `explain` để biết chắc truy vấn có dùng index hay không.
 
-## Không index thì mọi truy vấn quét toàn bộ
+## Ý tưởng chính
 
-Không có index, `find({ email: "a@b.com" })` phải đọc **mọi** document trong collection để biết cái nào khớp. Với 1.000 document thì không ai nhận ra; với 5 triệu thì mỗi request kéo hàng GB từ đĩa lên RAM.
+Không có index, `find({ email: "a@b.com" })` phải đọc **mọi** document trong collection. Với 5 triệu bản ghi, mỗi request kéo hàng GB từ đĩa lên RAM.
 
-Index của Mongo là B-tree, giống ý tưởng với index của CSDL quan hệ (xem [[index-va-hieu-nang-truy-van]]) — nên các đánh đổi cũng giống: đọc nhanh hơn, ghi chậm hơn một chút, tốn thêm bộ nhớ và đĩa.
+Nhưng phần khó không phải "có index hay không" — mà là **thứ tự field trong index kép**. Sai thứ tự thì index tồn tại mà truy vấn vẫn không dùng được.
+
+## Mental model
+
+Hãy nghĩ tới **danh bạ sắp theo (họ, tên)**.
+
+> Bạn tìm "Trần Minh" — mở đúng phần "Trần", rồi tìm "Minh". Nhanh.
+>
+> Bạn tìm mọi người **họ Trần** — vẫn nhanh, mở một lần là thấy cả khối.
+>
+> Bạn chỉ biết **tên là "Minh"** — danh bạ vô dụng. Bạn phải lật từng trang, vì "Minh" nằm rải rác khắp nơi.
+
+Đó chính là **quy tắc tiền tố trái**: index dùng được **từ đầu về sau**, không nhảy cột.
+
+## Ví dụ nhỏ
 
 ```js
-db.nguoi_dung.createIndex({ email: 1 }, { unique: true })   // 1 = tăng, -1 = giảm
-db.don_hang.createIndex({ tao_luc: -1 })
-db.nguoi_dung.getIndexes()
-db.nguoi_dung.dropIndex("email_1")
+db.don_hang.createIndex({ khach_id: 1, trang_thai: 1, tao_luc: -1 })
 ```
 
-`unique: true` không chỉ để tăng tốc — nó là **ràng buộc dữ liệu**, và là cách duy nhất Mongo cho bạn ngăn bản ghi trùng. Với những field như `email`, `sku`, hay bộ field trong filter của một upsert (bài [[truy-van-va-cap-nhat]]), đây là thứ phải có, không phải tuỳ chọn.
+```text
+DÙNG ĐƯỢC cho:
+  { khach_id: 1 }
+  { khach_id: 1, trang_thai: "moi" }
+  { khach_id: 1, trang_thai: "moi", tao_luc: {...} }
 
-Trên collection lớn ở production, tạo index dưới nền để không chặn truy vấn khác:
-
-```js
-db.don_hang.createIndex({ khach_id: 1 }, { background: true })   // mặc định từ 4.2+
+KHÔNG dùng được:
+  { trang_thai: "moi" }        ← thiếu field đầu
+  { tao_luc: {...} }           ← thiếu hai field đầu
 ```
 
-## Index kép và quy tắc ESR
+## Code chạy thế nào
 
-Đây là phần đem lại nhiều cải thiện nhất, và cũng bị làm sai nhiều nhất. **Thứ tự field trong index kép quyết định truy vấn nào dùng được nó.**
+**Quy tắc ESR** — thứ tự field trong index kép:
 
-Index `{ a: 1, b: 1, c: 1 }` phục vụ được truy vấn lọc theo:
-
-- `a`
-- `a` + `b`
-- `a` + `b` + `c`
-
-Nhưng **không** phục vụ truy vấn chỉ lọc theo `b`, hay chỉ `c`, hay `b` + `c`. Đây gọi là *tiền tố trái*: bạn chỉ dùng được index từ đầu về sau, không nhảy giữa. Cách hình dung: danh bạ sắp theo (họ, tên) giúp bạn tìm "Trần Minh" và tìm mọi người họ "Trần", nhưng không giúp gì khi bạn chỉ biết tên là "Minh".
-
-**Quy tắc ESR** cho thứ tự field — Equality, Sort, Range:
-
-1. **E**quality: field so sánh bằng, đặt trước.
-2. **S**ort: field dùng để sắp xếp, đặt giữa.
-3. **R**ange: field so sánh khoảng (`$gt`, `$lt`, `$in`), đặt cuối.
-
-Áp vào một truy vấn thật:
+```text
+E  Equality  field so sánh BẰNG        → đặt TRƯỚC
+S  Sort      field dùng để SẮP XẾP     → đặt GIỮA
+R  Range     field so sánh KHOẢNG      → đặt SAU
+```
 
 ```js
+// Truy vấn
 db.don_hang
-  .find({ trang_thai: "moi", tong_tien: { $gte: 500_000 } })   // E: trang_thai, R: tong_tien
+  .find({ trang_thai: "moi", tong_tien: { $gte: 500_000 } })   // E: trang_thai · R: tong_tien
   .sort({ tao_luc: -1 })                                        // S: tao_luc
 
-// Index đúng theo ESR:
+// Index đúng theo ESR
 db.don_hang.createIndex({ trang_thai: 1, tao_luc: -1, tong_tien: 1 })
 ```
 
-Vì sao Range phải đứng sau Sort: một khi index đi vào một *khoảng*, các field sau nó không còn được sắp thứ tự nữa. Đặt `tong_tien` trước `tao_luc` thì Mongo phải tự sắp xếp lại kết quả trong bộ nhớ — và nếu vượt 32MB, truy vấn **thất bại** với lỗi *Sort exceeded memory limit*, chứ không chỉ chậm.
+Vì sao **Range phải đứng sau Sort**:
 
-Hai lưu ý về hướng sắp xếp: index dùng được cho cả `sort({ tao_luc: -1 })` và `sort({ tao_luc: 1 })` (đọc index theo chiều ngược lại là chuyện rẻ). Nhưng khi sắp theo **nhiều** field, hướng tương đối phải khớp: index `{ a: 1, b: -1 }` phục vụ `sort({ a: 1, b: -1 })` và `sort({ a: -1, b: 1 })`, không phục vụ `sort({ a: 1, b: 1 })`.
+```text
+Index sắp theo (trang_thai, tao_luc, tong_tien)
 
-## Các loại index khác
+Đi vào một KHOẢNG của tong_tien ⇒ các field SAU nó không còn thứ tự
+⇒ nếu đặt tong_tien trước tao_luc, Mongo phải TỰ SẮP XẾP kết quả trong bộ nhớ
+⇒ vượt 32MB ⇒ truy vấn THẤT BẠI:  "Sort exceeded memory limit"
+```
+
+Đây không phải chậm — nó là **lỗi**. Và nó chỉ xuất hiện khi dữ liệu đủ lớn, tức là ở production.
+
+**Hướng sắp xếp:** index dùng được cho cả `sort({tao_luc: -1})` lẫn `sort({tao_luc: 1})` (đọc ngược lại là chuyện rẻ). Nhưng khi sắp theo **nhiều** field, hướng tương đối phải khớp: index `{a: 1, b: -1}` phục vụ `sort({a:1, b:-1})` và `sort({a:-1, b:1})`, **không** phục vụ `sort({a:1, b:1})`.
+
+## Cú pháp
 
 ```js
-// Index trên field lồng và trên mảng — cú pháp giống nhau
-db.don_hang.createIndex({ "khach.sdt": 1 })
-db.don_hang.createIndex({ "dong.sku": 1 })       // multikey: index từng phần tử mảng
+db.nguoi_dung.createIndex({ email: 1 }, { unique: true })
+db.don_hang.createIndex({ "khach.sdt": 1 })        // field lồng
+db.don_hang.createIndex({ "dong.sku": 1 })         // multikey: index từng phần tử mảng
 
-// Text search
-db.bai_viet.createIndex({ tieu_de: "text", noi_dung: "text" })
-db.bai_viet.find({ $text: { $search: "mongodb index" } })
-
-// Partial: chỉ index phần document thật sự được truy vấn
+// Index từng phần — chỉ index dữ liệu bạn thật sự truy vấn
 db.don_hang.createIndex(
   { tao_luc: -1 },
   { partialFilterExpression: { trang_thai: { $in: ["moi", "dang_giao"] } } },
 )
 
-// TTL: tự xoá document sau một khoảng thời gian
+// TTL — tự xoá document sau N giây
 db.phien.createIndex({ tao_luc: 1 }, { expireAfterSeconds: 86_400 })
+
+// Text search
+db.bai_viet.createIndex({ tieu_de: "text", noi_dung: "text" })
 ```
 
-**Partial index** đáng biết: nếu 95% đơn hàng đã hoàn tất và bạn chỉ truy vấn đơn đang xử lý, index chỉ chứa 5% dữ liệu — nhỏ hơn, nằm gọn trong RAM, ghi rẻ hơn.
+`unique: true` không chỉ để tăng tốc — nó là **ràng buộc dữ liệu**, và là cách duy nhất Mongo cho bạn ngăn bản ghi trùng. Với `email`, `sku`, hay bộ field trong filter của một upsert ([[truy-van-va-cap-nhat]]), đây là thứ **phải có**.
 
-**TTL index** là cách gọn nhất để dọn dữ liệu tạm: phiên đăng nhập, token đặt lại mật khẩu, log ngắn hạn. Mongo quét mỗi 60 giây và xoá, nên "hết hạn" là *khoảng* chứ không phải đúng giây — đừng dựa vào nó cho logic bảo mật cần chính xác.
+**TTL index** là cách gọn nhất để dọn dữ liệu tạm: phiên đăng nhập, token đặt lại mật khẩu, log ngắn hạn. Mongo quét mỗi 60 giây, nên "hết hạn" là **khoảng** chứ không đúng giây — đừng dựa vào nó cho logic bảo mật cần chính xác.
 
-Một cảnh báo về multikey: index trên mảng có một entry cho **mỗi phần tử**. Mảng 100 phần tử ⇒ 100 entry cho một document. Đây là lý do nữa để mảng có trần.
+⚠️ **Multikey**: index trên mảng có một entry cho **mỗi phần tử**. Mảng 100 phần tử ⇒ 100 entry cho một document. Đây là lý do nữa để mảng có trần.
 
-## Đọc explain
+## Tại sao cần nó
 
-`explain` trả lời một câu hỏi: **truy vấn này dùng index hay đang quét?**
+Vì `explain` trả lời đúng một câu: **truy vấn này dùng index hay đang quét?**
 
 ```js
-db.don_hang
-  .find({ trang_thai: "moi" })
-  .sort({ tao_luc: -1 })
-  .explain("executionStats")
+db.don_hang.find({ trang_thai: "moi" }).sort({ tao_luc: -1 }).explain("executionStats")
 ```
 
-Đọc từ trên xuống, ba con số và một chữ:
-
-```
+```text
 executionStats: {
-  nReturned: 20,              // số document trả về
-  totalKeysExamined: 20,      // số entry index đã đọc
-  totalDocsExamined: 20,      // số document đã đọc
+  nReturned: 20,               số document trả về
+  totalKeysExamined: 20,       số entry index đã đọc
+  totalDocsExamined: 20,       số document đã đọc
   executionTimeMillis: 1,
 }
 winningPlan: { stage: "IXSCAN", indexName: "trang_thai_1_tao_luc_-1" }
 ```
 
-Điều duy nhất phải nhớ để chẩn đoán:
-
 | Dấu hiệu | Nghĩa |
 |---|---|
 | `stage: "COLLSCAN"` | Quét toàn bộ collection — **thiếu index** |
-| `stage: "IXSCAN"` | Dùng index |
-| `stage: "FETCH"` | Đọc index rồi đọc document (bình thường) |
+| `stage: "IXSCAN"` | Đang dùng index |
 | `stage: "SORT"` | Sắp xếp trong bộ nhớ — index không phục vụ được `sort` |
 | `totalDocsExamined ≈ nReturned` | Index chọn lọc tốt |
 | `totalDocsExamined >> nReturned` | Index kém chọn lọc, hoặc sai thứ tự field |
-| `totalDocsExamined: 0` | Covered query — trả lời hoàn toàn từ index |
+| `totalDocsExamined: 0` | **Covered query** — trả lời hoàn toàn từ index |
 
-Tỉ lệ `totalDocsExamined / nReturned` là chỉ số hữu ích nhất: gần 1 là tốt; đọc 50.000 document để trả về 20 nghĩa là index đang không làm việc của nó. Ý tưởng và cách đọc rất giống `EXPLAIN ANALYZE` của Postgres — xem [[doc-explain-analyze]].
+Tỉ lệ `totalDocsExamined / nReturned` là chỉ số hữu ích nhất: gần 1 là tốt; đọc 50.000 document để trả về 20 nghĩa là index đang không làm việc của nó.
 
-**Covered query** là trường hợp đẹp nhất: mọi field trong filter *và* trong projection đều nằm trong index, nên Mongo không cần đọc document nào.
+**Covered query** — trường hợp đẹp nhất:
 
 ```js
 db.nguoi_dung.createIndex({ email: 1, ten: 1 })
@@ -136,53 +143,76 @@ db.nguoi_dung.find({ email: "a@b.com" }, { projection: { _id: 0, ten: 1 } })
 
 Chú ý `_id: 0` — `_id` mặc định được trả về, và nếu nó không nằm trong index thì truy vấn mất tính "covered".
 
-## Tìm truy vấn chậm
+## So sánh
 
-```js
-// Bật profiler: ghi lại mọi truy vấn chậm hơn 100ms
-db.setProfilingLevel(1, { slowms: 100 })
+**Khi nào KHÔNG nên thêm index:**
 
-// Xem 10 truy vấn chậm nhất gần đây
-db.system.profile.find().sort({ millis: -1 }).limit(10)
-
-// Xem index nào thật sự được dùng — và index nào chưa bao giờ dùng
-db.don_hang.aggregate([{ $indexStats: {} }])
+```text
+· Collection nhỏ (vài nghìn document) — quét toàn bộ còn nhanh hơn
+· Field độ chọn lọc thấp: { da_kich_hoat: 1 } với hai giá trị true/false
+  ⇒ trừ khi làm field đầu của index kép, hoặc dùng partial index
+· Collection ghi rất nhiều, đọc rất ít (log, event stream)
+· Field đã là TIỀN TỐ TRÁI của index kép khác — index đó là thừa
 ```
 
-`$indexStats` đáng chạy định kỳ. Index có `accesses.ops: 0` sau nhiều tuần là index chỉ làm chậm việc ghi và chiếm RAM — xoá đi.
+**Tìm truy vấn chậm:**
 
-## Khi nào không nên thêm index
+```js
+db.setProfilingLevel(1, { slowms: 100 })              // ghi lại truy vấn chậm hơn 100ms
+db.system.profile.find().sort({ millis: -1 }).limit(10)
+db.don_hang.aggregate([{ $indexStats: {} }])          // index nào ĐANG được dùng
+```
 
-Index không miễn phí: mỗi index làm mọi lệnh ghi phải cập nhật thêm một B-tree, và chiếm phần RAM mà lẽ ra dùng để cache dữ liệu.
+`$indexStats` đáng chạy định kỳ: index có `accesses.ops: 0` sau nhiều tuần là index chỉ làm chậm việc ghi và chiếm RAM — xoá đi.
 
-Đừng thêm index khi:
+## Dễ nhầm
 
-- Collection nhỏ (vài nghìn document) — quét toàn bộ còn nhanh hơn.
-- Field có độ chọn lọc thấp: `{ da_kich_hoat: 1 }` với hai giá trị true/false gần như vô dụng — trừ khi làm field đầu của một index kép, hoặc dùng partial index.
-- Collection ghi rất nhiều, đọc rất ít (log, event stream).
-- Đã có index kép mà field cần là **tiền tố trái** của nó: có `{ a: 1, b: 1 }` thì index `{ a: 1 }` là dư thừa, xoá được.
+**1. Không index field trong filter.** `COLLSCAN`, chậm dần theo dữ liệu.
 
-## Lỗi hay gặp
+**2. Sai thứ tự field trong index kép.** Index không được dùng, hoặc `SORT` trong RAM.
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Không index field trong filter | `COLLSCAN`, chậm dần theo dữ liệu | `explain` rồi tạo index |
-| Sai thứ tự field index kép | Index không được dùng, hoặc `SORT` trong RAM | Theo ESR |
-| Range trước Sort | Sắp xếp trong bộ nhớ, có thể lỗi 32MB | Sort trước Range |
-| Nhiều index đơn thay vì một index kép | Ghi chậm, RAM tốn, vẫn không phục vụ được | Một index kép theo ESR |
-| Không index `foreignField` của `$lookup` | Quét collection cho mỗi document đi vào | Index phía được lookup |
-| Index tồn tại nhưng không ai dùng | Ghi chậm vô ích | `$indexStats` rồi xoá |
+**3. Range trước Sort.** Sắp xếp trong bộ nhớ, và có thể **lỗi** 32MB.
 
-## Ghi nhớ
+**4. Nhiều index đơn thay vì một index kép.** Mongo thường chỉ dùng **một** index cho một truy vấn — ba index đơn không thay được một index kép đúng thứ tự.
 
-- Không index nghĩa là quét toàn bộ collection — `explain` là cách duy nhất để biết chắc.
-- Index kép chỉ dùng được từ tiền tố trái; thứ tự field theo ESR: Equality → Sort → Range.
-- `COLLSCAN` và `SORT` trong `explain` là hai từ cần tìm khi truy vấn chậm.
-- `totalDocsExamined / nReturned` gần 1 là index tốt.
-- Partial index và TTL index giải quyết gọn hai bài toán rất thường gặp.
+**5. Không index `foreignField` của `$lookup`.** Quét collection cho mỗi document đi vào ([[thiet-ke-lang-nhau-hay-tham-chieu]]).
 
-## Tự kiểm tra
+**6. Index tồn tại nhưng không ai dùng.** Ghi chậm vô ích — kiểm bằng `$indexStats`.
 
-1. Có index `{ trang_thai: 1, tao_luc: -1 }`. Truy vấn `find({}).sort({ tao_luc: -1 })` dùng được không? Vì sao?
-2. Viết index đúng cho: `find({ khach_id: X, tong_tien: { $gt: 100000 } }).sort({ tao_luc: -1 })`.
-3. `explain` cho `nReturned: 15`, `totalDocsExamined: 42000`. Bạn kết luận gì và làm gì tiếp?
+**7. Quên `_id: 0` khi muốn covered query.** Mất tính covered mà không hiểu vì sao.
+
+## Mẹo nhớ
+
+> **Danh bạ sắp theo (họ, tên): biết họ thì tra được, chỉ biết tên thì vô dụng.**
+>
+> **ESR: Equality → Sort → Range.**
+>
+> **Hai từ cần tìm trong `explain`: `COLLSCAN` và `SORT`.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Quy tắc tiền tố trái nghĩa là gì — giải thích bằng hình ảnh danh bạ?
+2. ESR là gì, và vì sao Range phải đứng **sau** Sort?
+3. Ba dấu hiệu trong `explain` cho biết có vấn đề?
+4. Covered query là gì, và điều kiện để đạt được nó?
+5. Bốn trường hợp **không** nên thêm index?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết index cho từng truy vấn:
+
+```js
+find({ khach_id: X, trang_thai: "moi" }).sort({ tao_luc: -1 })
+find({ trang_thai: "cho_duyet" }).sort({ tao_luc: 1 })     // chỉ 2% document
+find({ tong_tien: { $gte: A, $lte: B } }).sort({ tong_tien: 1 })
+```
+
+Tự kiểm: truy vấn thứ hai — bạn dùng index thường hay partial index, và tiết kiệm được bao nhiêu?
+
+## Thử sức
+
+`explain` của một truy vấn cho: `nReturned: 15`, `totalDocsExamined: 42000`, `stage: "IXSCAN"`.
+
+Có index, và Mongo **đang dùng** nó — nhưng vẫn đọc 42.000 document để trả về 15. Giải thích vì sao điều đó xảy ra, và nêu **hai** cách sửa khác nhau. Câu khó: cách nào bạn chọn nếu collection này còn có 5 truy vấn khác cũng chạy thường xuyên?

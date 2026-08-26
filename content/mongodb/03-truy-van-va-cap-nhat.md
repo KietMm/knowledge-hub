@@ -4,205 +4,244 @@ slug: truy-van-va-cap-nhat
 summary: Toán tử lọc, projection, cập nhật nguyên tử, upsert, truy vấn trong mảng, và bulk write.
 level: co-ban
 tags: [mongodb, truy-van, cap-nhat]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** viết được truy vấn lọc nhiều điều kiện, cập nhật nguyên tử mà không cần đọc-sửa-ghi, và biết vì sao `$elemMatch` tồn tại.
+> **Sau bài này bạn sẽ:** cập nhật dữ liệu **nguyên tử** thay vì đọc-sửa-ghi, và biết vì sao `$elemMatch` tồn tại.
 
-## Đọc: filter và projection
+## Ý tưởng chính
 
-Mọi truy vấn đọc đều là `find(filter, options)`. Filter là một document mô tả điều kiện; document rỗng `{}` nghĩa là lấy tất cả.
+Người đến từ SQL hay mắc cùng một lỗi ở Mongo: **đọc dữ liệu về, sửa trong ứng dụng, rồi ghi lại**.
 
-```js
-db.don_hang.find({ trang_thai: "dang_giao" })                      // bằng
-db.don_hang.find({ tong_tien: { $gte: 500000 } })                  // ≥
-db.don_hang.find({ trang_thai: { $in: ["moi", "dang_giao"] } })     // thuộc tập
-db.don_hang.find({ trang_thai: { $ne: "huy" } })                    // khác
-db.don_hang.find({ ma_giam_gia: { $exists: true } })                // có field
-```
+Cách đó vừa tốn hai vòng đi–về mạng, vừa **mất dữ liệu khi có hai request song song**. Mongo có sẵn các toán tử để máy chủ tự sửa — và dùng chúng là khác biệt giữa code chạy được và code đúng.
 
-Nhiều điều kiện trong cùng một document là **AND** ngầm:
+## Mental model
 
-```js
-// trang_thai = "moi" VÀ tong_tien ≥ 500000 VÀ tạo trong 7 ngày
-db.don_hang.find({
-  trang_thai: "moi",
-  tong_tien: { $gte: 500_000 },
-  tao_luc: { $gte: new Date(Date.now() - 7 * 86_400_000) },
-})
-```
+Hãy nghĩ tới **sửa một con số trên bảng thông báo**.
 
-`$or` phải viết tường minh, và nhận một mảng:
+> **Đọc–sửa–ghi**: bạn chụp ảnh cái bảng, về bàn tính toán, rồi quay lại xoá hết và viết số mới.
+> Trong lúc bạn đi, người khác cũng làm y vậy — và một trong hai người **xoá mất việc của người kia**.
+>
+> **Cập nhật nguyên tử**: bạn nói với người trực bảng *"cộng thêm 1 vào ô đó"*. Người trực làm ngay tại chỗ, và hai yêu cầu nối tiếp nhau — không ai mất gì.
+
+Mọi toán tử `$inc`, `$push`, `$set` đều là câu *"làm giúp tôi ngay tại chỗ"*.
+
+## Ví dụ nhỏ
 
 ```js
-db.don_hang.find({
-  $or: [{ trang_thai: "huy" }, { tong_tien: { $lt: 50_000 } }],
-})
-```
-
-**Projection** quyết định field nào được trả về. Đây không phải tối tiết — với document lồng nhiều tầng, nó là chênh lệch giữa việc kéo 200 byte và 40KB qua mạng cho mỗi bản ghi:
-
-```js
-// Chỉ lấy những field cần cho danh sách đơn
-db.don_hang.find({ trang_thai: "moi" }, { projection: { ma_don: 1, tong_tien: 1, tao_luc: 1 } })
-
-// Hoặc: lấy hết trừ vài field nặng
-db.don_hang.find({}, { projection: { lich_su_trang_thai: 0, payload_webhook: 0 } })
-```
-
-`_id` luôn được trả về kể cả khi không liệt kê; muốn bỏ thì `{ _id: 0 }`. Không trộn kiểu bao gồm (`1`) và loại trừ (`0`) trong cùng một projection — trừ đúng trường hợp `_id: 0`.
-
-Sắp xếp, phân trang:
-
-```js
-db.don_hang.find({ trang_thai: "moi" }).sort({ tao_luc: -1 }).limit(20)
-```
-
-`skip()` tồn tại nhưng đừng dùng cho phân trang sâu: `skip(100000)` bắt máy chủ đếm qua 100.000 document rồi bỏ đi. Dùng phân trang theo con trỏ:
-
-```js
-// Trang sau: mọi document "cũ hơn" document cuối của trang trước
-db.don_hang.find({ _id: { $lt: idCuoiTrangTruoc } }).sort({ _id: -1 }).limit(20)
-```
-
-Chủ đề này giống hệt ở REST API — xem [[phan-trang-loc-va-sap-xep]].
-
-## Ghi: cập nhật nguyên tử
-
-Đây là điểm người đến từ SQL hay làm sai nhất. Sai:
-
-```js
-// SAI: đọc, sửa ở ứng dụng, ghi lại
+// ❌ Đọc rồi ghi — hai request song song sẽ ghi đè nhau
 const don = await c.findOne({ _id: id })
 don.so_lan_thu += 1
 await c.replaceOne({ _id: id }, don)
-```
 
-Đoạn trên có hai vấn đề: nó tốn hai vòng đi-về, và **hai request chạy song song sẽ ghi đè nhau** — cùng đọc `so_lan_thu = 5`, cùng ghi `6`, mất một lần đếm. Đúng là để máy chủ tự sửa, trong một lệnh nguyên tử:
-
-```js
+// ✅ Một lệnh nguyên tử
 await c.updateOne({ _id: id }, { $inc: { so_lan_thu: 1 } })
 ```
 
-Các toán tử cập nhật dùng nhiều:
+## Code chạy thế nào
 
-```js
-{ $set:   { trang_thai: "da_giao", giao_luc: new Date() } }  // gán
-{ $unset: { ma_giam_gia: "" } }                              // xoá field
-{ $inc:   { ton_kho: -1, so_ban: 1 } }                       // cộng/trừ
-{ $min:   { gia_thap_nhat: 189000 } }                        // chỉ ghi nếu nhỏ hơn
-{ $max:   { xem_gan_nhat: new Date() } }                     // chỉ ghi nếu lớn hơn
-{ $push:  { dong: { sku: "MU-01", so_luong: 1 } } }           // thêm vào mảng
-{ $pull:  { dong: { sku: "MU-01" } } }                        // xoá phần tử khớp
-{ $addToSet: { tags: "khuyen-mai" } }                         // thêm nếu chưa có
-{ $currentDate: { sua_luc: true } }                           // đóng dấu thời gian
+Vì sao cách trên mất dữ liệu:
+
+```text
+so_lan_thu hiện tại = 5
+
+Request A: đọc 5 ─────────────────► ghi 6
+Request B:      đọc 5 ────► ghi 6
+
+Kết quả: 6.  Đáng lẽ phải là 7 — mất một lần đếm.
 ```
 
-**Quên `$set` là lỗi phá dữ liệu.** `updateOne(filter, { trang_thai: "huy" })` bị driver từ chối, nhưng `replaceOne(filter, { trang_thai: "huy" })` thì chạy — và nó **thay cả document**, mọi field khác biến mất. Nếu ý bạn là "sửa một field", luôn dùng `updateOne` với `$set`.
+Với `$inc`, máy chủ khoá document trong lúc thực hiện, nên hai lệnh nối tiếp nhau: `5 → 6 → 7`.
 
-`updateOne` sửa document đầu tiên khớp; `updateMany` sửa tất cả. Không có phanh an toàn nào ở đây — chạy `updateMany({}, ...)` trên production là một phút để hỏng cả collection. Chạy `countDocuments(filter)` với đúng filter đó trước, mỗi lần.
-
-## Upsert: ghi nếu chưa có
-
-```js
-await db.collection('thong_ke_ngay').updateOne(
-  { ngay: "2026-08-24", san_pham: "AO-XL-DEN" },
-  { $inc: { luot_xem: 1 }, $setOnInsert: { tao_luc: new Date() } },
-  { upsert: true },
-)
-```
-
-Không có bản ghi thì tạo mới từ filter cộng phần cập nhật; có rồi thì cộng thêm. `$setOnInsert` chỉ áp dụng ở lần tạo — đúng chỗ cho `tao_luc`.
-
-Một điều dễ bỏ sót: upsert chạy song song có thể tạo hai document trùng, trừ khi có **unique index** trên đúng bộ field trong filter. Với ví dụ trên là `{ ngay: 1, san_pham: 1 }` unique. Không có nó, dưới tải cao bạn sẽ có hai dòng thống kê cho cùng một ngày.
-
-`findOneAndUpdate` trả về document, dùng khi cần giá trị sau khi sửa:
+**Mẫu quan trọng nhất — đưa điều kiện nghiệp vụ vào filter:**
 
 ```js
 const sau = await c.findOneAndUpdate(
-  { _id: id, ton_kho: { $gte: 1 } },      // điều kiện nằm trong filter, không ở code
+  { _id: id, ton_kho: { $gte: 1 } },     // ← điều kiện nằm TRONG filter
   { $inc: { ton_kho: -1 } },
   { returnDocument: 'after' },
 )
 if (sau === null) throw new Error('Hết hàng')
 ```
 
-Mẫu này quan trọng: **đặt điều kiện nghiệp vụ vào filter** thì việc kiểm tra và việc ghi là một hành động nguyên tử. Kiểm `ton_kho >= 1` ở code rồi mới `$inc` là mở cửa cho bán âm tồn kho. Cùng ý tưởng với `UPDATE ... WHERE` trong SQL — xem [[truy-cap-dong-thoi-va-khoa]].
+```text
+Kiểm ở code rồi mới ghi:  if (ton >= 1) { updateOne(...) }
+                           ↑ có khe hở giữa kiểm và ghi ⇒ bán âm tồn kho
 
-## Truy vấn trong mảng
-
-Với `dong` là mảng các object, điều kiện đơn lẻ hoạt động trực tiếp:
-
-```js
-db.don_hang.find({ "dong.sku": "AO-XL-DEN" })     // có ít nhất một dòng SKU này
+Điều kiện trong filter:    kiểm và ghi là MỘT hành động nguyên tử
+                           không khớp ⇒ trả về null ⇒ bạn biết là hết hàng
 ```
 
-Nhưng hai điều kiện thì có một cái bẫy:
+Cùng ý tưởng với `UPDATE ... WHERE` trong SQL ([[truy-cap-dong-thoi-va-khoa]]).
+
+## Cú pháp
+
+**Đọc:**
 
 ```js
-// SAI ý định: khớp nếu MỘT phần tử có sku đúng và MỘT phần tử KHÁC có so_luong > 5
-db.don_hang.find({ "dong.sku": "AO-XL-DEN", "dong.so_luong": { $gt: 5 } })
+db.don.find({ trang_thai: "dang_giao" })
+db.don.find({ tong_tien: { $gte: 500000 } })
+db.don.find({ trang_thai: { $in: ["moi", "dang_giao"] } })
+db.don.find({ ma_giam_gia: { $exists: true } })
+
+// Nhiều điều kiện trong một object = AND ngầm
+db.don.find({ trang_thai: "moi", tong_tien: { $gte: 500_000 } })
+
+// $or phải viết tường minh, nhận một MẢNG
+db.don.find({ $or: [{ trang_thai: "huy" }, { tong_tien: { $lt: 50_000 } }] })
+```
+
+**Projection** — không phải tối tiết:
+
+```js
+db.don.find({ trang_thai: "moi" }, { projection: { ma_don: 1, tong_tien: 1 } })
+db.don.find({}, { projection: { lich_su: 0, payload_webhook: 0 } })
+```
+
+Với document lồng nhiều tầng, đây là chênh lệch giữa kéo 200 byte và 40 KB **cho mỗi bản ghi**.
+
+**Toán tử cập nhật:**
+
+```js
+{ $set:   { trang_thai: "da_giao" } }      // gán
+{ $unset: { ma_giam_gia: "" } }             // xoá field
+{ $inc:   { ton_kho: -1, so_ban: 1 } }      // cộng/trừ
+{ $min:   { gia_thap_nhat: 189000 } }       // chỉ ghi nếu nhỏ hơn
+{ $push:  { dong: { sku: "MU-01" } } }      // thêm vào mảng
+{ $pull:  { dong: { sku: "MU-01" } } }      // xoá phần tử khớp
+{ $addToSet: { tags: "sale" } }             // thêm nếu chưa có
+```
+
+⚠️ **Quên `$set` là lỗi phá dữ liệu.** `replaceOne(filter, { trang_thai: "huy" })` **thay cả document** — mọi field khác biến mất. Nếu ý bạn là sửa một field, luôn dùng `updateOne` với `$set`.
+
+## Tại sao cần nó
+
+Vì **truy vấn trong mảng có một cái bẫy logic không bao giờ báo lỗi**:
+
+```js
+// SAI Ý ĐỊNH: khớp nếu MỘT phần tử có sku đúng và MỘT phần tử KHÁC có so_luong > 5
+db.don.find({ "dong.sku": "AO-XL", "dong.so_luong": { $gt: 5 } })
 
 // ĐÚNG: cùng MỘT phần tử thoả cả hai
-db.don_hang.find({ dong: { $elemMatch: { sku: "AO-XL-DEN", so_luong: { $gt: 5 } } } })
+db.don.find({ dong: { $elemMatch: { sku: "AO-XL", so_luong: { $gt: 5 } } } })
 ```
 
-`$elemMatch` tồn tại chính vì sự khác biệt đó. Bỏ qua nó là một lỗi logic không bao giờ báo lỗi.
+```text
+Document:  dong: [ {sku:"AO-XL", so_luong:1}, {sku:"MU-01", so_luong:9} ]
 
-Cập nhật một phần tử cụ thể trong mảng — toán tử `$`:
+Truy vấn sai:  "có phần tử nào sku=AO-XL?" ✓
+               "có phần tử nào so_luong>5?" ✓
+               ⇒ KHỚP, dù không phần tử nào thoả cả hai
+```
+
+`$elemMatch` tồn tại chính vì sự khác biệt đó. Bỏ qua nó là lỗi logic mà bộ test dữ liệu nhỏ thường không bắt được.
+
+**Cập nhật phần tử trong mảng:**
 
 ```js
-// $ trỏ tới phần tử đầu tiên khớp filter
-db.don_hang.updateOne(
-  { _id: id, "dong.sku": "MU-01" },
-  { $set: { "dong.$.so_luong": 3 } },
-)
+db.don.updateOne({ _id: id, "dong.sku": "MU-01" }, { $set: { "dong.$.so_luong": 3 } })
 
-// $[] cho mọi phần tử; $[dk] cho phần tử thoả điều kiện đặt tên
-db.don_hang.updateMany(
+db.don.updateMany(
   { trang_thai: "moi" },
   { $set: { "dong.$[re].khuyen_mai": true } },
   { arrayFilters: [{ "re.gia": { $lt: 100_000 } }] },
 )
 ```
 
-## Bulk write
-
-Ghi 1.000 document bằng 1.000 lệnh `updateOne` là 1.000 vòng đi-về mạng. Gộp lại:
+**Upsert và bulk write:**
 
 ```js
-await db.collection('san_pham').bulkWrite(
-  capNhat.map((s) => ({
-    updateOne: { filter: { sku: s.sku }, update: { $set: { gia: s.gia } }, upsert: true },
-  })),
-  { ordered: false },   // không dừng ở lỗi đầu tiên, và chạy song song được
+await db.collection('thong_ke').updateOne(
+  { ngay: "2026-08-26", sku: "AO-XL" },
+  { $inc: { luot_xem: 1 }, $setOnInsert: { tao_luc: new Date() } },
+  { upsert: true },
 )
 ```
 
-`ordered: false` nhanh hơn đáng kể và là lựa chọn đúng khi các lệnh độc lập với nhau. Giữ `ordered: true` (mặc định) khi thứ tự có ý nghĩa — ví dụ tạo document rồi sửa nó ngay sau.
+Upsert chạy song song **có thể tạo hai document trùng**, trừ khi có **unique index** trên đúng bộ field trong filter. Không có nó, dưới tải cao bạn sẽ có hai dòng thống kê cho cùng một ngày.
 
-Kiểm tra kết quả thay vì tin tưởng: `result.modifiedCount` cho biết thật sự có bao nhiêu document thay đổi. `matchedCount > 0` mà `modifiedCount === 0` nghĩa là dữ liệu đã đúng như thế rồi — thường vô hại, nhưng nếu bạn đang gỡ lỗi "sao update không ăn", đây là chỗ nhìn đầu tiên.
+```js
+await db.collection('san_pham').bulkWrite(
+  capNhat.map((s) => ({ updateOne: { filter: { sku: s.sku }, update: { $set: { gia: s.gia } }, upsert: true } })),
+  { ordered: false },     // không dừng ở lỗi đầu, và chạy song song được
+)
+```
 
-## Lỗi hay gặp
+## So sánh
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Đọc–sửa–ghi thay vì `$inc` | Mất cập nhật khi chạy song song | Toán tử cập nhật nguyên tử |
-| `replaceOne` khi ý là sửa field | Mất toàn bộ field khác | `updateOne` + `$set` |
-| Kiểm điều kiện ở code rồi mới ghi | Tồn kho âm, ghi đè nhau | Đưa điều kiện vào filter |
-| Hai điều kiện mảng không `$elemMatch` | Khớp sai, không báo lỗi | `$elemMatch` |
-| `skip()` cho phân trang sâu | Càng về sau càng chậm | Phân trang theo con trỏ |
-| Upsert không có unique index | Sinh document trùng dưới tải | Unique index trên field filter |
-| Vòng lặp `updateOne` cho lô lớn | Chậm gấp nhiều lần | `bulkWrite` |
+| Muốn gì | Dùng |
+|---|---|
+| Sửa vài field | `updateOne` + `$set` |
+| Cộng/trừ số | `$inc` — không bao giờ đọc-rồi-ghi |
+| Kiểm điều kiện rồi mới ghi | Đưa điều kiện vào **filter** |
+| Nhiều điều kiện trên cùng phần tử mảng | `$elemMatch` |
+| Ghi nếu chưa có | `upsert` + **unique index** |
+| Ghi hàng loạt | `bulkWrite({ ordered: false })` |
 
-## Ghi nhớ
+## Dễ nhầm
 
-- Để máy chủ sửa dữ liệu (`$inc`, `$set`, `$push`), đừng mang về ứng dụng sửa rồi ghi lại.
-- Điều kiện nghiệp vụ nằm trong filter thì kiểm-và-ghi là nguyên tử.
-- `$elemMatch` khi cần *cùng một* phần tử mảng thoả nhiều điều kiện.
-- Projection và phân trang theo con trỏ là hai thứ rẻ nhất để làm truy vấn nhanh hơn.
+**1. Đọc–sửa–ghi thay vì `$inc`.** Mất cập nhật khi chạy song song.
 
-## Tự kiểm tra
+**2. `replaceOne` khi ý là sửa một field.** Mất toàn bộ field khác.
 
-1. Hai request cùng lúc trừ tồn kho của một sản phẩm còn 1 cái. Viết lệnh không cho âm.
-2. `find({ "dong.sku": "A", "dong.so_luong": { $gt: 5 } })` khớp document nào ngoài ý muốn?
-3. `matchedCount` là 1 nhưng `modifiedCount` là 0 — chuyện gì đã xảy ra?
+**3. Kiểm điều kiện ở code rồi mới ghi.** Tồn kho âm.
+
+**4. Hai điều kiện mảng không dùng `$elemMatch`.** Khớp sai, không báo lỗi.
+
+**5. `skip()` cho phân trang sâu.** `skip(100000)` bắt máy chủ đếm qua 100.000 document rồi bỏ đi. Dùng phân trang theo con trỏ ([[phan-trang-loc-va-sap-xep]]):
+
+```js
+db.don.find({ _id: { $lt: idCuoiTrangTruoc } }).sort({ _id: -1 }).limit(20)
+```
+
+**6. Upsert không có unique index.** Sinh document trùng dưới tải.
+
+**7. Vòng lặp `updateOne` cho lô lớn.** 1000 lệnh = 1000 vòng đi–về mạng. Dùng `bulkWrite`.
+
+**8. Không kiểm `modifiedCount`.** `matchedCount > 0` mà `modifiedCount === 0` nghĩa là dữ liệu đã đúng như thế rồi — thường vô hại, nhưng đây là chỗ nhìn đầu tiên khi gỡ lỗi *"sao update không ăn"*.
+
+## Mẹo nhớ
+
+> **Nói với người trực bảng "cộng thêm 1", đừng chụp ảnh về nhà tính rồi viết đè.**
+>
+> **Điều kiện nghiệp vụ nằm trong FILTER ⇒ kiểm-và-ghi là nguyên tử.**
+>
+> **`$elemMatch` khi cần CÙNG MỘT phần tử thoả nhiều điều kiện.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Vì sao đọc–sửa–ghi làm mất cập nhật? Vẽ ra hai request song song.
+2. Vì sao đưa điều kiện vào filter lại an toàn hơn kiểm ở code?
+3. `find({ "a.x": 1, "a.y": 2 })` khớp document nào ngoài ý muốn?
+4. Vì sao upsert cần unique index?
+5. `matchedCount = 1`, `modifiedCount = 0` — chuyện gì đã xảy ra?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết lệnh cho từng tình huống:
+
+```text
+a) Trừ tồn kho 1 sản phẩm, không cho âm, và biết được có thành công không
+b) Thêm một thẻ vào bài viết, không cho trùng
+c) Tăng bộ đếm lượt xem theo ngày, tạo mới nếu chưa có bản ghi ngày đó
+d) Cập nhật giá cho 5000 sản phẩm từ một file
+```
+
+Tự kiểm: câu (c) — bạn cần index gì để nó an toàn dưới tải?
+
+## Thử sức
+
+Hệ thống của bạn bán vé. Log cho thấy có 3 vé được bán cho **cùng một ghế**, cả ba request cách nhau dưới 50ms.
+
+Code hiện tại:
+
+```js
+const ghe = await c.findOne({ _id: gheId })
+if (!ghe.da_dat) {
+  await c.updateOne({ _id: gheId }, { $set: { da_dat: true, nguoi: userId } })
+}
+```
+
+Chỉ ra chính xác khe hở, viết lại cho đúng, và trả lời câu khó: sau khi sửa, làm sao bạn **biết chắc** mình đã lấy được ghế — kiểm giá trị nào?
