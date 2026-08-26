@@ -4,118 +4,197 @@ slug: mo-hinh-ba-vung-cua-git
 summary: Working directory, staging area, repository — hiểu ba vùng này thì mọi lệnh Git trở nên dễ đoán.
 level: co-ban
 tags: [git, co-ban, staging]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** đọc được `git status` mà không phải đoán, và biết chính xác `git add` làm gì.
+> **Sau bài này bạn sẽ:** biết mỗi lệnh Git di chuyển thứ gì giữa vùng nào, và tự suy ra được lệnh hoàn tác thay vì tra Google mỗi lần.
 
-## Ba vùng
+## Ý tưởng chính
 
+Git khó không phải vì lệnh khó nhớ. Nó khó vì người ta học **lệnh** mà không học **mô hình** — và không có mô hình thì mọi lệnh đều là câu thần chú.
+
+Mô hình đó rất nhỏ: file của bạn nằm ở **ba vùng**, và mọi lệnh Git chỉ là chuyển thứ gì đó giữa các vùng ấy.
+
+## Mental model
+
+Hãy nghĩ tới **chụp ảnh một buổi tiệc**.
+
+```text
+① Bàn tiệc (working directory)  — nơi mọi thứ đang bày ra, lộn xộn, đang sửa
+② Khung hình (staging area)     — bạn CHỌN đưa ai vào khung
+③ Album ảnh (repository)        — bấm máy, ảnh vào album, không đổi được nữa
 ```
-Working Directory  --git add-->  Staging Area  --git commit-->  Repository
-   (file bạn sửa)                 (bản nháp)                    (lịch sử)
-```
 
-| Vùng | Là gì | Lệnh xem |
-|---|---|---|
-| Working Directory | File thật trên ổ đĩa | `git diff` |
-| Staging Area (index) | Danh sách thay đổi sẽ vào commit tới | `git diff --staged` |
-| Repository | Chuỗi commit đã ghi vĩnh viễn | `git log` |
+> Bạn không chụp cả bàn tiệc. Bạn **chọn** người vào khung (`git add`), ngắm lại xem đủ chưa (`git status`), rồi mới **bấm máy** (`git commit`).
+>
+> Khung hình là thứ Git có mà nhiều hệ thống khác không có — nó cho phép bạn **chụp một phần** những gì đang bày ra.
 
-Staging area là thứ khiến Git khác các hệ quản lý phiên bản khác: nó cho phép bạn **chọn** phần nào của công việc dở dang sẽ đi vào commit này.
+Người mới hay bỏ qua khung hình (`git add .` rồi commit tất) và vì vậy không hiểu vì sao nó tồn tại. Nó tồn tại để bạn tách **một buổi làm việc lộn xộn** thành **nhiều commit sạch**.
 
-## Vòng đời một thay đổi
+## Ví dụ nhỏ
 
 ```bash
-git status                  # xem đang ở đâu
-git add ten-file.ts         # đưa vào staging
-git add -p                  # chọn TỪNG ĐOẠN trong file để stage
-git commit -m "feat: thêm bộ lọc theo tag"
-git log --oneline --graph   # xem lịch sử
+# Sửa hai thứ chẳng liên quan gì nhau trong một buổi
+vim src/thanh-toan.ts     # sửa lỗi tính tiền
+vim README.md             # sửa lỗi chính tả
+
+git add src/thanh-toan.ts
+git commit -m "fix: tính sai phí giao hàng khi đơn > 500k"
+
+git add README.md
+git commit -m "docs: sửa lỗi chính tả"
 ```
 
-`git add -p` là lệnh đáng học sớm nhất: nó cho phép tách một buổi làm việc lộn xộn thành các commit sạch, mỗi commit một ý.
+Hai commit, mỗi cái một việc — dù bạn làm cả hai cùng lúc. Đó là điều khung hình cho phép.
 
-## Hoàn tác ở từng vùng
+## Code chạy thế nào
 
-Đây là bảng cần nhớ — hoàn tác sai vùng là mất việc:
+Vòng đời một thay đổi, và tên trạng thái Git dùng cho từng chặng:
+
+```text
+① Bàn tiệc          ② Khung hình         ③ Album
+(chưa theo dõi /    (đã staged)          (đã commit)
+ đã sửa)
+
+  file mới ──git add──► staged ──git commit──► trong lịch sử
+      ▲                    │                        │
+      └──git restore ──────┘                        │
+      ▲                                             │
+      └──── git reset --soft/mixed ─────────────────┘
+```
+
+Và đây là bảng quan trọng nhất của bài — **hoàn tác ở từng vùng**:
+
+```text
+Sửa ở BÀN TIỆC, muốn bỏ:
+  git restore <file>              ← xoá thay đổi, KHÔNG lấy lại được
+
+Đã vào KHUNG HÌNH, muốn bỏ ra (giữ nội dung):
+  git restore --staged <file>
+
+Đã vào ALBUM, muốn sửa ảnh vừa chụp:
+  git commit --amend              ← chỉ khi CHƯA push
+
+Đã vào ALBUM, muốn quay lại vài ảnh trước:
+  git reset --soft  HEAD~1        ← bỏ commit, giữ nguyên khung hình
+  git reset         HEAD~1        ← bỏ commit + khung hình, giữ bàn tiệc
+  git reset --hard  HEAD~1        ← bỏ TẤT CẢ  ⚠️ mất code
+```
+
+Ba mức của `reset` chỉ khác nhau ở **dừng lại ở vùng nào**. Nhớ theo mô hình thì không cần học thuộc: `--soft` lùi một vùng, `--mixed` (mặc định) lùi hai, `--hard` lùi cả ba.
+
+## Cú pháp
 
 ```bash
-git restore ten-file            # bỏ sửa trong working dir (MẤT thay đổi)
-git restore --staged ten-file   # bỏ khỏi staging, giữ nguyên sửa đổi
-git commit --amend              # sửa commit gần nhất (nội dung hoặc thông điệp)
-git reset --soft HEAD~1         # bỏ commit, giữ thay đổi trong staging
-git reset --mixed HEAD~1        # bỏ commit, giữ thay đổi ở working dir (mặc định)
-git reset --hard HEAD~1         # bỏ commit VÀ xoá thay đổi — không hoàn tác được
+git status              # xem cả ba vùng — lệnh dùng nhiều nhất
+git diff                # bàn tiệc  ↔ khung hình
+git diff --staged       # khung hình ↔ album
+git add -p              # chọn TỪNG ĐOẠN để đưa vào khung  ← rất đáng dùng
+git log --oneline -10
 ```
 
-`--hard` là lệnh Git duy nhất thật sự làm mất việc. Trước khi gõ nó, hãy `git stash` để có đường lùi.
+`git add -p` là lệnh biến khung hình từ khái niệm thành công cụ thật: nó hỏi bạn từng đoạn thay đổi một, và bạn chọn đoạn nào vào commit này.
 
-## `.gitignore`
+## Tại sao cần nó
+
+Vì `.gitignore` và thông điệp commit là hai thứ ảnh hưởng cả đời dự án:
 
 ```gitignore
 node_modules/
-.env
-.env.local
+.env                    # ⚠️ bí mật — không bao giờ commit
+dist/
 *.log
 .DS_Store
-dist/
-.venv/
 ```
 
-Quy tắc quan trọng: `.gitignore` chỉ có tác dụng với file **chưa từng được theo dõi**. File đã lỡ commit thì phải gỡ ra:
+Quan trọng: `.gitignore` **chỉ áp dụng cho file chưa được theo dõi**. File đã trót commit thì thêm vào `.gitignore` không có tác dụng gì:
 
 ```bash
-git rm --cached .env      # gỡ khỏi Git, giữ file trên ổ đĩa
+git rm --cached .env    # gỡ khỏi Git nhưng giữ file trên máy
 ```
 
-Và nhớ: nếu `.env` đã từng lên remote, coi như secret trong đó **đã lộ** — phải đổi khoá, không chỉ xoá file. Lịch sử Git giữ lại mọi thứ.
+Và nếu bí mật đã bị push lên: **coi như đã lộ**. Xoá commit không đủ — phải **đổi ngay khoá đó**, vì nó đã nằm trong lịch sử của mọi người đã clone.
 
-## Viết thông điệp commit
+Thông điệp commit — dùng Conventional Commits:
 
-Quy ước Conventional Commits, dùng rộng rãi:
-
-```
-feat: thêm bộ lọc theo tag ở trang công nghệ
-fix: sửa lỗi mất dữ liệu khi đổi chủ đề
+```text
+feat: thêm đăng nhập bằng Google
+fix: sửa lỗi tính phí khi đơn > 500k
 docs: cập nhật hướng dẫn cài đặt
-refactor: tách schema ra khỏi file 'use server'
-test: thêm test cho hàm slugify
-chore: nâng phiên bản next lên 15.5
+refactor: tách logic tính giá ra module riêng
 ```
 
-Thông điệp tốt trả lời **vì sao**, không phải **cái gì** — diff đã cho biết cái gì rồi. Dòng đầu dưới 72 ký tự, thân bài giải thích lý do nếu cần.
+Câu tiêu đề trả lời *"làm gì"*; phần thân trả lời **"vì sao"** — thứ mà đọc diff không bao giờ thấy được:
 
-## `git stash`
+```text
+fix: giới hạn số lần thử lại xuống 3
 
-```bash
-git stash               # cất tạm mọi thay đổi, working dir sạch
-git stash -u            # cất cả file chưa được theo dõi
-git stash list
-git stash pop           # lấy lại và xoá khỏi stash
-git stash apply         # lấy lại nhưng giữ trong stash
+Cổng thanh toán trả 503 ngẫu nhiên khoảng 1% số lần. Thử lại 10 lần
+làm request treo tới 30 giây và người dùng bấm Gửi lần nữa.
+Nhà cung cấp xác nhận đây là hành vi mong đợi (ticket #4821).
 ```
 
-Dùng khi đang làm dở mà cần chuyển nhánh gấp để sửa lỗi khẩn.
+## So sánh
 
-## Lỗi hay gặp
+| Muốn gì | Lệnh |
+|---|---|
+| Bỏ sửa đổi chưa add | `git restore <file>` |
+| Bỏ khỏi staging, giữ nội dung | `git restore --staged <file>` |
+| Sửa commit vừa tạo (chưa push) | `git commit --amend` |
+| Bỏ commit, giữ code | `git reset --soft HEAD~1` |
+| Bỏ hẳn commit và code | `git reset --hard HEAD~1` ⚠️ |
+| Hoàn tác commit **đã push** | `git revert <hash>` |
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| `git add .` không xem `status` | Commit nhầm file rác, secret | Xem `git status` trước |
-| `git reset --hard` khi hoảng | Mất việc vĩnh viễn | `git stash` trước |
-| Commit `.env` | Lộ secret trong lịch sử | `git rm --cached` + **đổi khoá** |
-| Commit "fix", "update" | Lịch sử vô dụng khi cần tra | Conventional Commits |
-| Một commit khổng lồ | Không review nổi, không revert lẻ được | `git add -p` tách nhỏ |
+Dòng cuối quan trọng: trên nhánh chung, **không bao giờ `reset`** — dùng `revert`, nó tạo commit mới đảo ngược thay đổi. Chi tiết ở [[go-roi-khi-lo-tay]].
 
-## Ghi nhớ
+## Dễ nhầm
 
-- Ba vùng: working → staging → repository.
-- `git add -p` để tách công việc thành commit có ý nghĩa.
-- `--hard` là lệnh duy nhất làm mất việc thật sự.
-- Secret đã lên remote là đã lộ — phải đổi khoá.
+**1. `git add .` mọi lúc.** Bạn commit cả file tạm, file cấu hình cá nhân, và những thay đổi chưa xong. Dùng `git status` trước, và `git add -p` khi buổi làm việc có nhiều việc lẫn lộn.
 
-## Tự kiểm tra
+**2. Commit `.env` hoặc khoá API.** Xem ở trên — lộ là phải đổi khoá, không phải xoá commit.
 
-1. Lỡ `git add` một file không định commit. Gỡ ra bằng lệnh nào mà không mất sửa đổi?
-2. `git reset --soft`, `--mixed`, `--hard` khác nhau ở chỗ nào?
-3. Vừa commit xong thì phát hiện sai chính tả trong thông điệp. Sửa thế nào?
+**3. Dùng `git reset --hard` khi hoảng.** Nó xoá code chưa commit **vĩnh viễn**. Bình tĩnh dùng `git stash` trước.
+
+**4. Thông điệp "update", "fix bug", "wip".** Sáu tháng sau, `git log` của bạn là một danh sách vô nghĩa, và `git bisect` mất hết giá trị.
+
+**5. Commit quá to.** Một commit sửa 40 file, 5 việc khác nhau — không review được, không revert được từng phần. Một commit = một việc.
+
+**6. Tưởng `.gitignore` gỡ được file đã commit.** Cần `git rm --cached`.
+
+## Mẹo nhớ
+
+> **Bàn tiệc → khung hình → album.**
+>
+> **`reset` ba mức chỉ khác nhau ở chỗ dừng lại vùng nào.**
+>
+> **Nhánh chung thì `revert`, không `reset`.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Ba vùng của Git là gì, và vùng nào là thứ khiến Git khác các hệ thống khác?
+2. `git restore` và `git restore --staged` khác nhau ở chỗ nào?
+3. Ba mức của `git reset` khác nhau thế nào — nói theo mô hình ba vùng?
+4. Vì sao thêm `.env` vào `.gitignore` sau khi đã commit thì không có tác dụng?
+5. Vì sao trên nhánh chung phải dùng `revert` thay vì `reset`?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết lệnh cho từng tình huống:
+
+```text
+a) Lỡ `git add` một file không muốn commit
+b) Muốn bỏ hết sửa đổi trong file A về như lần commit gần nhất
+c) Vừa commit nhưng quên thêm một file (chưa push)
+d) Commit sai thông điệp, đã push lên nhánh chung
+e) Có ba thay đổi trong một file, chỉ muốn commit một
+```
+
+Tự kiểm: câu (d) và (e) là hai câu phân biệt người hiểu mô hình với người học thuộc lệnh — bạn trả lời được không?
+
+## Thử sức
+
+Đồng nghiệp báo: *"tôi `git reset --hard` nhầm, mất hết code hai giờ làm việc"*.
+
+Trước khi trả lời, hãy hỏi **một câu** để biết code có cứu được không. Câu đó là gì, và nếu câu trả lời là "có" thì bạn dùng lệnh nào để cứu?

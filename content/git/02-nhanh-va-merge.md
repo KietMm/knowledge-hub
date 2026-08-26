@@ -4,124 +4,189 @@ slug: nhanh-va-merge
 summary: Nhánh chỉ là một con trỏ tới commit — hiểu điều đó thì merge và conflict không còn đáng sợ.
 level: co-ban
 tags: [git, nhanh, merge, conflict]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** tạo nhánh không do dự, và xử lý conflict bằng cách đọc chứ không phải đoán.
+> **Sau bài này bạn sẽ:** hiểu vì sao tạo nhánh trong Git gần như miễn phí, và xử lý conflict mà không hoảng.
 
-## Nhánh là một con trỏ
+## Ý tưởng chính
 
-Một nhánh trong Git chỉ là một file 41 byte chứa mã hash của commit. Đó là lý do tạo nhánh **tức thì** và gần như miễn phí — khác hẳn các hệ VCS cũ phải sao chép cả thư mục.
+Nhánh trong Git **không phải một bản sao thư mục**. Nó là **một file văn bản chứa 40 ký tự** — mã hash của một commit.
+
+Từ sự thật đó suy ra mọi thứ: vì sao tạo nhánh mất 0 giây, vì sao đổi nhánh nhanh, và vì sao "xoá nhánh" không xoá code.
+
+## Mental model
+
+Hãy nghĩ tới **một dãy ảnh xếp thành chuỗi, và những tờ giấy nhớ dán lên**.
+
+```text
+   A ── B ── C ── D          ← chuỗi commit (mỗi cái trỏ về cha nó)
+             ▲     ▲
+          [tinh-nang]  [main]     ← tờ giấy nhớ = nhánh
+                        ▲
+                      [HEAD]      ← bạn đang đứng ở đâu
+```
+
+> **Tạo nhánh** = viết thêm một tờ giấy nhớ. Không chép gì cả.
+>
+> **Commit** = thêm một ảnh vào chuỗi, và **dịch tờ giấy nhớ** sang ảnh mới.
+>
+> **Đổi nhánh** = di chuyển `HEAD` sang tờ giấy khác, rồi bày lại bàn tiệc cho khớp.
+
+Người đến từ SVN hình dung nhánh là một thư mục sao chép, nên họ ngại tạo nhánh. Trong Git, ngại tạo nhánh là hiểu sai mô hình.
+
+## Ví dụ nhỏ
 
 ```bash
-git branch                       # liệt kê
-git switch -c feat/loc-theo-tag  # tạo và chuyển sang (lệnh hiện đại)
-git checkout -b feat/loc-theo-tag  # lệnh cũ, tương đương
-git switch main                  # quay về
-git branch -d feat/loc-theo-tag  # xoá khi đã merge
-```
-
-`HEAD` là con trỏ tới nhánh bạn đang đứng. `git switch` chỉ đơn giản là dời `HEAD`.
-
-## Hai kiểu merge
-
-### Fast-forward
-
-Khi nhánh chính không có commit mới nào từ lúc bạn tách ra, Git chỉ cần **dời con trỏ** tới trước:
-
-```
-main:  A---B
-                \
-feat:            C---D      -> merge -> main: A---B---C---D
-```
-
-Không có commit merge nào được tạo. Lịch sử thẳng và sạch.
-
-### Three-way merge
-
-Khi cả hai nhánh đều có commit mới, Git tạo một commit merge có **hai cha**:
-
-```
-main:  A---B---E
-            \       \
-feat:        C---D---M     (M là commit merge)
-```
-
-```bash
+git switch -c tinh-nang/dang-nhap    # tạo và chuyển sang
+# ... làm việc, commit ...
 git switch main
-git merge feat/loc-theo-tag
-git merge --no-ff feat/x     # ép tạo commit merge kể cả khi fast-forward được
-git merge --squash feat/x    # gộp mọi thay đổi thành MỘT commit chưa ghi
+git merge tinh-nang/dang-nhap
+git branch -d tinh-nang/dang-nhap    # xoá TỜ GIẤY NHỚ, các commit vẫn còn
 ```
 
-`--squash` hữu ích khi nhánh feature có 15 commit kiểu "wip", "fix typo" — nhánh chính chỉ cần một commit sạch.
+## Code chạy thế nào
 
-## Conflict
+**Hai kiểu merge**, và Git tự chọn — biết được kiểu nào giúp bạn đọc lịch sử:
 
-Conflict xảy ra khi hai nhánh sửa **cùng vùng** của cùng một file. Git đánh dấu:
+```text
+① FAST-FORWARD — main không đi đâu từ lúc tách nhánh
 
+trước:   A ── B ── C          sau:   A ── B ── C
+              ▲     ▲                            ▲
+           [main] [tn]                     [main][tn]
+
+Git chỉ DỊCH tờ giấy [main] tới chỗ [tn]. Không tạo commit mới.
 ```
+
+```text
+② MERGE COMMIT — cả hai nhánh đều có commit mới
+
+trước:        D ── E   [tn]         sau:      D ── E
+             ╱                               ╱       ╲
+   A ── B ── C ── F   [main]      A ── B ── C ── F ── M   [main]
+                                                       ▲
+                                        M có HAI cha: F và E
+```
+
+`M` là commit hợp nhất — nó ghi lại rằng hai dòng công việc gặp nhau tại đây.
+
+```bash
+git merge tn                # tự chọn kiểu
+git merge --no-ff tn        # LUÔN tạo merge commit — giữ dấu vết nhánh tính năng
+git merge --squash tn       # gộp mọi commit của tn thành MỘT, không có cha thứ hai
+```
+
+## Cú pháp
+
+Conflict xảy ra khi **hai nhánh sửa cùng một vùng của cùng một file**:
+
+```text
 <<<<<<< HEAD
-const gioiHan = 20
+const gioiHan = 100          ← phiên bản trên nhánh HIỆN TẠI
 =======
-const gioiHan = 50
->>>>>>> feat/phan-trang
+const gioiHan = 200          ← phiên bản của nhánh ĐANG MERGE VÀO
+>>>>>>> tinh-nang
 ```
-
-- Phần trên `=======` là phiên bản của nhánh bạn **đang đứng**.
-- Phần dưới là của nhánh bạn **đang merge vào**.
-
-Cách xử lý:
 
 ```bash
-git status                  # xem file nào conflict
-# sửa file: xoá dấu <<<< ==== >>>>, giữ lại nội dung ĐÚNG
-git add file-da-sua
-git commit                  # hoàn tất merge
+# 1. Mở file, sửa lại cho đúng, XOÁ hết dấu <<<<, ====, >>>>
+# 2. git add <file>
+# 3. git commit          (Git tự soạn sẵn thông điệp)
 
-git merge --abort           # bỏ cuộc, quay về trạng thái trước merge
+git merge --abort        # bỏ cuộc, quay lại như chưa merge
 ```
 
-Điều quan trọng: **kết quả đúng thường không phải chọn một trong hai** — có khi phải kết hợp cả hai ý. Đọc để hiểu cả hai bên định làm gì, đừng chọn bừa.
+Điểm quan trọng: **Git không biết ý bạn**. Nó chỉ nói *"hai bên đổi cùng chỗ, bạn quyết định"*. Có khi đáp án đúng không phải bên nào cả mà là một cách viết thứ ba.
 
-Sau khi sửa xong, **chạy test** trước khi commit. Merge sạch về mặt văn bản không có nghĩa là code còn đúng: hai người sửa hai hàm khác nhau (không conflict) vẫn có thể tạo ra logic mâu thuẫn.
+## Tại sao cần nó
 
-## Tránh conflict
+Vì hiểu "nhánh là con trỏ" thay đổi cách bạn làm việc:
 
-- Nhánh sống ngắn: merge trong 1–2 ngày, đừng để hai tuần.
-- Kéo `main` về thường xuyên: `git pull --rebase origin main`.
-- Chia file nhỏ theo trách nhiệm — hai người ít khi phải sửa cùng chỗ.
-- Thống nhất định dạng bằng công cụ (prettier, ruff) để không conflict vì khoảng trắng.
+**Tạo nhánh cho mọi việc.** Nó miễn phí. Một nhánh cho một tính năng, một bug, một thử nghiệm — và nhánh chính luôn ở trạng thái chạy được.
 
-## Làm việc với remote
+**Xoá nhánh không mất gì.** `git branch -d` chỉ gỡ tờ giấy nhớ. Commit vẫn nằm đó, và `git reflog` tìm lại được — xem [[go-roi-khi-lo-tay]].
+
+**Tránh conflict bằng thói quen, không bằng may mắn:**
+
+```text
+① Nhánh ngắn — vài ngày, không phải vài tuần
+② Cập nhật thường xuyên từ nhánh chính (merge hoặc rebase)
+③ Chia file theo tính năng, đừng để một file khổng lồ ai cũng phải sửa
+```
+
+Điểm ③ ít người nghĩ tới nhưng hiệu quả nhất: conflict là **triệu chứng của thiết kế**, không chỉ của quy trình. File 2000 dòng mà cả đội cùng sửa sẽ conflict mãi mãi — cùng vấn đề với [[ket-dinh-cao-lien-ket-long]].
+
+Làm việc với remote:
 
 ```bash
-git fetch origin              # tải về, KHÔNG đụng vào nhánh của bạn
-git pull                      # = fetch + merge
-git pull --rebase             # = fetch + rebase (lịch sử thẳng hơn)
-git push -u origin feat/x     # đẩy lần đầu và đặt nhánh theo dõi
+git fetch origin            # tải về, KHÔNG đụng vào nhánh của bạn
+git pull                    # = fetch + merge  ← có thể tạo merge commit bất ngờ
+git pull --rebase           # = fetch + rebase ← lịch sử thẳng hơn
+git push -u origin ten      # đẩy lần đầu và ghi nhớ nhánh theo dõi
 ```
 
-`git fetch` an toàn tuyệt đối — nó chỉ cập nhật thông tin. Khi không chắc chuyện gì đang xảy ra, luôn bắt đầu bằng `fetch` rồi xem `git log --oneline --graph --all`.
+`git fetch` rồi `git log origin/main` là thói quen tốt: bạn **xem** trước khi hợp nhất, thay vì để `pull` tự quyết.
 
-## Lỗi hay gặp
+## So sánh
 
-| Lỗi | Hậu quả | Sửa thế nào |
+| Kiểu gộp | Lịch sử | Dùng khi |
 |---|---|---|
-| Nhánh sống hàng tuần | Conflict lớn, khó gỡ | Merge sớm và thường xuyên |
-| Chọn bừa một bên khi conflict | Mất tính năng của người kia | Đọc hiểu cả hai bên |
-| Không chạy test sau merge | Merge sạch nhưng logic hỏng | Luôn test sau merge |
-| `git push --force` lên nhánh chung | Xoá commit của người khác | `--force-with-lease` |
-| Commit thẳng lên `main` | Không ai review được | Luôn làm trên nhánh |
+| Fast-forward | Thẳng, không dấu vết nhánh | Nhánh nhỏ, một commit |
+| Merge commit | Rẽ nhánh rồi gặp lại | Muốn thấy rõ ranh giới tính năng |
+| Squash | Một commit duy nhất | Nhánh có nhiều commit "wip", chỉ cần kết quả |
 
-## Ghi nhớ
+Nhiều đội chọn **squash khi gộp PR**: nhánh chính chỉ còn một commit sạch cho mỗi tính năng, và lịch sử đọc được như một danh sách thay đổi.
 
-- Nhánh chỉ là con trỏ; tạo nhánh gần như miễn phí.
-- Fast-forward khi lịch sử thẳng; three-way khi hai bên cùng tiến.
-- Conflict là hai người sửa cùng vùng — kết quả đúng có thể là kết hợp cả hai.
-- Merge sạch không đảm bảo code đúng: chạy test.
+## Dễ nhầm
 
-## Tự kiểm tra
+**1. Tưởng xoá nhánh là mất code.** Không — chỉ mất tờ giấy nhớ.
 
-1. Vì sao tạo nhánh trong Git nhanh hơn hẳn các hệ VCS cũ?
-2. Trong khối conflict, phần nào là của nhánh bạn đang đứng?
-3. Khi nào nên dùng `--squash` thay vì merge thường?
+**2. Nhánh sống quá lâu.** Ba tuần không cập nhật từ `main` thì lúc merge bạn có 40 conflict. Cập nhật vài ngày một lần.
+
+**3. Giải quyết conflict bằng cách chọn bừa một bên.** Đọc kỹ **cả hai** và hiểu ý định của từng bên; có khi phải viết cách thứ ba.
+
+**4. Quên xoá dấu `<<<<<<<`.** Code vẫn commit được và sẽ nổ lúc chạy — chạy test trước khi commit merge.
+
+**5. `git pull` mù quáng.** Nó merge ngay lập tức. `git fetch` rồi xem trước thì bạn không bị bất ngờ.
+
+**6. Đặt tên nhánh vô nghĩa.** `test`, `fix`, `new` — sau ba tháng không ai biết chúng là gì. Dùng `feat/dang-nhap-google`, `fix/tinh-phi-sai`.
+
+## Mẹo nhớ
+
+> **Nhánh là tờ giấy nhớ dán lên một commit.**
+>
+> **Merge commit có HAI cha; fast-forward chỉ dịch giấy nhớ.**
+>
+> **Conflict nhiều là triệu chứng của nhánh dài hoặc file quá to.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Một nhánh Git thực chất là gì về mặt dữ liệu?
+2. Khi nào Git dùng fast-forward, khi nào tạo merge commit?
+3. Merge commit khác commit thường ở điểm nào?
+4. Vì sao xoá nhánh không mất code?
+5. Ba cách giảm conflict, và cách nào liên quan tới thiết kế code?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, vẽ trạng thái các con trỏ sau mỗi bước:
+
+```bash
+git switch -c tn        # từ main đang ở commit C
+# commit D
+# ai đó push commit E lên main
+git switch main
+git pull
+git merge tn
+```
+
+Tự kiểm: sau lệnh cuối, có tạo merge commit không? Vì sao?
+
+## Thử sức
+
+Bạn merge nhánh `tn` vào `main` và gặp 25 file conflict. Sau hai giờ giải quyết, bạn nghi ngờ mình đã làm mất một thay đổi của người khác.
+
+Nêu **cách kiểm chứng** điều đó bằng Git — bạn so cái gì với cái gì? Rồi trả lời câu quan trọng hơn: **thay đổi gì trong quy trình** để lần sau không rơi vào tình huống 25 file conflict?

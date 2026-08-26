@@ -4,111 +4,178 @@ slug: quy-trinh-lam-viec-nhom
 summary: Trunk-based hay Git Flow, đặt tên nhánh, pull request và bảo vệ nhánh chính.
 level: trung-cap
 tags: [git, workflow, pull-request, code-review]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** chọn được quy trình phù hợp với quy mô nhóm, và viết pull request người khác muốn review.
+> **Sau bài này bạn sẽ:** chọn được quy trình phù hợp với đội mình bằng một câu hỏi, và viết pull request mà người review đọc là hiểu.
 
-## Hai quy trình phổ biến
+## Ý tưởng chính
 
-### Trunk-based (khuyến nghị cho phần lớn nhóm)
+Quy trình Git không phải chuyện sở thích. Nó trả lời một câu hỏi cụ thể: **bạn phát hành phần mềm bao lâu một lần?**
 
-Một nhánh chính duy nhất. Nhánh feature sống **ngắn** (1–3 ngày) rồi merge vào `main`. Tính năng chưa xong được giấu sau feature flag.
+Đội deploy mỗi ngày và đội phát hành mỗi quý cần hai quy trình khác nhau — và áp quy trình của bên kia vào là tự tạo việc.
 
-Ưu điểm: ít conflict, tích hợp liên tục thật sự, triển khai được bất cứ lúc nào.
-Điều kiện: cần test tự động tốt và CI nhanh.
+## Mental model
 
-### Git Flow
+Hãy nghĩ tới hai kiểu nhà bếp.
 
-Nhiều nhánh dài hạn: `main`, `develop`, `release/*`, `hotfix/*`, `feature/*`.
+> **Trunk-based là bếp nhà hàng**: món xong tới đâu bưng ra tới đó. Mọi người làm quanh **một cái bàn chính**, mỗi việc chỉ vài giờ tới một ngày.
+>
+> **Git Flow là bếp làm tiệc cưới**: nấu cả tuần, gom vào **khu chuẩn bị riêng**, tới ngày mới bày ra. Nhiều tầng trung gian vì thời điểm phục vụ cố định.
 
-Phù hợp khi phần mềm có **phiên bản phát hành** (app desktop, thư viện, firmware) và phải hỗ trợ nhiều bản cùng lúc. Với web app triển khai liên tục, Git Flow thường là gánh nặng không cần thiết.
+Cả hai đều đúng — **cho đúng loại bếp**. Nhà hàng mà dựng khu chuẩn bị riêng cho từng món thì món nguội trước khi ra tới bàn.
 
-## Đặt tên nhánh
+## Ví dụ nhỏ
 
+```text
+TRUNK-BASED                       GIT FLOW
+main ────●────●────●──►           main ──────●──────────●──►  (chỉ bản phát hành)
+      ╲ ╱  ╲ ╱                              ╱          ╱
+   nhánh ngắn (1-2 ngày)          release ─●──────────●
+                                          ╱
+                                develop ─●──●──●──●──►
+                                        ╱  ╱
+                                    feature/*
 ```
-feat/loc-theo-tag
-fix/mat-du-lieu-khi-doi-chu-de
-chore/nang-next-15
+
+## Code chạy thế nào
+
+Câu hỏi để chọn:
+
+```text
+Deploy nhiều lần mỗi tuần, không có "phiên bản"     →  TRUNK-BASED
+Phát hành theo đợt, phải hỗ trợ nhiều phiên bản cũ  →  GIT FLOW
+```
+
+Phần lớn sản phẩm web hiện nay thuộc nhóm một. Git Flow ra đời năm 2010 cho phần mềm đóng gói bán theo phiên bản — chính tác giả của nó sau này đã khuyến cáo đừng dùng cho web.
+
+Trunk-based chỉ có một quy tắc thay cho cả sơ đồ: **`main` luôn ở trạng thái deploy được**. Từ đó suy ra mọi thứ còn lại — nhánh phải ngắn, test phải chạy trước khi gộp, và tính năng chưa xong thì giấu sau feature flag chứ không giữ trong nhánh dài.
+
+## Cú pháp
+
+Đặt tên nhánh — chọn một quy ước và giữ nó:
+
+```text
+feat/dang-nhap-google
+fix/tinh-phi-sai-khi-don-lon
+chore/nang-cap-next-15
 docs/huong-dan-cai-dat
 ```
 
-Tiền tố cho biết loại thay đổi; phần sau mô tả **việc**, không phải tên người hay số ngẫu nhiên. Nhiều nhóm thêm mã ticket: `feat/KH-123-loc-theo-tag`.
+```text
+❌ test, fix, new, cua-toi, tam
+```
 
-## Pull request tốt
+Tiền tố cho phép lọc nhanh, và tên có nghĩa cho phép người khác biết nhánh của bạn đang làm gì mà không phải hỏi.
+
+Bảo vệ nhánh chính — cấu hình trên GitHub/GitLab, không phải thoả thuận miệng:
+
+```text
+☑ Yêu cầu pull request trước khi gộp
+☑ Yêu cầu ít nhất 1 người duyệt
+☑ Yêu cầu CI xanh
+☑ Yêu cầu nhánh cập nhật với main trước khi gộp
+☑ Cấm force push vào main
+```
+
+Dòng cuối quan trọng: nó biến quy tắc vàng của rebase ([[rebase-va-lich-su-sach]]) thành thứ **máy** bảo đảm, không phụ thuộc trí nhớ ai.
+
+## Tại sao cần nó
+
+Vì pull request là nơi **kiến thức được truyền đi**, không chỉ nơi bắt lỗi. Một PR tốt gồm ba phần:
 
 ```markdown
 ## Làm gì
-Thêm bộ lọc theo tag ở trang công nghệ.
+Thêm đăng nhập bằng Google, dùng NextAuth.
 
 ## Vì sao
-Công nghệ có trên 20 bài, người dùng phải cuộn để tìm bài theo chủ đề hẹp.
+40% người dùng bỏ giữa chừng ở màn hình tạo mật khẩu (số liệu từ ticket #234).
 
 ## Cách kiểm tra
-1. Mở /t/javascript-typescript
-2. Bấm tag "closure" — chỉ còn bài có tag đó
-3. Bấm "Tất cả" — quay lại danh sách đầy đủ
-
-## Lưu ý khi review
-Tag rác trên URL cố ý KHÔNG trả 404, chỉ hiện trạng thái rỗng có hướng dẫn.
+1. Chạy `pnpm dev`
+2. Vào /dang-nhap, bấm "Tiếp tục với Google"
+3. Kiểm tra bảng `users` có bản ghi mới với `provider = 'google'`
 ```
 
-Nguyên tắc: **PR nhỏ được review kỹ, PR lớn được duyệt cho xong.** PR trên 400 dòng thay đổi thì chất lượng review giảm rõ rệt. Chia nhỏ.
+Phần **"vì sao"** là phần quý nhất và hay bị bỏ nhất: diff cho thấy *cái gì đã đổi*, không bao giờ cho thấy *vì sao đáng đổi*.
 
-Tự review PR của mình trước khi gửi — bạn sẽ tìm thấy `console.log` bỏ quên và một hai chỗ đặt tên tệ.
+Bốn quy tắc cho PR dễ review:
 
-## Review code
+```text
+① Nhỏ — dưới 400 dòng thay đổi. PR 2000 dòng nhận được lời khen, không phải góp ý.
+② Một việc — đừng trộn refactor với tính năng mới trong cùng PR.
+③ Tự review trước khi gửi — bạn sẽ tự thấy 3 chỗ cần sửa.
+④ Trả lời mọi comment, kể cả bằng "đồng ý, đã sửa".
+```
 
-Người review nên:
-- Phân biệt rõ **bắt buộc sửa** và **gợi ý**. Ghi rõ: "nit:" cho góp ý nhỏ.
-- Hỏi thay vì phán xét: "Chỗ này xử lý sao khi mảng rỗng?" thay vì "Code này sai".
-- Khen chỗ làm tốt — review chỉ toàn chê là nguồn của review chiếu lệ.
+Khi **review** người khác, phân biệt ba mức để người nhận biết cái nào bắt buộc:
 
-Người nhận review nên:
-- Không nhận xét nào là công kích cá nhân.
-- Không đồng ý thì phản biện bằng lý do kỹ thuật, đừng im lặng sửa theo.
-- Trả lời mọi comment, kể cả bằng "đã sửa".
+```text
+[chặn]     Lỗi thật, phải sửa trước khi gộp
+[nên]      Cải thiện đáng làm, không chặn
+[góp ý]    Ý kiến cá nhân, bỏ qua cũng được
+```
 
-## Bảo vệ nhánh chính
+Không phân mức thì mọi comment nghe như nhau, và người viết code hoặc sửa tất (mất thời gian) hoặc bỏ qua tất (bỏ sót lỗi thật).
 
-Trên GitHub, bật cho `main`:
+## So sánh
 
-- Yêu cầu pull request trước khi merge.
-- Yêu cầu ít nhất 1 người duyệt.
-- Yêu cầu CI xanh (test, lint, typecheck).
-- Yêu cầu nhánh cập nhật với `main` trước khi merge.
-- Cấm force push.
-
-Đây là hàng rào rẻ nhất chống lại "ai đó push nhầm lên main lúc 11 giờ đêm".
-
-## Chọn cách merge
-
-| Cách | Kết quả | Khi nào |
+| | Trunk-based | Git Flow |
 |---|---|---|
-| Merge commit | Giữ mọi commit + một commit merge | Nhánh có lịch sử đáng giữ |
-| Squash and merge | Cả PR thành **một** commit | Mặc định tốt cho phần lớn nhóm |
-| Rebase and merge | Chép từng commit lên main, không có commit merge | Khi commit đã sạch sẵn |
+| Nhánh dài hạn | Một (`main`) | `main` + `develop` |
+| Tuổi nhánh tính năng | 1-2 ngày | Vài tuần |
+| Deploy | Liên tục | Theo đợt |
+| Conflict | Ít | Nhiều |
+| Hợp với | Web, SaaS | Phần mềm đóng gói, có nhiều phiên bản được hỗ trợ |
 
-Squash merge cho lịch sử `main` gọn, mỗi dòng là một PR — rất tiện khi dùng `git bisect` hoặc đọc changelog.
+Đường giữa hay dùng: **GitHub Flow** — chỉ `main` + nhánh tính năng ngắn + PR, không có `develop`. Đây là mặc định hợp lý cho phần lớn đội.
 
-## Lỗi hay gặp
+## Dễ nhầm
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| PR 2000 dòng | Review chiếu lệ, lọt bug | Chia nhỏ theo từng ý |
-| Nhánh sống hai tuần | Conflict khổng lồ | Merge sớm, dùng feature flag |
-| Không bảo vệ `main` | Push thẳng, CI đỏ | Bật branch protection |
-| Review chỉ soi phong cách | Bỏ sót lỗi logic | Để lint lo phong cách |
-| Git Flow cho web app | Quy trình nặng vô ích | Trunk-based |
+**1. Dùng Git Flow cho sản phẩm web deploy hằng ngày.** Bạn nhận về `develop` luôn lệch `main`, merge hai chiều, và conflict thường trực — để đổi lấy một cấu trúc phục vụ nhu cầu bạn không có.
 
-## Ghi nhớ
+**2. Nhánh sống hàng tuần.** Càng lâu càng nhiều conflict, và PR càng to càng khó review. Chia nhỏ việc — cùng kỹ năng ở [[chia-bai-toan-lon-thanh-nho]].
 
-- Trunk-based cho web app; Git Flow khi có phiên bản phát hành.
-- Nhánh sống ngắn là cách phòng conflict tốt nhất.
-- PR nhỏ, có mô tả "vì sao" và "cách kiểm tra".
-- Branch protection + CI là hàng rào rẻ nhất.
+**3. PR khổng lồ.** Nghiên cứu về review code đều cho cùng kết luận: quá ~400 dòng, khả năng phát hiện lỗi rơi mạnh. Người review chuyển từ đọc sang lướt.
 
-## Tự kiểm tra
+**4. Bảo vệ nhánh bằng thoả thuận miệng.** Sẽ có người push nhầm vào `main` lúc 11 giờ đêm. Bật bảo vệ nhánh.
 
-1. Nhóm 4 người làm web app triển khai hằng ngày — chọn quy trình nào, vì sao?
-2. Ba mục bắt buộc có trong mô tả PR?
-3. Squash merge và merge commit khác nhau thế nào với `git bisect`?
+**5. Review chỉ soi cú pháp.** Linter làm việc đó rồi. Người review nên hỏi: *thiết kế này có đúng không, có ca biên nào bỏ sót không, tên này có nói đúng ý không*.
+
+**6. Không ai review vì "tin nhau".** Review không phải vì nghi ngờ — nó là cách kiến thức lan trong đội và là cách phát hiện thứ người viết không nhìn thấy.
+
+## Mẹo nhớ
+
+> **Bếp nhà hàng (trunk-based) hay bếp tiệc cưới (Git Flow) — hỏi tần suất phát hành.**
+>
+> **`main` luôn deploy được.**
+>
+> **PR nói VÌ SAO, không chỉ nói cái gì.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Câu hỏi nào quyết định chọn trunk-based hay Git Flow?
+2. Quy tắc duy nhất của trunk-based, và mọi thứ khác suy ra từ đó thế nào?
+3. Ba phần của một mô tả PR tốt, và phần nào hay bị bỏ nhất?
+4. Vì sao PR trên 400 dòng làm giảm chất lượng review?
+5. Vì sao ba mức comment ([chặn]/[nên]/[góp ý]) lại hữu ích?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết mô tả PR cho thay đổi sau:
+
+```text
+Bạn đổi cách tính phí giao hàng: trước tính theo khoảng cách, giờ tính theo
+vùng. Có 3 file thay đổi, 1 migration cơ sở dữ liệu, và một số đơn cũ sẽ hiện
+phí khác trước.
+```
+
+Tự kiểm: mục "Cách kiểm tra" của bạn có nhắc tới **đơn cũ** không — thứ mà người review dễ bỏ sót nhất?
+
+## Thử sức
+
+Đội bạn 6 người, deploy 2 lần/tuần. Hiện dùng Git Flow, và mỗi lần merge `develop` vào `main` mất nửa ngày giải conflict.
+
+Đề xuất chuyển đổi: **ba bước** đầu tiên, và với mỗi bước nói rõ **rủi ro** là gì. Câu khó nhất: tính năng đang làm dở nửa chừng thì xử lý thế nào khi nhánh dài không còn được phép?

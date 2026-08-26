@@ -4,122 +4,182 @@ slug: go-roi-khi-lo-tay
 summary: reflog, revert, bisect — bộ ba cứu hộ cho gần như mọi tình huống hoảng loạn với Git.
 level: trung-cap
 tags: [git, reflog, revert, bisect]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** biết rằng gần như mọi thứ trong Git đều lấy lại được, và biết lấy lại bằng cách nào.
+> **Sau bài này bạn sẽ:** biết Git gần như không bao giờ mất dữ liệu thật, và có ba lệnh để xử lý mọi tình huống hoảng loạn.
 
-## `git reflog` — nhật ký mọi nơi HEAD từng đứng
+## Ý tưởng chính
 
-Đây là lệnh cứu hộ quan trọng nhất. Git ghi lại **mọi** lần `HEAD` thay đổi, kể cả những commit không còn nhánh nào trỏ tới:
+Điều quan trọng nhất cần biết khi hoảng: **Git rất khó làm mất dữ liệu đã commit**. Mọi thứ từng được commit đều còn nằm đó ít nhất 30 ngày, kể cả khi nhánh đã bị xoá hay `reset --hard`.
+
+Thứ **thật sự mất được** chỉ là những gì **chưa bao giờ commit**. Nên quy tắc số một khi làm việc mạo hiểm: commit hoặc `stash` trước đã.
+
+## Mental model
+
+Hãy nghĩ tới **camera an ninh trong một toà nhà**.
+
+> Bạn dịch chuyển đồ đạc, xoá biển tên phòng, đập tường — nhưng **camera đã ghi lại mọi vị trí bạn từng đứng**.
+>
+> `git reflog` là cuốn băng đó. Nó không quan tâm nhánh nào còn nhánh nào mất; nó chỉ ghi: *"lúc 10:03, HEAD ở commit a1b2c3"*.
+
+Người mới tưởng `reset --hard` là xoá vĩnh viễn. Thực ra commit vẫn nằm nguyên trong kho, chỉ là **không còn tờ giấy nhớ nào trỏ tới nó** — và cuốn băng cho bạn địa chỉ của nó.
+
+## Ví dụ nhỏ
 
 ```bash
 git reflog
-# a1b2c3d HEAD@{0}: reset: moving to HEAD~3
-# e4f5g6h HEAD@{1}: commit: feat: thêm bộ lọc      <- commit "đã mất"
-# ...
-
-git reset --hard e4f5g6h        # quay lại đúng thời điểm đó
-# hoặc an toàn hơn:
-git switch -c cuu-ho e4f5g6h    # tạo nhánh mới từ commit đó
 ```
 
-Reflog giữ khoảng 90 ngày. Nghĩa là: `reset --hard` nhầm, xoá nhánh nhầm, rebase hỏng — vẫn lấy lại được, miễn là bạn đã commit.
-
-## `git revert` — hoàn tác an toàn trên nhánh chung
+```text
+a1b2c3 HEAD@{0}: reset: moving to HEAD~3      ← chỗ bạn vừa lỡ tay
+d4e5f6 HEAD@{1}: commit: thêm tính năng X     ← commit tưởng đã mất
+7g8h9i HEAD@{2}: commit: sửa lỗi Y
+```
 
 ```bash
-git revert a1b2c3d              # tạo commit MỚI đảo ngược commit đó
-git revert -m 1 <hash-merge>    # revert một commit merge
+git reset --hard d4e5f6      # quay lại đúng chỗ trước khi lỡ tay
 ```
 
-Khác `reset` ở chỗ: `revert` **thêm** commit thay vì xoá. Lịch sử không bị viết lại, nên dùng được trên nhánh chung mà không ảnh hưởng ai.
+## Code chạy thế nào
 
-Quy tắc: `reset` cho nhánh riêng chưa push, `revert` cho mọi thứ đã lên remote.
+Vì sao commit "mất" vẫn còn:
 
-## Các tình huống thường gặp
+```text
+Trước reset:
+   A ── B ── C ── D        [main]
+                   ▲
+                 [HEAD]
 
-**Commit nhầm nhánh (lỡ commit lên `main`):**
+Sau git reset --hard HEAD~2:
+   A ── B ── C ── D        ← C và D VẪN NẰM TRONG KHO
+             ▲
+          [main]           ← chỉ có tờ giấy nhớ bị dịch về B
+          [HEAD]
+
+reflog vẫn ghi: "HEAD@{1} = D"  ⇒ lấy lại được bằng hash
+```
+
+Git chỉ thật sự xoá commit khi chạy dọn rác (`gc`), và nó chỉ dọn thứ **không ai trỏ tới trong hơn 30 ngày**.
+
+## Cú pháp
+
+**`git revert` — hoàn tác an toàn trên nhánh chung:**
+
 ```bash
-git switch -c feat/dung-nhanh    # tạo nhánh tại vị trí hiện tại
-git switch main
-git reset --hard origin/main     # đưa main về đúng trạng thái remote
+git revert a1b2c3            # tạo commit MỚI đảo ngược thay đổi của a1b2c3
+git revert HEAD              # hoàn tác commit gần nhất
+git revert -m 1 <merge>      # hoàn tác một merge commit (1 = giữ nhánh chính)
 ```
 
-**Quên thêm một file vào commit vừa rồi:**
-```bash
-git add file-quen
-git commit --amend --no-edit
+```text
+reset   →  XOÁ commit khỏi lịch sử   →  chỉ dùng trên nhánh cá nhân
+revert  →  THÊM commit đảo ngược      →  an toàn trên nhánh chung
 ```
 
-**Xoá nhầm nhánh chưa merge:**
-```bash
-git reflog                       # tìm commit cuối của nhánh đó
-git switch -c ten-nhanh <hash>
-```
+Đây là khác biệt phải nhớ: trên nhánh nhiều người dùng, `reset` phá lịch sử của họ; `revert` thì không đụng gì tới quá khứ.
 
-**Cần xem file ở phiên bản cũ:**
-```bash
-git show a1b2c3d:duong/dan/file.ts
-git restore --source=a1b2c3d duong/dan/file.ts
-```
-
-**Lỡ push secret lên remote:** đổi khoá **trước tiên**. Xoá khỏi lịch sử bằng `git filter-repo` chỉ là bước dọn dẹp — không ai đảm bảo được là chưa có ai kịp sao chép.
-
-## `git bisect` — tìm commit gây lỗi
-
-Khi biết "hai tuần trước còn chạy, giờ hỏng" nhưng không biết commit nào gây ra:
+**`git bisect` — tìm commit gây lỗi bằng tìm kiếm nhị phân:**
 
 ```bash
 git bisect start
-git bisect bad                  # commit hiện tại: hỏng
-git bisect good v1.2.0          # phiên bản này: chạy tốt
-
-# Git checkout commit ở giữa, bạn kiểm tra rồi trả lời:
-git bisect good      # hoặc  git bisect bad
-
-git bisect reset     # xong, quay về nhánh cũ
+git bisect bad                 # commit hiện tại: có lỗi
+git bisect good v1.2.0         # phiên bản này: chạy tốt
+# Git checkout commit ở giữa → bạn thử → trả lời good/bad
+git bisect good                # hoặc: git bisect bad
+# ... lặp lại ~log₂(n) lần
+git bisect reset               # xong, quay về nhánh cũ
 ```
 
-Tìm kiếm nhị phân: 1000 commit chỉ cần khoảng 10 lần kiểm tra. Có script kiểm tra tự động thì càng nhanh:
+Với 1000 commit giữa hai mốc, bisect tìm ra thủ phạm trong **khoảng 10 bước** — vì mỗi câu trả lời loại đi một nửa, đúng như [[sap-xep-va-tim-kiem-nhi-phan]].
+
+Tự động hoá nếu có script kiểm tra:
 
 ```bash
-git bisect run pnpm test
+git bisect run npm test        # Git tự chạy, tự trả lời, tự tìm ra commit hỏng
 ```
 
-Git tự chạy đến khi tìm ra commit đầu tiên bị hỏng.
+## Tại sao cần nó
 
-## `git blame` và tìm trong lịch sử
+Vì đây là những tình huống bạn **sẽ** gặp, và biết trước thì không mất buổi tối:
+
+| Tình huống | Lệnh |
+|---|---|
+| Xoá nhầm nhánh chưa merge | `git reflog` → `git switch -c ten <hash>` |
+| `reset --hard` nhầm | `git reflog` → `git reset --hard <hash>` |
+| Commit nhầm vào `main` | `git branch tn` → `git reset --hard HEAD~1` (khi chưa push) |
+| Commit đã push cần hoàn tác | `git revert <hash>` |
+| Commit nhầm file bí mật | `git rm --cached` + **đổi khoá ngay** |
+| Không biết lỗi từ đâu | `git bisect` |
+| Muốn biết ai sửa dòng này | `git blame` |
+| Tìm commit từng chứa một chuỗi | `git log -S "chuoi"` |
+
+Hai lệnh điều tra đáng biết:
 
 ```bash
-git blame -L 40,60 file.ts       # ai sửa dòng 40-60, ở commit nào
-git log -S "ten_ham"             # commit nào thêm/xoá chuỗi này
-git log -p file.ts               # toàn bộ diff của một file qua thời gian
-git log --follow file.ts         # theo dõi cả khi file bị đổi tên
+git blame -L 10,20 file.ts        # ai sửa dòng 10-20, ở commit nào
+git log -S "tinhPhi" --oneline    # commit nào THÊM hoặc XOÁ chuỗi này
+git log -p file.ts                # toàn bộ lịch sử thay đổi của một file
 ```
 
-`git log -S` (pickaxe) là công cụ bị đánh giá thấp nhất: nó trả lời được "đoạn code kỳ lạ này sinh ra từ đâu và vì sao".
+`git log -S` là công cụ ít người biết nhưng cứu rất nhiều thời gian: nó tìm **theo nội dung thay đổi**, không phải theo thông điệp commit — nên nó tìm được cả những commit có thông điệp vô nghĩa.
 
-Đọc `blame` để **hiểu bối cảnh**, không phải để tìm người đổ lỗi — commit message và PR liên quan thường giải thích vì sao code trông như vậy.
+## So sánh
 
-## Lỗi hay gặp
-
-| Tình huống | Sai lầm | Cách đúng |
+| | `reset` | `revert` |
 |---|---|---|
-| `reset --hard` nhầm | Tưởng mất vĩnh viễn | `git reflog` |
-| Hoàn tác trên nhánh chung | `reset` + force push | `git revert` |
-| Không biết lỗi từ đâu | Đọc thủ công 200 commit | `git bisect` |
-| Lỡ push secret | Chỉ xoá file | Đổi khoá **rồi mới** dọn lịch sử |
-| Commit nhầm `main` | Hoảng, xoá thư mục | Tạo nhánh rồi reset `main` |
+| Làm gì | Dịch con trỏ, xoá commit khỏi nhánh | Tạo commit mới đảo ngược |
+| Lịch sử | Bị viết lại | Được thêm vào |
+| Nhánh chung | ❌ nguy hiểm | ✅ an toàn |
+| Cần force push | Có | Không |
 
-## Ghi nhớ
+## Dễ nhầm
 
-- Đã commit thì gần như luôn lấy lại được — `git reflog` là cứu tinh.
-- `reset` cho nhánh riêng, `revert` cho nhánh chung.
-- `git bisect run` tự tìm commit gây lỗi.
-- Secret lộ thì đổi khoá trước, dọn lịch sử sau.
+**1. Hoảng và chạy thêm lệnh phá hoại.** Dừng lại. Chạy `git status` và `git reflog` trước — đọc trước khi làm.
 
-## Tự kiểm tra
+**2. `reset --hard` khi có thay đổi chưa commit.** Đây là **cách duy nhất** thật sự mất code. `git stash` trước.
 
-1. `git reset --hard HEAD~3` rồi nhận ra sai. Lấy lại thế nào?
-2. Vì sao dùng `revert` chứ không `reset` cho commit đã push lên `main`?
-3. Test hỏng từ lúc nào không rõ, giữa 300 commit. Dùng lệnh gì và cần bao nhiêu lần kiểm tra?
+**3. `reset` trên nhánh chung rồi force push.** Đồng nghiệp pull về và lịch sử của họ vỡ.
+
+**4. Tưởng xoá commit là xoá bí mật.** Bí mật đã push là **đã lộ** — có người đã clone, có CI đã log, có bản cache trên máy chủ Git. Xoá lịch sử là việc phụ; **đổi khoá là việc chính**.
+
+**5. Không dùng bisect vì "chắc tôi đoán được".** Với 200 commit, đoán mất cả buổi; bisect mất 8 lần thử.
+
+**6. Quên `git bisect reset`.** Bạn ở lại trạng thái detached HEAD và bối rối vì sao commit không vào nhánh nào.
+
+## Mẹo nhớ
+
+> **`reflog` là camera an ninh: nó ghi mọi chỗ HEAD từng đứng.**
+>
+> **Chỉ thứ CHƯA commit mới thật sự mất được.**
+>
+> **Nhánh chung thì `revert`; nhánh riêng thì `reset`.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Vì sao commit sau `reset --hard` vẫn lấy lại được?
+2. Thứ duy nhất Git **không** cứu được là gì?
+3. `reset` và `revert` khác nhau thế nào, và mỗi cái dùng ở đâu?
+4. `git bisect` cần bạn cung cấp hai mốc nào, và nó chạy bao nhiêu bước với 1000 commit?
+5. Bí mật lỡ push lên — việc **chính** phải làm là gì?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết lệnh cho từng tình huống:
+
+```text
+a) Xoá nhầm nhánh feat/x đã có 5 commit, chưa merge
+b) Commit và push một tính năng hỏng lên main hai ngày trước
+c) Test bắt đầu đỏ ở đâu đó trong 300 commit gần đây
+d) Muốn biết dòng code kỳ lạ này ai viết và vì sao
+```
+
+Tự kiểm: câu (b) — vì sao bạn **không** dùng `reset` ở đây?
+
+## Thử sức
+
+Bạn phát hiện `AWS_SECRET_KEY` đã bị commit và push lên repo công khai **ba tuần trước**.
+
+Liệt kê các bước xử lý **theo đúng thứ tự ưu tiên**. Câu hỏi then chốt: việc nào phải làm trong **năm phút đầu**, và vì sao dọn lịch sử Git **không** phải việc đó?

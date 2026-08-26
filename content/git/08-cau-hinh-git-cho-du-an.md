@@ -4,165 +4,204 @@ slug: cau-hinh-git-cho-du-an
 summary: .gitignore, .gitattributes, hook và cách gỡ file đã lỡ commit khỏi lịch sử.
 level: nang-cao
 tags: [git, gitignore, hook, cau-hinh]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** cấu hình repo để cả nhóm không đánh nhau vì xuống dòng, và xử lý được khi secret đã lỡ vào lịch sử.
+> **Sau bài này bạn sẽ:** cấu hình repo để những lỗi phổ biến **không thể xảy ra**, thay vì trông chờ mọi người nhớ.
 
-## `.gitignore` — quy tắc và thứ tự
+## Ý tưởng chính
+
+Ba lỗi Git tốn kém nhất — commit bí mật, commit file build, và cuộc chiến xuống dòng giữa Windows và macOS — đều **ngăn được bằng cấu hình**.
+
+Nguyên tắc chung: **đừng dựa vào kỷ luật khi có thể dựa vào công cụ.**
+
+## Mental model
+
+Hãy nghĩ tới **lan can và biển cấm**.
+
+> Biển "cấm ngã" là thoả thuận: ai đọc thì tránh, ai vội thì quên.
+>
+> **Lan can** là cấu hình: không đọc cũng không ngã được.
+
+`.gitignore`, `.gitattributes` và hook là lan can. Chúng làm việc ngay cả với người mới vào dự án hôm qua, lúc 11 giờ đêm, khi đang vội.
+
+## Ví dụ nhỏ
 
 ```gitignore
-# Phụ thuộc và bản build
 node_modules/
-.next/
 dist/
-
-# Biến môi trường: bỏ hết, nhưng giữ lại file mẫu
-.env*
-!.env.example
-
-# Hệ điều hành và editor
-.DS_Store
-.idea/
-
-# Nhật ký
+.env
+.env.*
+!.env.example        # ← dấu ! = ngoại lệ, file này VẪN commit
 *.log
+.DS_Store
 ```
 
-Ba điều quyết định `.gitignore` chạy đúng hay không:
+Dòng `!.env.example` là mẫu nên thuộc: giấu file thật, nhưng **giữ lại file mẫu** để người mới biết cần những biến gì.
 
-**`/` ở đầu neo vào thư mục gốc.** `node_modules/` khớp ở mọi tầng; `/build` chỉ khớp `build` ngay ở gốc, không khớp `src/build`.
+## Code chạy thế nào
 
-**`/` ở cuối nghĩa là chỉ thư mục.** `logs/` bỏ qua thư mục nhưng vẫn theo dõi file tên `logs`.
+`.gitignore` có ba quy tắc mà hiểu sai là mất hàng giờ:
 
-**`!` phủ định, và thứ tự có ý nghĩa.** Dòng sau thắng dòng trước:
+```text
+① CHỈ áp dụng cho file CHƯA được theo dõi
+   File đã commit rồi thì thêm vào .gitignore không có tác dụng
+   → git rm --cached <file>
 
-```gitignore
-.env*            # bỏ mọi file .env
-!.env.example    # trừ file này  ← phải nằm SAU, đảo lại là không có tác dụng
+② Quy tắc SAU thắng quy tắc trước
+   *.log
+   !quan-trong.log      ← giữ lại file này
+
+③ Thư mục đã bị bỏ qua thì KHÔNG thể giữ lại file bên trong
+   ❌ build/           +  !build/giu-lai.txt     ← không hoạt động
+   ✅ build/*          +  !build/giu-lai.txt
 ```
 
-Bẫy quan trọng nhất: **`.gitignore` không có tác dụng với file đã được track**.
+Quy tắc ③ là chỗ hay bí nhất: Git không đi vào thư mục đã bị loại, nên không bao giờ thấy file ngoại lệ bên trong.
 
 ```bash
-# Đã commit .env rồi mới thêm vào .gitignore → Git vẫn theo dõi nó
-git rm --cached .env        # bỏ khỏi index, GIỮ file trên đĩa
-git commit -m "chore: bỏ .env khỏi theo dõi"
+git check-ignore -v <file>       # cho biết DÒNG NÀO trong .gitignore đang chặn file
 ```
 
-Kiểm tra khi không hiểu vì sao một file vẫn bị theo dõi:
+Lệnh này giải quyết mọi tranh cãi kiểu "sao file này không lên được".
 
-```bash
-git check-ignore -v duong/dan/file    # in ra dòng nào trong .gitignore đang khớp
-git status --ignored                  # xem cả file đang bị bỏ qua
-```
+## Cú pháp
 
-## `.gitattributes` — chấm dứt cuộc chiến xuống dòng
-
-Windows dùng `CRLF`, macOS/Linux dùng `LF`. Không cấu hình thì mỗi lần người khác hệ điều hành lưu file là **toàn bộ file hiện lên như đã sửa** — diff vô dụng, review không làm được.
+**`.gitattributes` — chấm dứt cuộc chiến xuống dòng:**
 
 ```gitattributes
-# Chuẩn hoá: trong repo luôn LF, khi checkout thì theo hệ điều hành
-* text=auto eol=lf
+* text=auto                      # tự chuẩn hoá về LF trong kho
 
-# File nhị phân: không được chạm vào
-*.png binary
-*.pdf binary
-*.woff2 binary
+*.sh   text eol=lf               # script shell LUÔN LF, kể cả trên Windows
+*.bat  text eol=crlf
 
-# Script shell phải là LF, kể cả trên Windows — CRLF làm shebang hỏng
-*.sh text eol=lf
+*.png  binary                    # không cố diff, không chuẩn hoá
+*.pdf  binary
 
-# File sinh tự động: gộp lịch sử cho gọn, không tính vào thống kê ngôn ngữ
-pnpm-lock.yaml -diff linguist-generated
+pnpm-lock.yaml -diff             # file sinh tự động: bỏ qua trong diff
+dist/** linguist-generated       # không tính vào thống kê ngôn ngữ trên GitHub
 ```
 
-Đây là cấu hình thuộc **repo**, không phải thuộc máy — nên nó áp cho cả nhóm, khác với `core.autocrlf` mà mỗi người phải tự đặt.
+Không có file này, người dùng Windows commit CRLF, người dùng macOS commit LF, và **mỗi lần ai đó mở file là toàn bộ file hiện ra như đã thay đổi**. Diff trở nên vô dụng.
 
-`*.sh text eol=lf` giải quyết một lỗi rất khó đoán: file `.sh` bị lưu CRLF thì dòng `#!/bin/bash\r` khiến hệ thống tìm chương trình tên `bash\r` và báo `bad interpreter`.
-
-## Hook — chạy kiểm tra trước khi commit
-
-Hook nằm trong `.git/hooks/`, mà thư mục đó **không được commit**. Nên dùng một thư mục riêng và trỏ Git vào đó:
+**Hook — chạy kiểm tra trước khi commit:**
 
 ```bash
-mkdir -p .githooks
-git config core.hooksPath .githooks    # mỗi người chạy một lần sau khi clone
+pnpm add -D husky lint-staged
+npx husky init
 ```
 
-```bash
-# .githooks/pre-commit
-#!/bin/sh
-set -e                                  # lỗi ở bất kỳ dòng nào là dừng, chặn commit
-pnpm typecheck
-npx vitest run --changed
+```json
+{
+  "lint-staged": {
+    "*.{ts,tsx}": ["eslint --fix", "prettier --write"],
+    "*.md": "prettier --write"
+  }
+}
 ```
 
 ```bash
-chmod +x .githooks/pre-commit          # thiếu quyền chạy thì Git bỏ qua, im lặng
+# .husky/pre-commit
+npx lint-staged
 ```
 
-Nguyên tắc dùng hook: **nhanh, và bỏ qua được**. Hook chạy 30 giây khiến người ta dùng `--no-verify` thành thói quen, lúc đó nó vô dụng. Việc chậm (test đầy đủ, build) để CI làm — xem [[cau-truc-mot-workflow]].
+`lint-staged` chỉ chạy trên **file đang trong khung hình** — nên commit nhanh, thay vì lint cả dự án mỗi lần.
 
-Hook là *tiện lợi*, không phải *cơ chế bảo đảm*: ai cũng gỡ được bằng `--no-verify`. Thứ thật sự chặn là kiểm tra ở CI cộng bảo vệ nhánh.
+Nguyên tắc thiết kế hook: **nhanh ở local, kỹ ở CI**.
 
-## Khi secret đã vào lịch sử
-
-Xoá file rồi commit là **không đủ** — nó vẫn nằm trong mọi commit trước đó, ai clone cũng lấy được.
-
-Việc đầu tiên, làm ngay:
-
-```
-1. THU HỒI khoá đó. Xoay khoá mới.
+```text
+pre-commit  →  format + lint file đang commit   (dưới 5 giây)
+pre-push    →  test nhanh                        (dưới 30 giây)
+CI          →  test đầy đủ, build, kiểm bảo mật  (bao lâu cũng được)
 ```
 
-Đây là bước duy nhất thật sự quan trọng. Coi như khoá đã bị lộ — vì nó đã bị lộ: có thể nó đã ở trong bản clone của người khác, trong log CI, trong cache của GitHub.
+Hook chạy 2 phút thì người ta sẽ dùng `--no-verify`, và bạn mất luôn lớp bảo vệ.
 
-Sau đó mới dọn lịch sử:
+## Tại sao cần nó
+
+Vì khi **secret đã vào lịch sử**, việc phải làm theo đúng thứ tự này:
+
+```text
+① ĐỔI KHOÁ NGAY LẬP TỨC        ← việc quan trọng nhất, làm trong 5 phút đầu
+② Gỡ khỏi lịch sử (nếu cần)
+③ Thông báo cho đội
+```
+
+Vì sao ① quan trọng hơn ②: repo đã được clone, CI đã ghi log, máy chủ Git có bản sao, và có thể đã bị bot quét. **Coi như khoá đã lộ** — dọn lịch sử không thay đổi sự thật đó.
 
 ```bash
-# git-filter-repo là công cụ được khuyến nghị (filter-branch đã lỗi thời và rất chậm)
-pip install git-filter-repo
-git filter-repo --invert-paths --path .env
-
-git push --force-with-lease --all
-git push --force-with-lease --tags
+# Gỡ khỏi lịch sử (viết lại toàn bộ — cần cả đội phối hợp)
+brew install git-filter-repo
+git filter-repo --path .env --invert-paths
+git push --force --all
 ```
 
-Việc này **viết lại mọi hash** kể từ commit chứa file đó. Cả nhóm phải clone lại; ai `git pull` bình thường sẽ nhận một lịch sử phân kỳ hoàn toàn. Thông báo trước cho mọi người.
+⚠️ Lệnh này **đổi hash mọi commit**. Mọi người phải clone lại; nhánh đang mở phải làm lại. Chỉ làm khi thật cần, và báo trước cho cả đội.
 
-Phòng còn hơn chữa:
+Phòng ngừa tốt hơn nhiều:
 
-```gitignore
-.env*
-!.env.example
-*.pem
-*.key
+```bash
+pnpm add -D @secretlint/quick-start
+# thêm vào pre-commit → chặn ngay từ đầu, không bao giờ có bước ①
 ```
 
-Cộng thêm một bước quét trong CI (`gitleaks`, `trufflehog`) để lần sau nó bị chặn trước khi lên nhánh chính.
+## So sánh
 
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
+| Lớp bảo vệ | Chặn được gì | Chi phí |
 |---|---|---|
-| Thêm `.gitignore` sau khi đã commit file | File vẫn bị theo dõi như cũ | `git rm --cached` |
-| `!.env.example` đặt trước `.env*` | Phủ định không có tác dụng | Đảo thứ tự |
-| Không có `.gitattributes` | Diff toàn file mỗi lần đổi hệ điều hành | `* text=auto eol=lf` |
-| File `.sh` bị lưu CRLF | `bad interpreter` khi chạy | `*.sh text eol=lf` |
-| Hook trong `.git/hooks/` | Không chia sẻ được cho nhóm | `core.hooksPath` |
-| Quên `chmod +x` cho hook | Git bỏ qua, không báo gì | `chmod +x` |
-| Hook chạy quá lâu | Mọi người dùng `--no-verify` | Chỉ việc nhanh; việc chậm để CI |
-| Xoá file secret bằng một commit mới | Secret vẫn còn trong lịch sử | Thu hồi khoá + `filter-repo` |
+| `.gitignore` | File build, môi trường, tạm | 0 |
+| `.gitattributes` | Chiến tranh xuống dòng | 0 |
+| `pre-commit` hook | Code chưa format, secret | Vài giây mỗi commit |
+| Bảo vệ nhánh trên GitHub | Push thẳng vào `main`, force push | 0 |
+| CI | Test hỏng, build lỗi | Vài phút mỗi PR |
 
-## Ghi nhớ
+Bốn lớp đầu gần như miễn phí và nên có ở **mọi** repo, kể cả dự án cá nhân.
 
-- `.gitignore` không áp cho file đã track — cần `git rm --cached`.
-- Thứ tự trong `.gitignore` có ý nghĩa; `!` phải nằm sau.
-- `.gitattributes` là cấu hình của repo nên áp cho cả nhóm, khác `core.autocrlf`.
-- Secret vào lịch sử: **thu hồi khoá trước**, dọn lịch sử sau.
+## Dễ nhầm
 
-## Tự kiểm tra
+**1. Tưởng `.gitignore` gỡ được file đã commit.** Cần `git rm --cached`.
 
-1. Đã commit `.env` rồi mới thêm vào `.gitignore`. Vì sao Git vẫn theo dõi nó?
-2. `/build` và `build/` khác nhau thế nào?
-3. Secret vừa bị đẩy lên GitHub. Việc đầu tiên là gì, và vì sao không phải là xoá lịch sử?
+**2. Bỏ qua cả thư mục rồi muốn giữ một file bên trong.** Dùng `build/*` thay vì `build/`.
+
+**3. Không có `.gitattributes` trong đội đa nền tảng.** Mọi diff đầy nhiễu, và conflict xuất hiện ở những chỗ chẳng ai sửa.
+
+**4. Hook quá chậm.** Người ta sẽ `--no-verify`. Giữ pre-commit dưới 5 giây.
+
+**5. Chỉ dọn lịch sử mà không đổi khoá.** Bạn tốn nửa ngày viết lại lịch sử và khoá vẫn đang bị dùng.
+
+**6. Commit `.env.example` mà quên xoá giá trị thật.** File mẫu phải có **tên biến** và giá trị giả — đây là chỗ rò rỉ hay bị bỏ qua vì ai cũng nghĩ file mẫu thì an toàn.
+
+## Mẹo nhớ
+
+> **Lan can, không phải biển cấm.**
+>
+> **Secret lộ ⇒ ĐỔI KHOÁ trước, dọn lịch sử sau.**
+>
+> **Nhanh ở local, kỹ ở CI.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Vì sao thêm file đã commit vào `.gitignore` không có tác dụng?
+2. Vì sao `build/` + `!build/x.txt` không hoạt động, và cách sửa?
+3. `.gitattributes` giải quyết vấn đề gì mà `.gitignore` không?
+4. Vì sao pre-commit hook phải nhanh?
+5. Thứ tự ba việc khi phát hiện secret đã push, và vì sao việc ① đứng đầu?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết `.gitignore` và `.gitattributes` cho một dự án Next.js + Python có đội dùng cả Windows lẫn macOS:
+
+```text
+Cần bỏ qua: node_modules, .next, __pycache__, .venv, .env (nhưng giữ .env.example)
+Cần chuẩn hoá: script .sh luôn LF, ảnh coi là binary, lock file bỏ khỏi diff
+```
+
+Tự kiểm: bạn kiểm chứng `.gitignore` của mình đúng bằng lệnh nào?
+
+## Thử sức
+
+Đồng nghiệp mở PR và diff hiện **toàn bộ 3000 dòng** của một file mà họ chỉ sửa một dòng.
+
+Chẩn đoán nguyên nhân (có ít nhất hai khả năng), cách xác minh từng cái, và cấu hình nào ngăn nó tái diễn cho **cả đội** — không phải chỉ cho máy của người đó.
