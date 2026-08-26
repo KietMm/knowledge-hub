@@ -1858,6 +1858,330 @@
     "updatedAt": "2026-01-04T21:00:00.000Z"
   },
   {
+    "id": "note-chia-tang-mot-ung-dung",
+    "topicId": "topic-backend",
+    "title": "Chia tầng một ứng dụng backend",
+    "slug": "chia-tang-mot-ung-dung",
+    "summary": "Route, service, repository — mỗi tầng biết gì, và vì sao trộn chúng lại làm code không test được.",
+    "content": "> **Sau bài này bạn sẽ:** đặt được mỗi đoạn logic vào đúng tầng, và giải thích vì sao ranh giới đó làm code test được.\n\n## Ý tưởng chính\n\nMột request đi qua ba loại việc rất khác nhau: **nói chuyện với thế giới bên ngoài**, **quyết định theo quy tắc nghiệp vụ**, và **đọc ghi dữ liệu**.\n\nBa việc đó thay đổi vì ba lý do khác nhau, được test theo ba cách khác nhau, và cần ba loại kiến thức khác nhau. Đó là lý do tách chúng ra — không phải vì \"kiến trúc sạch\" nghe hay.\n\n## Mental model\n\nHãy nghĩ tới **một nhà hàng**.\n\n> **Phục vụ** nhận order, kiểm xem khách gọi món có trong thực đơn không, mang đồ ra. Họ **không nấu**. Đó là tầng route/controller.\n>\n> **Bếp trưởng** quyết định món làm thế nào, thiếu nguyên liệu thì báo, món này không hợp thì từ chối. Đó là tầng service — nơi chứa quy tắc nghiệp vụ.\n>\n> **Kho** chỉ biết lấy và cất nguyên liệu. Không biết món gì đang được nấu. Đó là repository.\n\nVà điều quan trọng: **bếp trưởng không cần biết khách gọi qua điện thoại hay tới tận nơi**. Đổi cách nhận order không đụng tới công thức nấu. Đó chính là lợi ích thật của việc chia tầng.\n\n## Ví dụ nhỏ\n\n```ts\n// route — chỉ dịch HTTP sang lời gọi hàm\napp.post('/don-hang', async (req, res) => {\n  const dl = TaoDonSchema.parse(req.body)\n  const don = await donHangService.tao(req.user.id, dl)\n  res.status(201).json(don)\n})\n```\n\n## Code chạy thế nào\n\n**Mỗi tầng biết gì và KHÔNG biết gì:**\n\n```text\nROUTE / CONTROLLER\n  Biết:      HTTP — mã trạng thái, header, phân tích body\n  KHÔNG biết: quy tắc nghiệp vụ, SQL\n  Việc:      xác thực đầu vào bằng schema, gọi service, ánh xạ lỗi → mã HTTP\n\nSERVICE\n  Biết:      quy tắc nghiệp vụ, luồng, transaction\n  KHÔNG biết: `req`, `res`, mã trạng thái, SQL\n  Việc:      quyết định. Đây là nơi \"logic\" thật sự sống.\n\nREPOSITORY\n  Biết:      SQL, ORM, ánh xạ dòng dữ liệu sang object\n  KHÔNG biết: vì sao dữ liệu được lấy ra\n  Việc:      đọc/ghi\n```\n\n**Bài kiểm tra ranh giới, dùng được ngay khi review:**\n\n```text\n□ Service có nhắc tới `req`, `res`, hay mã HTTP không?   → tầng bị rò\n□ Route có câu SQL nào không?                            → tầng bị rò\n□ Repository có `if` nào về quy tắc nghiệp vụ không?     → tầng bị rò\n```\n\nBa câu này bắt được phần lớn vi phạm, và chúng cụ thể tới mức không cần tranh luận.\n\n**Vì sao ranh giới đó làm code test được:**\n\n```ts\n// ❌ Logic nằm trong route ⇒ muốn test phải dựng cả HTTP server\napp.post('/don-hang', async (req, res) => {\n  const rows = await db.query('SELECT ...')\n  if (rows[0].ton_kho < req.body.soLuong) return res.status(400).json({ ... })\n  // ...30 dòng nữa\n})\n\n// ✅ Logic trong service ⇒ test bằng một lời gọi hàm\nit('từ chối khi không đủ tồn kho', async () => {\n  await expect(donHangService.tao('u1', { sp: 'p1', soLuong: 99 }))\n    .rejects.toThrow(KhongDuTonKho)\n})\n```\n\nĐây là lợi ích đo được: test tầng service chạy trong mili giây và không cần HTTP, không cần cổng, không cần dọn dẹp ([[unit-test-dau-tien]]).\n\n## Cú pháp\n\n**Lỗi nghiệp vụ tách khỏi lỗi HTTP:**\n\n```ts\n// domain/errors.ts — không biết gì về HTTP\nexport class KhongDuTonKho extends Error {}\nexport class KhongTimThay extends Error {}\nexport class KhongCoQuyen extends Error {}\n\n// http/error-handler.ts — nơi DUY NHẤT dịch sang mã trạng thái\nconst MA: Array<[new (...a: never[]) => Error, number]> = [\n  [KhongTimThay, 404],\n  [KhongCoQuyen, 403],\n  [KhongDuTonKho, 409],\n]\nexport function xuLyLoi(err: unknown, res: Response) {\n  const khop = MA.find(([Lop]) => err instanceof Lop)\n  if (khop !== undefined) return res.status(khop[1]).json({ loi: (err as Error).message })\n  logger.error({ err })\n  res.status(500).json({ loi: 'Lỗi hệ thống' })   // KHÔNG lộ chi tiết ra ngoài\n}\n```\n\n```text\nLợi ích cụ thể:\n  ① Service dùng lại được cho CLI, cho job nền, cho gRPC — không chỉ HTTP\n  ② Muốn biết endpoint nào trả 409 thì đọc MỘT bảng, không phải grep cả repo\n  ③ Không rò stack trace ra client\n```\n\n**Đặt transaction ở đâu:** ở **service**, không ở repository.\n\n```ts\nasync tao(userId: string, dl: TaoDon) {\n  return db.transaction(async (tx) => {\n    const sp = await sanPhamRepo.layDeCapNhat(tx, dl.spId)\n    if (sp.tonKho < dl.soLuong) throw new KhongDuTonKho()\n    await sanPhamRepo.truTonKho(tx, dl.spId, dl.soLuong)\n    return donHangRepo.tao(tx, { userId, ...dl })\n  })\n}\n```\n\n```text\nVì sao service: chỉ nó biết những thao tác nào phải cùng thành công\nhoặc cùng thất bại. Repository chỉ biết một bảng — nó không đủ thông tin\nđể quyết định ranh giới transaction ([[transaction-va-acid]]).\n```\n\n**Cấu trúc thư mục — theo TÍNH NĂNG, không theo tầng:**\n\n```text\n❌ Theo tầng: mọi thay đổi chạm ba thư mục cách xa nhau\n   controllers/    services/    repositories/\n\n✅ Theo tính năng: một thay đổi nằm gọn một chỗ\n   don-hang/  ├ route.ts  service.ts  repo.ts  schema.ts  service.test.ts\n   san-pham/  └ ...\n   shared/       db.ts  logger.ts  errors.ts\n```\n\nCách thứ hai còn có một lợi ích ít nói tới: khi cần **tách một phần ra service riêng**, ranh giới đã sẵn sàng ([[ranh-gioi-service]]).\n\n## Tại sao cần nó\n\nVì cái giá của việc trộn tầng không hiện ra ngay — nó hiện ra ở tháng thứ sáu:\n\n```text\nLogic nằm trong route:\n  → không test được nếu không dựng HTTP\n  → không dùng lại được cho job nền hay CLI\n  → route dài 200 dòng, không ai đọc hết\n  → đổi từ Express sang Fastify = viết lại nghiệp vụ\n\nSQL nằm trong route:\n  → cùng một truy vấn được viết lại ở năm chỗ, lệch nhau dần\n  → đổi schema phải grep cả repo\n```\n\n**Nhưng đừng chia tầng khi chưa cần:**\n\n```text\nCRUD thuần, không có quy tắc gì:\n  route → repository là ĐỦ.\n  Một service chỉ gọi lại repository là tầng RỖNG — nó thêm một file\n  để đọc mà không thêm thông tin nào.\n\n⇒ Thêm tầng service khi xuất hiện quy tắc nghiệp vụ thật:\n  điều kiện, nhiều bước, transaction, gọi nhiều nguồn.\n```\n\nĐây là điểm cân bằng quan trọng: chia tầng là công cụ để quản lý **độ phức tạp đã có**, không phải nghi thức áp dụng cho mọi endpoint.\n\n## So sánh\n\n| | Route | Service | Repository |\n|---|---|---|---|\n| Biết HTTP | ✅ | ❌ | ❌ |\n| Biết nghiệp vụ | ❌ | ✅ | ❌ |\n| Biết SQL | ❌ | ❌ | ✅ |\n| Test bằng | integration | **unit** | integration |\n| Đổi khi | đổi API | đổi quy tắc | đổi schema |\n\n## Dễ nhầm\n\n**1. Logic nghiệp vụ trong route.** Không test được, không dùng lại được.\n\n**2. `req`/`res` truyền vào service.** Tầng bị rò, service dính chặt HTTP.\n\n**3. SQL rải trong route.** Cùng truy vấn viết lại ở nhiều chỗ.\n\n**4. Quy tắc nghiệp vụ trong repository.** Sai chỗ, và khó tìm.\n\n**5. Transaction đặt trong repository.** Repo không biết ranh giới đúng.\n\n**6. Tầng service rỗng chỉ để \"cho đủ tầng\".**\n\n**7. Trả lỗi HTTP từ service.** Service phải ném lỗi nghiệp vụ.\n\n**8. Lộ stack trace ra client.**\n\n**9. Chia thư mục theo tầng ở dự án lớn.** Mỗi thay đổi chạm ba nơi.\n\n**10. Xác thực đầu vào ở service thay vì ở biên.** Biên là chỗ dữ liệu chưa tin được.\n\n## Mẹo nhớ\n\n> **Route biết HTTP. Service biết NGHIỆP VỤ. Repository biết SQL. Không ai biết việc của người khác.**\n>\n> **Service không được nhắc tới `req`, `res`, hay mã trạng thái.**\n>\n> **Transaction thuộc về SERVICE — chỉ nó biết cái gì phải cùng thành công.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Ba tầng, mỗi tầng biết gì và không biết gì?\n2. Ba câu hỏi kiểm tra ranh giới khi review?\n3. Vì sao logic ở service test dễ hơn ở route?\n4. Vì sao transaction đặt ở service chứ không ở repository?\n5. Khi nào **không** nên thêm tầng service?\n\n## Tự viết lại\n\nKhông nhìn lại, viết ba tầng cho: *\"Huỷ đơn hàng — chỉ chủ đơn huỷ được, chỉ khi đơn chưa giao, và phải hoàn tồn kho.\"*\n\n```text\n① route\n② service (kèm transaction)\n③ repository\n④ các lớp lỗi và bảng ánh xạ sang mã HTTP\n```\n\nTự kiểm: service của bạn có dòng nào nhắc tới số 403 hay 409 không?\n\n## Thử sức\n\nBạn nhận một file `routes/don-hang.ts` dài 800 dòng: SQL, quy tắc nghiệp vụ, gọi API thanh toán, gửi email — tất cả trong các handler.\n\nBa câu để trả lời: bạn tách theo thứ tự nào, và **vì sao thứ tự đó**; bạn giữ an toàn trong lúc tách bằng cách nào; và bạn biết khi nào là đủ. Câu khó nhất: nếu chưa có test nào, bước đầu tiên của bạn là gì — và vì sao tách trước khi có test là rủi ro?",
+    "tags": [
+      "backend",
+      "kien-truc",
+      "chia-tang",
+      "thiet-ke"
+    ],
+    "order": 1,
+    "level": "co-ban",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-04T22:00:00.000Z",
+    "updatedAt": "2026-01-04T22:00:00.000Z"
+  },
+  {
+    "id": "note-xac-thuc-dau-vao-va-bien",
+    "topicId": "topic-backend",
+    "title": "Xác thực đầu vào và biên hệ thống",
+    "slug": "xac-thuc-dau-vao-va-bien",
+    "summary": "Nơi dữ liệu chưa tin được thành dữ liệu có kiểu — và vì sao mọi thứ bên trong biên nên là dữ liệu sạch.",
+    "content": "> **Sau bài này bạn sẽ:** đặt xác thực đúng chỗ, và biết vì sao kiểu TypeScript không bảo vệ được ở biên.\n\n## Ý tưởng chính\n\n**Biên** là nơi dữ liệu từ ngoài đi vào hệ thống của bạn: HTTP body, query string, biến môi trường, phản hồi từ API khác, hàng đợi, file.\n\nỞ biên, dữ liệu là **`unknown`**. Sau biên, nó phải là dữ liệu có kiểu, đã kiểm, và tin được — để mọi tầng bên trong không phải hỏi lại.\n\n## Mental model\n\nHãy nghĩ tới **cửa an ninh sân bay**.\n\n> Trước cửa: ai cũng có thể mang bất cứ thứ gì.\n>\n> Sau cửa: mọi người đã qua kiểm tra. Nhân viên bên trong **không soi lại từng người** ở mỗi cửa lên máy bay — vì đã có một chỗ làm việc đó, và làm triệt để.\n>\n> Nếu mỗi cửa đều tự soi lại, hai chuyện xảy ra: chậm, và **các cửa soi theo tiêu chuẩn khác nhau**. Cửa nào lỏng nhất trở thành lỗ hổng của cả sân bay.\n\nĐó là lý do xác thực phải nằm ở **một chỗ, tại biên** — không rải trong logic.\n\n## Ví dụ nhỏ\n\n```ts\nconst TaoDonSchema = z.object({\n  spId: z.string().uuid(),\n  soLuong: z.number().int().positive().max(100),\n  ghiChu: z.string().max(500).optional(),\n})\ntype TaoDon = z.infer<typeof TaoDonSchema>   // kiểu suy ra TỪ schema\n```\n\n## Code chạy thế nào\n\n**Vì sao TypeScript không bảo vệ được ở biên:**\n\n```ts\n// ☠️ Lời nói dối trong sáng nhất của TypeScript\nconst dl = req.body as TaoDon\n// Kiểu là lời KHẲNG ĐỊNH lúc biên dịch. Không có gì kiểm lúc chạy.\n// req.body có thể là {}, là null, là { soLuong: \"rất nhiều\" }.\n```\n\n```text\nTypeScript bị XOÁ HẾT khi biên dịch ([[bien-dich-va-thong-dich]]).\nLúc chạy không còn dòng nào kiểm tra gì.\n\n⇒ `as` ở biên không phải \"gán kiểu\" — nó là tắt cảnh báo\n  cho một chỗ bạn thật sự không biết.\n⇒ Ở biên, luôn PARSE, đừng CAST.\n```\n\n**Một schema, hai công dụng — đây là điểm mấu chốt:**\n\n```ts\nconst Schema = z.object({ soLuong: z.number().int().positive() })\ntype Dl = z.infer<typeof Schema>       // kiểu SUY RA từ schema\n```\n\n```text\nViết kiểu và validator riêng ⇒ hai nguồn sự thật, và chúng LỆCH NHAU\nsau vài tháng: thêm trường vào interface, quên thêm vào validator\n⇒ trường đó không bao giờ được kiểm.\n\nSuy kiểu từ schema ⇒ không thể lệch. Đổi schema là kiểu đổi theo.\n```\n\n**Bốn biên hay bị bỏ sót:**\n\n```text\n① HTTP body / query / params      ← ai cũng nhớ\n② BIẾN MÔI TRƯỜNG                 ← thường bị bỏ ([[bien-moi-truong-va-cau-hinh]])\n③ PHẢN HỒI TỪ API BÊN NGOÀI       ← \"họ nói sẽ trả về vậy\" không phải đảm bảo\n④ MESSAGE TỪ HÀNG ĐỢI             ← có thể do phiên bản mã CŨ gửi\n```\n\nBiên ③ đáng nhấn: API đối tác đổi định dạng, hoặc trả lỗi dưới dạng 200 kèm body khác — và nếu bạn `as` nó, lỗi sẽ nổ ở một chỗ hoàn toàn khác, nhiều tầng sau, với thông báo vô nghĩa.\n\n## Cú pháp\n\n```ts\n// Query string: mọi thứ là chuỗi ⇒ phải ép kiểu có kiểm\nconst QuerySchema = z.object({\n  trang: z.coerce.number().int().min(1).default(1),\n  soDong: z.coerce.number().int().min(1).max(100).default(20),\n  sapXep: z.enum(['moi-nhat', 'cu-nhat']).default('moi-nhat'),\n})\n\n// Thân request: từ chối trường lạ\nconst Schema = z.object({ ten: z.string() }).strict()\n```\n\n```text\n`.max(100)` ở soDong không phải chuyện thẩm mỹ:\nthiếu nó thì `?soDong=999999` là một cách làm sập CSDL\nmà không cần lỗ hổng nào khác ([[phan-trang-loc-va-sap-xep]]).\n\n`.strict()` từ chối trường lạ — chặn tấn công gán đè thuộc tính:\ngửi thêm `{ vaiTro: 'admin' }` vào form cập nhật hồ sơ.\n```\n\n**Thông báo lỗi cho client — đủ để sửa, không hơn:**\n\n```ts\nconst kq = Schema.safeParse(req.body)\nif (!kq.success) {\n  return res.status(400).json({\n    loi: 'Dữ liệu không hợp lệ',\n    chiTiet: kq.error.issues.map((i) => ({\n      truong: i.path.join('.'),\n      thongBao: i.message,\n    })),\n  })\n}\n```\n\n```text\nTrả về TẤT CẢ lỗi một lượt, không trả từng cái một.\nNgười dùng sửa một trường rồi lại thấy lỗi trường khác là trải nghiệm tệ,\nvà với client tự động thì đó là nhiều vòng gọi vô ích.\n```\n\n**Xác thực khác phân quyền — đừng gộp:**\n\n```text\nXÁC THỰC ĐẦU VÀO   \"dữ liệu này có đúng hình dạng không?\"     → ở biên\nQUY TẮC NGHIỆP VỤ  \"còn đủ tồn kho không?\"                    → ở service\nPHÂN QUYỀN         \"người này được sửa bản ghi này không?\"     → ở service\n\nNhét quy tắc nghiệp vụ vào schema là một cái bẫy quen thuộc:\nschema không truy cập được CSDL, không biết người dùng là ai,\nvà không tái dùng được cho luồng khác ([[phan-quyen-theo-ban-ghi]]).\n```\n\n## Tại sao cần nó\n\nVì thiếu xác thực ở biên gây ba loại hậu quả, và loại thứ ba là tệ nhất:\n\n```text\n① Lỗi runtime khó hiểu\n   `undefined is not a function` ở tầng repository,\n   nguyên nhân thật là body thiếu một trường ba tầng trước đó.\n\n② Dữ liệu bẩn vào CSDL\n   Sửa được lúc phát hiện, nhưng dữ liệu đã sai thì phải dọn thủ công.\n\n③ Lỗ hổng bảo mật\n   Gán đè thuộc tính, tham số không giới hạn, injection.\n```\n\n**Nguyên tắc gói gọn:**\n\n```text\n□ PARSE, đừng CAST — không dùng `as` cho dữ liệu ngoài\n□ Xác thực ở BIÊN, một lần, không rải trong logic\n□ Một schema là nguồn duy nhất cho cả kiểu lẫn kiểm tra\n□ Mọi trường số có giới hạn trên\n□ `.strict()` cho dữ liệu ghi\n□ Xác thực CẢ biến môi trường và phản hồi API ngoài\n□ Kiểu bên trong hệ thống mô tả dữ liệu ĐÃ SẠCH\n```\n\nDòng cuối là ý đáng mang đi: nếu tầng service của bạn vẫn phải viết `if (don.soLuong == null)`, nghĩa là biên chưa làm xong việc của nó — và mỗi chỗ như vậy là một chỗ ai đó sẽ quên.\n\n## So sánh\n\n| | `as Type` | `schema.parse()` |\n|---|---|---|\n| Kiểm lúc chạy | ❌ | ✅ |\n| Còn sau khi biên dịch | ❌ | ✅ |\n| Ép kiểu chuỗi → số | ❌ | ✅ `coerce` |\n| Thông báo lỗi | không có | rõ theo từng trường |\n| Dùng ở biên | **không bao giờ** | luôn |\n\n## Dễ nhầm\n\n**1. `as` cho `req.body`.** Không kiểm gì lúc chạy.\n\n**2. Viết kiểu và validator riêng.** Hai nguồn sự thật, sẽ lệch.\n\n**3. Không xác thực biến môi trường.** Lỗi lộ ra lúc 3 giờ sáng.\n\n**4. Không xác thực phản hồi API ngoài.** Lỗi nổ ở chỗ khác hẳn.\n\n**5. Không giới hạn trên cho số.** `?soDong=999999`.\n\n**6. Không `.strict()`.** Gán đè thuộc tính.\n\n**7. Nhét quy tắc nghiệp vụ vào schema.**\n\n**8. Trả lỗi từng cái một.** Nhiều vòng gọi vô ích.\n\n**9. Lộ chi tiết nội bộ trong thông báo lỗi.**\n\n**10. Xác thực lại ở mọi tầng.** Biên đã làm rồi; lặp lại chỉ che việc biên bị bỏ sót.\n\n## Mẹo nhớ\n\n> **Ở biên: PARSE, đừng CAST. `as` không kiểm gì lúc chạy.**\n>\n> **Một schema — kiểu và kiểm tra suy ra từ CÙNG một nguồn.**\n>\n> **Bốn biên: HTTP, biến môi trường, API ngoài, hàng đợi.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. \"Biên\" là những chỗ nào? Kể bốn cái.\n2. Vì sao `as` không bảo vệ được ở biên?\n3. Vì sao suy kiểu từ schema tốt hơn viết riêng?\n4. `.strict()` chặn tấn công gì?\n5. Xác thực đầu vào khác quy tắc nghiệp vụ và phân quyền thế nào?\n\n## Tự viết lại\n\nKhông nhìn lại, viết schema và xử lý cho: `POST /san-pham` với tên, giá, danh mục, tồn kho, mô tả tuỳ chọn, và ảnh (mảng URL).\n\n```text\n① schema, kèm giới hạn hợp lý cho từng trường\n② kiểu suy ra\n③ xử lý lỗi trả về client\n④ ba chỗ khác trong hệ thống cũng cần xác thực\n```\n\nTự kiểm: mảng ảnh của bạn có giới hạn số phần tử không — và nếu không, ai đó gửi 100.000 URL thì chuyện gì xảy ra?\n\n## Thử sức\n\nProduction báo `TypeError: Cannot read properties of undefined (reading 'toFixed')` trong hàm tính tổng đơn hàng.\n\nBa câu để trả lời: nguyên nhân gốc **có khả năng cao nhất** nằm ở đâu, và vì sao lỗi lại nổ ở chỗ khác; bạn sửa ở đâu để cả **lớp** lỗi này biến mất; và bạn tìm những chỗ còn lại đang thiếu xác thực bằng cách nào. Câu khó nhất: nếu nguồn dữ liệu bẩn là một API đối tác vừa đổi định dạng, xác thực ở biên giúp bạn **phát hiện** điều đó nhanh hơn ra sao?",
+    "tags": [
+      "backend",
+      "xac-thuc",
+      "zod",
+      "thiet-ke",
+      "bao-mat"
+    ],
+    "order": 2,
+    "level": "co-ban",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-04T23:00:00.000Z",
+    "updatedAt": "2026-01-04T23:00:00.000Z"
+  },
+  {
+    "id": "note-xu-ly-loi-va-ket-qua",
+    "topicId": "topic-backend",
+    "title": "Xử lý lỗi trong backend",
+    "slug": "xu-ly-loi-va-ket-qua",
+    "summary": "Lỗi mong đợi khác lỗi bất ngờ, ném hay trả về, và vì sao catch rồi log rồi bỏ qua là tệ nhất.",
+    "content": "> **Sau bài này bạn sẽ:** phân biệt được lỗi mong đợi với lỗi bất ngờ, và xử lý mỗi loại đúng cách.\n\n## Ý tưởng chính\n\nCó hai loại \"lỗi\", và trộn chúng làm cả hai bị xử lý sai:\n\n**Lỗi mong đợi** — một kết quả hợp lệ của nghiệp vụ. \"Không đủ tồn kho\", \"email đã tồn tại\". Chúng **sẽ** xảy ra; hệ thống vẫn đang hoạt động đúng.\n\n**Lỗi bất ngờ** — hệ thống đang hỏng. CSDL mất kết nối, hết bộ nhớ, một `undefined` không lường trước.\n\nLoại thứ nhất là một phần của thiết kế. Loại thứ hai là thứ cần cảnh báo.\n\n## Mental model\n\nHãy nghĩ tới **hai loại tình huống ở quầy ngân hàng**.\n\n> **\"Số dư không đủ để rút.\"** Giao dịch viên nói với bạn, ghi vào sổ, và **tiếp tục làm việc**. Đây là một kết quả bình thường — quy trình đã lường trước.\n>\n> **\"Mất điện toàn chi nhánh.\"** Không ai nói \"xin lỗi, mời anh thử lại\" rồi làm tiếp. Chuông reo, quản lý được gọi, và có người phải xử lý ngay.\n\nCái đầu **không** đánh thức ai lúc 3 giờ sáng. Cái sau thì có. Nếu bạn ghi cả hai vào cùng một sổ với cùng mức độ, chuông sẽ reo suốt và không ai còn nghe nữa.\n\n## Ví dụ nhỏ\n\n```ts\nclass KhongDuTonKho extends Error {}      // mong đợi — nghiệp vụ\n// vs\n// db.query() ném ECONNREFUSED           // bất ngờ — hệ thống hỏng\n```\n\n## Code chạy thế nào\n\n**Hai loại, hai cách xử lý:**\n\n```text\n                     LỖI MONG ĐỢI          LỖI BẤT NGỜ\nVí dụ                không đủ tồn kho      CSDL mất kết nối\nLà gì                kết quả nghiệp vụ     hệ thống đang hỏng\nMã HTTP              4xx                   5xx\nMức log              info / warn           ERROR\nCảnh báo             ❌ không              ✅ có\nNói gì với người dùng lý do cụ thể         \"lỗi hệ thống\", kèm mã tra cứu\nNên bắt riêng        ✅                    ❌ để nó nổi lên tầng trên\n```\n\nDòng cuối là quy tắc quan trọng nhất: **đừng bắt lỗi bạn không xử lý được**.\n\n```ts\n// ❌ Tệ nhất: nuốt lỗi\ntry { await luu(don) } catch (e) { logger.error(e) }\n// Hàm trả về bình thường. Người gọi tưởng đã lưu. Dữ liệu thì không.\n\n// ❌ Cũng tệ: bắt rồi ném lại y nguyên\ntry { await luu(don) } catch (e) { logger.error(e); throw e }\n// Log cùng một lỗi nhiều lần ở nhiều tầng ⇒ nhiễu.\n\n// ✅ Không bắt — để tầng xử lý lỗi chung lo\nawait luu(don)\n\n// ✅ Hoặc bắt để THÊM NGỮ CẢNH rồi ném tiếp\ntry {\n  await thanhToan.tinhPhi(don)\n} catch (e) {\n  throw new LoiThanhToan(`Tính phí thất bại cho đơn ${don.id}`, { cause: e })\n}\n```\n\n`cause` giữ được lỗi gốc, nên bạn có cả ngữ cảnh nghiệp vụ **và** stack trace gốc — thay vì phải chọn một.\n\n**Một chỗ duy nhất xử lý lỗi:**\n\n```ts\napp.use((err, req, res, _next) => {\n  const traceId = req.traceId\n  if (err instanceof LoiNghiepVu) {\n    logger.info({ event: 'nghiep_vu.tu_choi', ma: err.ma, traceId })\n    return res.status(err.maHttp).json({ loi: err.message, ma: err.ma, traceId })\n  }\n  logger.error({ err, traceId })          // ← chỉ ĐÂY mới log mức error\n  res.status(500).json({ loi: 'Lỗi hệ thống', traceId })\n})\n```\n\n```text\n`traceId` trả về cho client là chi tiết nhỏ, giá trị lớn:\nngười dùng gửi mã đó cho hỗ trợ ⇒ bạn lọc log ra đúng request\ntrong vài giây, thay vì mò theo thời gian ([[quan-sat-he-thong]]).\n```\n\n## Cú pháp\n\n**Ném lỗi hay trả về kết quả — chọn theo tần suất:**\n\n```ts\n// Ném — mặc định, hợp khi lỗi là ngoại lệ\nasync function layDon(id: string): Promise<Don> {\n  const d = await repo.tim(id)\n  if (d === null) throw new KhongTimThay(`Đơn ${id}`)\n  return d\n}\n\n// Trả về kết quả — hợp khi \"thất bại\" là chuyện thường xuyên\ntype KetQua<T> = { ok: true; giaTri: T } | { ok: false; loi: LoiXacThuc }\n```\n\n```text\nNém:      gọn, tự nổi lên, không cần người gọi làm gì\n          nhưng KHÔNG hiện trong chữ ký hàm ⇒ dễ quên xử lý\n\nTrả về:   trình biên dịch BẮT bạn xử lý\n          nhưng rườm rà nếu dùng cho mọi thứ\n\nKinh nghiệm dùng được:\n  Lỗi hiếm, không xử lý được tại chỗ  → ném\n  Lỗi thường xuyên, người gọi phải quyết định → trả về\n```\n\n**Lỗi bất đồng bộ — hai chỗ hay rò:**\n\n```js\n// ☠️ Không có await ⇒ promise bị từ chối mà không ai bắt\n// ⇒ Node hiện tại KẾT THÚC TIẾN TRÌNH\nguiEmail(don)\n\n// ✅ Cố ý chạy nền thì phải tự bắt\nvoid guiEmail(don).catch((e) => logger.error({ e, event: 'email.that_bai' }))\n\n// ✅ Và luôn có lưới cuối\nprocess.on('unhandledRejection', (e) => { logger.error({ e }); process.exit(1) })\n```\n\n```text\nVì sao `process.exit(1)` chứ không chạy tiếp:\nsau một lỗi không lường trước, trạng thái tiến trình KHÔNG còn tin được.\nThoát và để trình quản lý dịch vụ khởi động lại là an toàn hơn\nchạy tiếp trong trạng thái không xác định ([[tien-trinh-va-dich-vu]]).\n```\n\n**Thoát sạch:** khi nhận SIGTERM, ngừng nhận request mới, **xử lý nốt request đang chạy**, rồi mới thoát — nếu không, mỗi lần triển khai là một lần cắt ngang người dùng.\n\n## Tại sao cần nó\n\nVì cách bạn phân loại lỗi quyết định trực tiếp chất lượng cảnh báo:\n\n```text\nTrộn hai loại: mọi thứ log mức ERROR\n  → 5.000 dòng ERROR mỗi ngày, phần lớn là \"email đã tồn tại\"\n  → không ai đọc nữa\n  → lỗi thật chìm trong đó\n\nTách rõ: ERROR chỉ dành cho lỗi hệ thống\n  → vài chục dòng mỗi ngày\n  → đáng đọc, và cảnh báo dựa vào nó có ý nghĩa\n```\n\nĐây là cùng cơ chế với test chập chờn và cảnh báo giả: **tín hiệu mất giá trị khi nó kêu quá thường xuyên** ([[su-co-va-hau-kiem]]).\n\n**Ba câu hỏi cho mỗi `catch` bạn viết:**\n\n```text\n① Tôi XỬ LÝ ĐƯỢC lỗi này không?   Không → đừng bắt.\n② Tôi THÊM được ngữ cảnh gì?      Có → bọc lại kèm `cause`.\n③ Người gọi CẦN BIẾT không?       Có → ném tiếp.\n```\n\nNếu cả ba câu đều \"không\", thì `catch` đó chỉ đang **giấu** lỗi.\n\n## So sánh\n\n| | Ném lỗi | Trả về kết quả |\n|---|---|---|\n| Hiện trong chữ ký | ❌ | ✅ |\n| Trình biên dịch ép xử lý | ❌ | ✅ |\n| Gọn | ✅ | rườm hơn |\n| Hợp với | lỗi hiếm | lỗi thường xuyên |\n\n## Dễ nhầm\n\n**1. `catch` rồi chỉ log rồi bỏ qua.** Người gọi tưởng thành công.\n\n**2. Bắt rồi ném lại y nguyên.** Log trùng lặp nhiều tầng.\n\n**3. Log mọi thứ ở mức ERROR.** Cảnh báo mất giá trị.\n\n**4. Trả stack trace cho client.** Rò rỉ thông tin nội bộ.\n\n**5. Ném chuỗi thay vì `Error`.** Mất stack trace.\n\n**6. Bọc lỗi mà không giữ `cause`.** Mất nguyên nhân gốc.\n\n**7. Quên `await` cho promise.** Tiến trình chết vì `unhandledRejection`.\n\n**8. Chạy tiếp sau lỗi không lường trước.** Trạng thái không tin được.\n\n**9. Không có `traceId` trong phản hồi lỗi.** Hỗ trợ không lần ra được.\n\n**10. Xử lý lỗi rải rác thay vì một chỗ.** Mỗi endpoint trả một định dạng khác.\n\n## Mẹo nhớ\n\n> **Lỗi MONG ĐỢI là kết quả nghiệp vụ (4xx, không cảnh báo). Lỗi BẤT NGỜ là hệ thống hỏng (5xx, cảnh báo).**\n>\n> **Đừng bắt lỗi bạn không xử lý được. Bắt để giấu là tệ nhất.**\n>\n> **Bọc lỗi thì giữ `cause` — đừng đánh đổi stack trace lấy ngữ cảnh.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Hai loại lỗi, khác nhau ở sáu điểm nào?\n2. Vì sao `catch` rồi log rồi bỏ qua là tệ nhất?\n3. Khi nào ném lỗi, khi nào trả về kết quả?\n4. Vì sao nên thoát tiến trình sau `unhandledRejection`?\n5. Ba câu hỏi cho mỗi `catch`?\n\n## Tự viết lại\n\nKhông nhìn lại, viết xử lý lỗi cho luồng thanh toán:\n\n```text\n① các lớp lỗi nghiệp vụ và mã HTTP tương ứng\n② nơi xử lý lỗi tập trung\n③ cách gọi API thanh toán bên ngoài — lỗi mạng xử lý thế nào\n④ log gì ở mỗi loại, mức nào\n```\n\nTự kiểm: khi API thanh toán timeout, bạn xếp nó vào loại nào — và câu trả lời có phụ thuộc vào việc nó timeout **thường xuyên** hay không?\n\n## Thử sức\n\nĐội bạn có 8.000 dòng log mức ERROR mỗi ngày. Không ai đọc. Tuần trước một sự cố thật kéo dài 3 tiếng vì cảnh báo bị bỏ qua.\n\nBa câu để trả lời: bạn phân loại lại 8.000 dòng đó theo cách nào; các thay đổi cụ thể trong mã; và bạn ngăn nó tích tụ lại bằng cách nào. Câu khó nhất: sau khi dọn, mức ERROR còn lại bao nhiêu là \"đúng\" — và bạn dùng con số nào để biết mình đã dọn quá tay?",
+    "tags": [
+      "backend",
+      "error-handling",
+      "thiet-ke",
+      "van-hanh"
+    ],
+    "order": 3,
+    "level": "trung-cap",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-05T00:00:00.000Z",
+    "updatedAt": "2026-01-05T00:00:00.000Z"
+  },
+  {
+    "id": "note-job-nen-va-tac-vu-dinh-ky",
+    "topicId": "topic-backend",
+    "title": "Job nền và tác vụ định kỳ",
+    "slug": "job-nen-va-tac-vu-dinh-ky",
+    "summary": "Cron, worker, khoá phân tán — và vì sao chạy job trong tiến trình web là sai ngay khi có máy thứ hai.",
+    "content": "> **Sau bài này bạn sẽ:** đặt job nền đúng chỗ, và biết vì sao mỗi job phải chịu được chạy hai lần.\n\n## Ý tưởng chính\n\nKhông phải việc nào cũng bắt đầu từ một request. Có việc chạy **theo lịch** (dọn dữ liệu cũ, gửi báo cáo), có việc chạy **theo sự kiện nhưng không cần ngay** (gửi email, xử lý ảnh).\n\nĐiểm chung của chúng: **không ai ngồi nhìn**. Nên hai câu hỏi thiết kế quan trọng nhất là *\"chạy hai lần thì sao?\"* và *\"không chạy thì ai biết?\"*.\n\n## Mental model\n\nHãy nghĩ tới **hẹn giờ tưới cây tự động**.\n\n> Bạn đặt hẹn giờ, đi công tác. Về nhà, cây xanh tốt — bạn cho rằng nó đã chạy đúng.\n>\n> Nhưng ba tình huống bạn **không hề biết**: hẹn giờ chạy hai lần một ngày (cây úng); hẹn giờ chết từ tuần trước (cây sống nhờ trời mưa); hoặc bạn lắp **hai** bộ hẹn giờ mà quên.\n>\n> Cái duy nhất cho bạn biết là **một thiết bị báo về mỗi lần tưới xong** — và báo động khi quá lâu không có tin gì.\n\nBa tình huống đó chính là ba vấn đề của job nền: **chạy trùng**, **không chạy**, và **không ai biết**.\n\n## Ví dụ nhỏ\n\n```ts\n// ❌ Cron trong tiến trình web\nsetInterval(donDuLieuCu, 24 * 3600 * 1000)\n// 3 máy chủ ⇒ chạy 3 LẦN mỗi ngày. Và mất khi restart.\n```\n\n## Code chạy thế nào\n\n**Vì sao job trong tiến trình web sai ngay khi có máy thứ hai:**\n\n```text\n1 máy:  cron chạy 1 lần/ngày.  Trông ổn.\n3 máy:  cron chạy 3 lần/ngày.  Email gửi 3 lần. Báo cáo cộng 3 lần.\n\nVà còn ba vấn đề nữa:\n  □ Job nặng chiếm CPU của tiến trình đang phục vụ request\n    ⇒ p99 tăng vọt vào đúng giờ job chạy\n  □ Deploy giữa lúc job đang chạy ⇒ job đứt giữa chừng\n  □ Không mở rộng riêng được: cần thêm worker thì phải thêm cả web\n```\n\n**Ba cách chạy job, chọn theo quy mô:**\n\n```text\n① CRON CỦA HỆ THỐNG / NỀN TẢNG\n   crontab, systemd timer, cron của cloud\n   + Đơn giản, tách khỏi web, chạy đúng MỘT chỗ\n   − Không tự retry, không thấy trạng thái, khó ghi log tập trung\n\n② WORKER ĐỌC HÀNG ĐỢI\n   BullMQ, Sidekiq, Celery\n   + Retry, backoff, DLQ, giao diện theo dõi, mở rộng riêng\n   − Thêm một thành phần phải vận hành\n\n③ BẢNG JOB TRONG CSDL SẴN CÓ\n   SELECT ... FOR UPDATE SKIP LOCKED\n   + Không thêm hạ tầng; ghi job CÙNG TRANSACTION với dữ liệu\n   − Tự viết retry và lịch\n```\n\nCách ③ đáng chú ý vì nó giải quyết luôn vấn đề **dual-write**: nếu bạn tạo đơn hàng và đẩy job vào Redis, bước thứ hai có thể thất bại sau khi bước một đã commit. Ghi job vào một bảng trong cùng transaction thì không có khe hở đó ([[hang-doi-va-xu-ly-bat-dong-bo]]).\n\n**Khoá phân tán — khi buộc phải chạy job trong ứng dụng:**\n\n```ts\nconst KHOA = 'job:don-du-lieu'\nconst daLay = await redis.set(KHOA, id, 'NX', 'EX', 300)  // hết hạn 5 phút\nif (daLay === null) return                                 // máy khác đang chạy\ntry {\n  await donDuLieuCu()\n} finally {\n  await redis.del(KHOA)\n}\n```\n\n```text\n`EX 300` là phần bắt buộc, không phải tuỳ chọn:\nmáy giữ khoá chết mà khoá không tự hết hạn ⇒ job KHÔNG BAO GIỜ\nchạy lại nữa, và im lặng.\n\nVà thời hạn phải LỚN HƠN thời gian chạy job. Ngắn hơn ⇒ khoá hết hạn\ngiữa chừng ⇒ máy thứ hai vào ⇒ đúng thứ bạn đang cố tránh.\n```\n\n## Cú pháp\n\n**Mọi job phải chịu được chạy hai lần:**\n\n```ts\n// ❌ Chạy lại = cộng dồn sai\nawait db.query('UPDATE thong_ke SET tong = tong + $1', [tongHomNay])\n\n// ✅ Chạy lại = kết quả như chạy một lần\nawait db.query(\n  `INSERT INTO thong_ke (ngay, tong) VALUES ($1, $2)\n   ON CONFLICT (ngay) DO UPDATE SET tong = EXCLUDED.tong`,\n  [ngay, tongHomNay],\n)\n```\n\n```text\nVì sao BẮT BUỘC, không phải \"nên\":\n  □ Cron có thể chạy trùng (khoá hết hạn, cấu hình nhân đôi)\n  □ Job có thể bị retry sau khi đã làm được một nửa\n  □ Người vận hành sẽ chạy tay lại khi nghi ngờ\n⇒ Cả ba đều là chuyện bình thường, không phải sự cố.\n```\n\n**Job phải chia lô và ghi tiến độ:**\n\n```ts\n// ❌ Xoá 10 triệu dòng một lệnh: khoá bảng, transaction khổng lồ,\n//    và mất sạch tiến độ nếu đứt giữa chừng\nawait db.query('DELETE FROM log WHERE tao_luc < $1', [motNamTruoc])\n\n// ✅ Chia lô, dừng được, chạy lại được\nlet daXoa = 0\nfor (;;) {\n  const { rowCount } = await db.query(\n    'DELETE FROM log WHERE id IN (SELECT id FROM log WHERE tao_luc < $1 LIMIT 1000)',\n    [motNamTruoc],\n  )\n  daXoa += rowCount\n  if (rowCount === 0) break\n  await nghi(100)                      // nhường I/O cho traffic thật\n}\nlogger.info({ event: 'don_log.xong', daXoa })\n```\n\nViệc `nghi(100)` giữa các lô là chi tiết dễ bỏ và quan trọng: một job dọn dẹp chạy hết tốc lực làm nghẽn đĩa và kéo p95 của cả hệ thống lên ([[lap-lich-va-uu-tien]]).\n\n**Theo dõi — phần hay bị bỏ hoàn toàn:**\n\n```text\n□ Job CHẠY XONG   → log event, và cập nhật \"lần chạy thành công gần nhất\"\n□ Job THẤT BẠI    → cảnh báo\n□ Job KHÔNG CHẠY  → cảnh báo  ← QUAN TRỌNG NHẤT và hay thiếu nhất\n□ Job chạy quá lâu → cảnh báo\n```\n\n```text\n\"Job không chạy\" là loại hỏng im lặng nhất:\nkhông có log lỗi, không có ngoại lệ, không có gì cả.\n⇒ Cách phát hiện duy nhất là đo NGƯỢC LẠI:\n  \"đã bao lâu kể từ lần chạy thành công gần nhất?\"\n  Quá ngưỡng ⇒ cảnh báo.\n```\n\nRất nhiều đội phát hiện cron sao lưu chết từ ba tháng trước vào đúng ngày cần tới nó ([[giam-sat-va-sao-luu]]).\n\n## Tại sao cần nó\n\nVì job nền là nơi tập trung ba đặc điểm khiến lỗi khó phát hiện nhất:\n\n```text\n□ Không ai nhìn lúc nó chạy\n□ Không có người dùng để báo lỗi\n□ Hậu quả thường là DỮ LIỆU SAI, không phải crash\n```\n\n**Cron expression — hai chỗ hay sai:**\n\n```text\n0 2 * * *      2 giờ sáng mỗi ngày — theo MÚI GIỜ NÀO?\n               Cron của cloud thường mặc định UTC.\n               ⇒ 2h UTC = 9h sáng giờ Việt Nam. Khai rõ múi giờ.\n\n0 0 1 * *      Ngày 1 hằng tháng — job \"chạy cuối tháng\"\n               viết sai thành đầu tháng là lỗi kinh điển.\n```\n\nVà một chi tiết nữa: **giờ chạy nên tránh đúng phút tròn của mọi hệ thống khác**. Đặt `0 2 * * *` cho mười job nghĩa là mười job cùng khởi động một lúc — thêm vài phút lệch nhau là đủ.\n\n## So sánh\n\n| | Cron hệ thống | Worker + hàng đợi | Bảng trong CSDL |\n|---|---|---|---|\n| Hạ tầng thêm | không | có | không |\n| Retry sẵn có | ❌ | ✅ | tự viết |\n| Theo dõi | tự làm | ✅ | tự làm |\n| Cùng transaction với dữ liệu | ❌ | ❌ | ✅ |\n| Hợp với | việc định kỳ đơn giản | quy mô lớn | vừa và nhỏ |\n\n## Dễ nhầm\n\n**1. Chạy cron trong tiến trình web.** Nhiều máy = chạy nhiều lần.\n\n**2. Job không idempotent.** Chạy lại là hỏng dữ liệu.\n\n**3. Khoá phân tán không có thời hạn.** Máy chết là job kẹt vĩnh viễn.\n\n**4. Thời hạn khoá ngắn hơn thời gian chạy job.**\n\n**5. Không cảnh báo khi job **không chạy**.** Hỏng im lặng nhiều tháng.\n\n**6. Xử lý cả bảng trong một transaction.** Khoá bảng, mất tiến độ khi đứt.\n\n**7. Không nghỉ giữa các lô.** Nghẽn I/O, kéo p95 lên.\n\n**8. Sai múi giờ trong cron.**\n\n**9. Nhiều job cùng khởi động một phút.**\n\n**10. Job không ghi log lúc thành công.** Không đo được \"lần chạy gần nhất\".\n\n## Mẹo nhớ\n\n> **Job trong tiến trình web sai ngay khi có máy thứ hai.**\n>\n> **Mọi job PHẢI chịu được chạy hai lần — đó không phải sự cố hiếm.**\n>\n> **Cảnh báo khi job KHÔNG CHẠY, không chỉ khi nó lỗi.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Bốn vấn đề khi chạy job trong tiến trình web?\n2. Ba cách chạy job, cách nào ghi job cùng transaction với dữ liệu?\n3. Vì sao khoá phân tán bắt buộc phải có thời hạn, và thời hạn đặt thế nào?\n4. Vì sao mọi job phải idempotent? Ba tình huống chạy trùng?\n5. Vì sao \"job không chạy\" khó phát hiện, và đo bằng cách nào?\n\n## Tự viết lại\n\nKhông nhìn lại, thiết kế job *\"mỗi đêm gửi báo cáo doanh thu cho 5.000 khách hàng\"*:\n\n```text\n① chạy ở đâu, vì sao\n② chống chạy trùng\n③ idempotent: gửi hai lần thì sao\n④ chia lô và tiến độ\n⑤ ba cảnh báo cần có\n```\n\nTự kiểm: nếu job dừng ở khách hàng thứ 3.000, lần chạy sau của bạn bắt đầu từ đâu?\n\n## Thử sức\n\nKhách hàng báo họ nhận **ba email báo cáo giống hệt nhau** vào sáng nay. Hệ thống chạy trên 3 máy chủ.\n\nBa câu để trả lời: nguyên nhân gần như chắc chắn; hai cách sửa, ngắn hạn và dài hạn; và bạn kiểm chứng đã sửa bằng cách nào. Câu khó nhất: nếu bạn thêm khoá phân tán mà tuần sau vẫn có người nhận hai email, hai nguyên nhân nào còn lại?",
+    "tags": [
+      "backend",
+      "job",
+      "cron",
+      "worker",
+      "van-hanh"
+    ],
+    "order": 4,
+    "level": "trung-cap",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-05T01:00:00.000Z",
+    "updatedAt": "2026-01-05T01:00:00.000Z"
+  },
+  {
+    "id": "note-cau-truc-du-an-va-phu-thuoc",
+    "topicId": "topic-backend",
+    "title": "Cấu trúc dự án và quản lý phụ thuộc",
+    "slug": "cau-truc-du-an-va-phu-thuoc",
+    "summary": "Chia thư mục theo tính năng, đảo ngược phụ thuộc khi thật sự cần, và giữ ranh giới bằng công cụ chứ không bằng lời nhắc.",
+    "content": "> **Sau bài này bạn sẽ:** tổ chức một dự án backend sao cho ranh giới được **máy** giữ, không phải trí nhớ của đội.\n\n## Ý tưởng chính\n\nCấu trúc thư mục không phải chuyện thẩm mỹ. Nó quyết định **một thay đổi điển hình chạm bao nhiêu chỗ**.\n\nVà ranh giới giữa các phần chỉ tồn tại thật khi có **công cụ chặn** việc vi phạm. Một quy ước chỉ nằm trong tài liệu sẽ bị vi phạm — không phải vì ai đó cẩu thả, mà vì lúc 5 giờ chiều thứ Sáu, cách nhanh nhất luôn là import thẳng.\n\n## Mental model\n\nHãy nghĩ tới **sắp xếp bếp**.\n\n> **Theo loại đồ vật**: mọi con dao một ngăn, mọi cái bát một ngăn, mọi gia vị một ngăn. Nghe gọn. Nhưng nấu một món thì phải chạy khắp bếp.\n>\n> **Theo món ăn**: dụng cụ và nguyên liệu cho món phở để cùng một chỗ. Nấu phở thì mở một ngăn.\n>\n> Và những thứ **thật sự dùng chung** — muối, dầu ăn, thớt — để riêng ở chỗ ai cũng với tới.\n\nSắp theo loại là chia theo **tầng kỹ thuật**. Sắp theo món là chia theo **tính năng**. Cái thứ hai thắng vì công việc thật đến theo tính năng, không đến theo tầng.\n\n## Ví dụ nhỏ\n\n```text\nsrc/\n  don-hang/    route.ts  service.ts  repo.ts  schema.ts  service.test.ts\n  san-pham/    ...\n  shared/      db.ts  logger.ts  errors.ts  config.ts\n```\n\n## Code chạy thế nào\n\n**So sánh cụ thể — thêm một trường vào đơn hàng:**\n\n```text\nChia theo TẦNG:\n  controllers/don-hang.ts\n  services/don-hang.ts\n  repositories/don-hang.ts\n  schemas/don-hang.ts\n  tests/services/don-hang.test.ts\n⇒ 5 thư mục cách xa nhau. Diff rải rác. Review khó theo dõi.\n\nChia theo TÍNH NĂNG:\n  don-hang/  (5 file, cạnh nhau)\n⇒ Một thư mục. Và khi cần tách ra service riêng,\n  ranh giới đã sẵn ([[ranh-gioi-service]]).\n```\n\n**Mỗi module có một cửa vào:**\n\n```ts\n// don-hang/index.ts — cửa CÔNG KHAI duy nhất\nexport { donHangService } from './service'\nexport type { Don, TaoDon } from './schema'\n// KHÔNG export repo — đó là nội bộ\n\n// san-pham/service.ts\nimport { donHangService } from '../don-hang'        // ✅ qua cửa\nimport { donHangRepo } from '../don-hang/repo'      // ❌ thò tay vào ruột\n```\n\n```text\nVì sao quan trọng: nếu module khác gọi thẳng repo của bạn,\nbạn KHÔNG đổi được repo mà không làm hỏng họ.\nRanh giới biến mất, và nó biến mất âm thầm.\n```\n\n**Giữ ranh giới bằng công cụ, không bằng lời nhắc:**\n\n```js\n// eslint.config.js\n{\n  rules: {\n    'no-restricted-imports': ['error', {\n      patterns: [{\n        group: ['*/*/repo', '*/*/service'],\n        message: 'Import qua index.ts của module, đừng chạm vào ruột.',\n      }],\n    }],\n  },\n}\n```\n\n```text\nĐây là điểm mấu chốt của cả bài:\n  Quy ước trong tài liệu   → bị vi phạm, và không ai biết lúc nào\n  Quy tắc trong linter     → CI đỏ, sửa ngay, không cần ai nhắc\n\nCùng nguyên lý với việc để máy giữ chuẩn định dạng thay vì\ntranh luận trong review ([[review-code-va-nang-nguoi]]).\n```\n\n## Cú pháp\n\n**Đảo ngược phụ thuộc — và khi nào nó là quá đà:**\n\n```ts\n// ❌ Service dính chặt vào một nhà cung cấp cụ thể\nimport { SendGrid } from 'sendgrid'\nclass DonHangService {\n  async tao(dl) { await new SendGrid(KEY).send(...) }   // không test được nếu không gọi mạng\n}\n\n// ✅ Service phụ thuộc vào MỘT KHÁI NIỆM, không vào nhà cung cấp\ninterface GuiMail { gui(toi: string, chuDe: string, than: string): Promise<void> }\nclass DonHangService {\n  constructor(private mail: GuiMail) {}\n  async tao(dl) { await this.mail.gui(...) }\n}\n// Test: truyền vào một bản giả. Đổi nhà cung cấp: một chỗ.\n```\n\n```text\nNhưng ĐỪNG trừu tượng hoá mọi thứ:\n\nĐáng tách:  thứ có thể ĐỔI (nhà cung cấp mail, thanh toán, lưu trữ)\n            thứ khó test (mạng, thời gian, ngẫu nhiên, hệ thống file)\n\nKhông đáng: repository của chính bạn — nó đã là một lớp trừu tượng rồi\n            hàm tiện ích thuần\n            thư viện gần như không bao giờ đổi (lodash, date-fns)\n\nMột interface chỉ có MỘT bản cài đặt và sẽ mãi như vậy\nlà một file phải đọc thêm mà không đổi lại gì.\n```\n\n**Phụ thuộc vòng tròn — dấu hiệu ranh giới sai:**\n\n```text\ndon-hang → san-pham → don-hang\n\nTriệu chứng: import trả về `undefined` lúc chạy, tuỳ thứ tự nạp module.\nVà nó xuất hiện ngẫu nhiên khi bạn thêm một import không liên quan.\n\nBa cách xử lý:\n  ① Tách phần dùng chung ra module thứ ba\n  ② Đảo một chiều: dùng sự kiện thay vì gọi trực tiếp\n  ③ Xem lại ranh giới — hai module cần nhau hai chiều\n     thường thực chất là MỘT module\n```\n\nCách ③ đáng cân nhắc trước hai cách kia: phụ thuộc vòng tròn thường là **triệu chứng**, không phải bệnh.\n\n**`dependencies` và `devDependencies`:** thứ cần lúc **chạy** vào `dependencies`; thứ chỉ cần lúc **build/test** vào `devDependencies`. Đặt nhầm khiến `npm ci --omit=dev` trong image production thiếu gói — và lỗi chỉ lộ ra ở production ([[viet-dockerfile]]).\n\n## Tại sao cần nó\n\nVì chi phí của cấu trúc tồi tăng dần và không có thời điểm nào \"đáng để dừng lại sửa\":\n\n```text\nTháng 1:  15 file, để đâu cũng được\nTháng 6:  200 file, \"hàm này ở đâu nhỉ?\"\nTháng 12: 800 file, mọi thứ import mọi thứ,\n          đổi một dòng làm hỏng ba chỗ không liên quan\n```\n\n**Ba câu hỏi kiểm tra cấu trúc:**\n\n```text\n① Người mới cần bao lâu để tìm ra chỗ sửa một tính năng?\n② Một thay đổi điển hình chạm mấy thư mục?\n③ Xoá một module thì bao nhiêu chỗ khác hỏng?\n```\n\nCâu ③ là phép thử ranh giới tốt nhất: nếu xoá module `khuyen-mai` làm hỏng mười chỗ ở bảy module khác, thì nó chưa bao giờ là một module — nó chỉ là một thư mục.\n\n**Và một lưu ý về việc chia nhỏ:** module quá nhỏ cũng có giá. Bảy file mỗi file 20 dòng, phải mở cả bảy mới hiểu một luồng, là tệ hơn một file 140 dòng đọc từ trên xuống. Chia khi có **lý do** — nhiều người cùng sửa, nhiều nơi dùng lại, hoặc phần đó thay đổi theo nhịp khác.\n\n## So sánh\n\n| | Theo tầng | Theo tính năng |\n|---|---|---|\n| Một thay đổi chạm | nhiều thư mục | một |\n| Tìm code | theo loại | theo nghiệp vụ |\n| Tách service sau này | khó | ranh giới sẵn có |\n| Hợp với | dự án rất nhỏ | mọi thứ lớn hơn thế |\n\n## Dễ nhầm\n\n**1. Chia theo tầng ở dự án lớn.** Mỗi thay đổi rải khắp nơi.\n\n**2. Không có cửa vào cho module.** Ai cũng chạm vào ruột.\n\n**3. Chỉ ghi quy ước trong tài liệu.** Sẽ bị vi phạm.\n\n**4. Trừu tượng hoá mọi thứ.** Interface một bản cài đặt là chi phí thuần.\n\n**5. Không tách thứ gọi ra ngoài.** Test phải gọi mạng thật.\n\n**6. Bỏ qua phụ thuộc vòng tròn.** Lỗi `undefined` lúc chạy, xuất hiện ngẫu nhiên.\n\n**7. Sửa vòng tròn bằng import động** thay vì xem lại ranh giới.\n\n**8. Thư mục `utils/` khổng lồ.** Chỗ chứa mọi thứ không ai muốn đặt tên.\n\n**9. Đặt nhầm `dependencies`/`devDependencies`.** Lỗi lộ ra ở production.\n\n**10. Chia module quá nhỏ.** Bảy file cho một luồng.\n\n## Mẹo nhớ\n\n> **Chia theo TÍNH NĂNG, không theo tầng — công việc đến theo tính năng.**\n>\n> **Mỗi module một cửa vào; ranh giới do LINTER giữ, không do trí nhớ.**\n>\n> **Chỉ trừu tượng hoá thứ có thể ĐỔI hoặc khó TEST.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Chia theo tầng và theo tính năng khác nhau thế nào khi thêm một trường?\n2. Vì sao mỗi module cần một cửa vào?\n3. Vì sao quy ước phải do công cụ giữ?\n4. Khi nào đáng đảo ngược phụ thuộc, khi nào là quá đà?\n5. Ba câu hỏi kiểm tra chất lượng cấu trúc?\n\n## Tự viết lại\n\nKhông nhìn lại, thiết kế cấu trúc cho một API thương mại điện tử: sản phẩm, đơn hàng, thanh toán, người dùng, thông báo.\n\n```text\n① cây thư mục\n② cửa vào của mỗi module\n③ quy tắc linter giữ ranh giới\n④ chỗ nào cần trừu tượng hoá, chỗ nào không\n```\n\nTự kiểm: module `thanh-toan` của bạn có phụ thuộc hai chiều với `don-hang` không — nếu có, bạn cắt nó thế nào?\n\n## Thử sức\n\nDự án 6 tháng tuổi: `utils/` có 40 file, có phụ thuộc vòng tròn, và người mới mất hai ngày mới tìm ra chỗ sửa một tính năng nhỏ.\n\nBa câu để trả lời: bạn tái cấu trúc theo thứ tự nào và vì sao thứ tự đó; bạn tránh làm hỏng gì trong lúc di chuyển; và bạn ngăn nó quay lại bằng cách nào. Câu khó nhất: `utils/` 40 file thường là triệu chứng của điều gì — và đổi tên nó thành `shared/` giải quyết được bao nhiêu phần vấn đề?",
+    "tags": [
+      "backend",
+      "kien-truc",
+      "thiet-ke",
+      "module"
+    ],
+    "order": 5,
+    "level": "trung-cap",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-05T02:00:00.000Z",
+    "updatedAt": "2026-01-05T02:00:00.000Z"
+  },
+  {
+    "id": "note-idempotency-va-tin-cay-o-backend",
+    "topicId": "topic-backend",
+    "title": "Độ tin cậy của một backend",
+    "slug": "idempotency-va-tin-cay-o-backend",
+    "summary": "Thoát sạch, kiểm tra sức khoẻ, timeout với mọi lời gọi ngoài, và giới hạn tài nguyên — bốn thứ phân biệt backend chạy được với backend chạy thật.",
+    "content": "> **Sau bài này bạn sẽ:** biết bốn thứ một backend phải có trước khi lên production, và vì sao chúng không lộ ra khi test ở máy dev.\n\n## Ý tưởng chính\n\nMột backend \"chạy được\" và một backend **chạy thật** khác nhau ở những thứ chỉ xuất hiện khi có tải, khi có sự cố, và khi triển khai.\n\nKhông cái nào trong số đó gây lỗi trên máy bạn. Chúng gây lỗi lúc 3 giờ sáng.\n\n## Mental model\n\nHãy nghĩ tới **khác biệt giữa lái xe trong bãi tập và lái ngoài đường**.\n\n> Trong bãi tập: đường trống, tốc độ thấp, không ai chen. Bạn lái được — nghĩa là bạn biết vận hành cái xe.\n>\n> Ngoài đường: có người tạt đầu, có mưa, có tắc đường, có lúc phải dừng gấp. Kỹ năng cần thêm không phải \"lái giỏi hơn\" — nó là **xử lý những gì bạn không kiểm soát được**.\n>\n> Và cái quyết định an toàn không phải lúc mọi thứ ổn, mà là **cái gì xảy ra khi có chuyện**: phanh có ăn không, dây an toàn có cài không.\n\nBốn thứ trong bài này là dây an toàn. Chúng không làm hệ thống nhanh hơn, và bạn chỉ biết chúng thiếu vào đúng lúc cần.\n\n## Ví dụ nhỏ\n\n```ts\nprocess.on('SIGTERM', async () => {\n  server.close()                 // ngừng nhận request MỚI\n  await dangXuLyXong()           // xử lý nốt cái đang chạy\n  await db.end()\n  process.exit(0)\n})\n```\n\n## Code chạy thế nào\n\n**① Thoát sạch — vì sao mỗi lần deploy đang cắt ngang người dùng:**\n\n```text\nKhông xử lý SIGTERM:\n  ① Trình quản lý gửi SIGTERM\n  ② Tiến trình bỏ qua\n  ③ Sau 10 giây (mặc định) → SIGKILL\n  ④ Mọi request đang xử lý ĐỨT GIỮA CHỪNG\n  ⑤ Transaction dở dang, kết nối không đóng\n\n⇒ Mỗi lần triển khai là một lần vài chục người dùng gặp lỗi.\n  Và nó không hiện trong log của bạn — vì tiến trình đã chết.\n```\n\n```text\nThoát sạch đúng cách còn cần một bước ít ai làm:\n  ① Trả 503 ở endpoint readiness NGAY khi nhận SIGTERM\n  ② ĐỢI vài giây để load balancer gỡ mình khỏi pool\n  ③ Rồi mới đóng server\n\nThiếu bước ②: load balancer vẫn gửi request tới trong lúc bạn đang tắt\n⇒ vẫn lỗi, dù bạn đã \"thoát sạch\".\n```\n\n**② Health check — hai loại, đừng gộp:**\n\n```ts\napp.get('/health', (_, res) => res.json({ ok: true }))   // còn sống?\n\napp.get('/ready', async (_, res) => {                     // nhận traffic được?\n  try {\n    await db.query('SELECT 1')\n    res.json({ ok: true })\n  } catch {\n    res.status(503).json({ ok: false })\n  }\n})\n```\n\n```text\nGộp hai cái ⇒ CSDL chập một nhịp ⇒ orchestrator tưởng ứng dụng chết\n⇒ khởi động lại HÀNG LOẠT ⇒ CSDL vốn đang quá tải nhận thêm\nmột cơn bão kết nối ([[giam-sat-va-sao-luu]]).\n```\n\n## Cú pháp\n\n**③ Timeout cho MỌI lời gọi ra ngoài:**\n\n```ts\n// ❌ Không timeout: đối tác treo ⇒ worker của bạn bị giữ vô hạn\nconst r = await fetch(url)\n\n// ✅\nconst r = await fetch(url, { signal: AbortSignal.timeout(3000) })\n```\n\n```text\nBa nơi hay quên:\n  □ HTTP client                    → timeout theo p99 của bên kia, cộng biên\n  □ Truy vấn CSDL                  → statement_timeout\n  □ Kết nối CSDL từ pool           → khác với timeout truy vấn:\n                                     pool cạn thì bạn chờ Ở ĐÂY\n\nVà timeout phải GIẢM DẦN theo tầng: nếu tầng ngoài bỏ cuộc\nsau 5 giây, đừng để tầng trong chờ 30 giây — nó chỉ đang\nlàm việc vô ích ([[thiet-ke-cho-that-bai]]).\n```\n\n**④ Giới hạn tài nguyên:**\n\n```ts\nconst pool = new Pool({\n  max: 10,                          // số kết nối TỐI ĐA mỗi tiến trình\n  connectionTimeoutMillis: 3000,    // chờ lấy kết nối từ pool\n  idleTimeoutMillis: 30000,\n})\n```\n\n```text\nTính tổng, đây là chỗ hay vỡ khi mở rộng:\n  10 tiến trình × max 10 = 100 kết nối tới CSDL\n  Postgres mặc định max_connections = 100\n  ⇒ Chạm trần ngay, và thêm máy làm mọi thứ TỆ HƠN\n    ([[mo-rong-va-can-bang-tai]]).\n```\n\n```text\nBa giới hạn khác cũng cần:\n  □ Kích thước request body       — tránh nuốt file 2 GB\n  □ Rate limit                    — theo người dùng và theo IP\n  □ Số job đồng thời của worker   — nếu không, một đợt tải\n                                    làm cạn kết nối CSDL\n```\n\n**Và một thứ thứ năm không thuộc mã: `restart: always`.** Không có nó, tiến trình chết là nằm im tới khi có người phát hiện.\n\n## Tại sao cần nó\n\nVì cả bốn thứ này đều có chung một đặc điểm: **chúng không gây lỗi ở môi trường dev**.\n\n```text\nMáy dev:  một người dùng, không deploy giữa chừng,\n          CSDL trên localhost, không ai treo.\n⇒ Bốn thứ trên không cần thiết. Chúng LUÔN có vẻ dư thừa.\n\nProduction: deploy vài lần mỗi ngày, đối tác treo,\n            CSDL đôi lúc chậm, tải không đều.\n⇒ Thiếu một trong bốn là một loại sự cố định kỳ.\n```\n\n**Danh sách kiểm trước khi lên production:**\n\n```text\n□ Xử lý SIGTERM, có độ trễ cho load balancer gỡ mình ra\n□ /health và /ready tách riêng\n□ Timeout cho mọi lời gọi ngoài, giảm dần theo tầng\n□ Giới hạn: pool, body, rate limit, job đồng thời\n□ restart: always\n□ Log ra stdout, có traceId ([[quan-sat-he-thong]])\n□ Cấu hình xác thực lúc khởi động, sai thì exit(1)\n□ Không secret trong image\n□ Job nền chịu được chạy hai lần\n```\n\n**Cách kiểm chứng — vì mã trông giống chịu lỗi không có nghĩa là chịu lỗi:**\n\n```text\n□ Gửi SIGTERM lúc đang có tải → có request nào lỗi không?\n□ Chặn CSDL 30 giây → ứng dụng trả 503 hay treo?\n□ Thêm độ trễ 10 giây cho API đối tác → timeout có kích hoạt?\n□ Bắn 10× tải bình thường → cái gì vỡ trước, và vỡ có kiểm soát không?\n```\n\nBốn phép thử này chạy được ở staging trong một buổi, và chúng biến \"tôi nghĩ là ổn\" thành \"tôi đã thấy nó ổn\" ([[hieu-nang-va-do-luong]]).\n\n## So sánh\n\n| Thiếu cái gì | Triệu chứng ở production |\n|---|---|\n| Thoát sạch | mỗi lần deploy có người gặp lỗi |\n| Readiness riêng | CSDL chậm ⇒ khởi động lại hàng loạt |\n| Timeout | một dịch vụ treo kéo sập cả hệ thống |\n| Giới hạn pool | thêm máy làm CSDL chậm hơn |\n| `restart` | tiến trình chết nằm im |\n\n## Dễ nhầm\n\n**1. Không xử lý SIGTERM.** Mỗi deploy cắt ngang request.\n\n**2. Thoát ngay khi nhận SIGTERM.** Load balancer chưa kịp gỡ bạn ra.\n\n**3. Gộp liveness với readiness.** Khởi động lại hàng loạt.\n\n**4. Không timeout lời gọi ngoài.**\n\n**5. Timeout tầng trong lớn hơn tầng ngoài.** Làm việc vô ích.\n\n**6. Không tính tổng kết nối CSDL.**\n\n**7. Không giới hạn kích thước body.**\n\n**8. Không rate limit.**\n\n**9. Chưa bao giờ thử các kịch bản hỏng.** Mã trông giống chịu lỗi.\n\n**10. Tin rằng chạy tốt ở dev nghĩa là sẵn sàng.**\n\n## Mẹo nhớ\n\n> **Bốn thứ: THOÁT SẠCH, HEALTH CHECK tách đôi, TIMEOUT khắp nơi, GIỚI HẠN tài nguyên.**\n>\n> **Cả bốn đều KHÔNG gây lỗi ở dev — nên chúng luôn có vẻ dư thừa.**\n>\n> **Thoát sạch phải có độ trễ để load balancer kịp gỡ bạn ra.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Bốn thứ phân biệt backend chạy được với chạy thật?\n2. Thoát sạch gồm mấy bước, bước nào hay bị bỏ?\n3. Liveness khác readiness thế nào, gộp lại thì hậu quả gì?\n4. Vì sao phải tính tổng kết nối CSDL khi thêm máy?\n5. Bốn phép thử kiểm chứng độ tin cậy?\n\n## Tự viết lại\n\nKhông nhìn lại, viết phần \"sẵn sàng production\" cho một API Node:\n\n```text\n① xử lý SIGTERM đầy đủ\n② hai endpoint sức khoẻ\n③ cấu hình timeout ba tầng\n④ các giới hạn tài nguyên, kèm con số\n⑤ ba phép thử kiểm chứng\n```\n\nTự kiểm: ở ①, giữa lúc nhận SIGTERM và lúc `server.close()`, bạn có chờ không — và chờ bao lâu là đủ?\n\n## Thử sức\n\nMỗi lần triển khai, bảng theo dõi hiện một đợt 5xx kéo dài khoảng 20 giây. Không ai coi đó là vấn đề vì \"deploy mà\".\n\nBa câu để trả lời: chuyện gì đang xảy ra ở mức chi tiết; ba thay đổi để đợt 5xx đó biến mất; và bạn **chứng minh** đã hết bằng cách nào. Câu khó nhất: nếu đội triển khai 10 lần mỗi ngày, 20 giây lỗi mỗi lần tiêu bao nhiêu phần error budget tháng — và con số đó có đổi cách mọi người nhìn vấn đề không?",
+    "tags": [
+      "backend",
+      "do-tin-cay",
+      "van-hanh",
+      "thiet-ke"
+    ],
+    "order": 6,
+    "level": "nang-cao",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-05T03:00:00.000Z",
+    "updatedAt": "2026-01-05T03:00:00.000Z"
+  },
+  {
+    "id": "note-chon-kieu-giao-tiep",
+    "topicId": "topic-api-adv",
+    "title": "Chọn kiểu giao tiếp cho API",
+    "slug": "chon-kieu-giao-tiep",
+    "summary": "REST, RPC, GraphQL, WebSocket, SSE — mỗi cái hợp với hình dạng bài toán nào.",
+    "content": "> **Sau bài này bạn sẽ:** chọn được kiểu giao tiếp từ hình dạng bài toán, thay vì từ thứ đang thịnh hành.\n\n## Ý tưởng chính\n\nCâu hỏi quyết định không phải \"REST hay GraphQL\", mà là **hai bên đang trao đổi gì với nhau**:\n\nThao tác trên **tài nguyên**? Gọi một **hành động**? Lấy một **đồ thị dữ liệu**? Hay nhận **luồng sự kiện liên tục**?\n\nBốn hình dạng đó có bốn công cụ phù hợp. Chọn sai không làm hệ thống hỏng — nó làm mọi thứ sau đó nặng nề hơn cần thiết.\n\n## Mental model\n\nHãy nghĩ tới **cách bạn liên lạc với một cửa hàng**.\n\n> **Catalogue và phiếu đặt hàng** — có mẫu sẵn, mỗi mẫu cho một loại việc, ai cũng hiểu. Đó là **REST**.\n>\n> **Gọi điện bảo họ làm một việc cụ thể** — \"huỷ đơn 123\", \"gửi lại mã\". Nhanh, thẳng, không cần ép vào khuôn tài nguyên. Đó là **RPC**.\n>\n> **Đưa một danh sách chính xác những gì bạn muốn biết** — \"cho tôi tên, giá, và tên ba người đánh giá gần nhất của năm sản phẩm này\". Một lần hỏi, đúng những gì cần. Đó là **GraphQL**.\n>\n> **Đăng ký nhận thông báo khi có hàng mới** — họ chủ động báo, bạn không phải hỏi lại. Đó là **SSE / WebSocket**.\n\nKhông cách nào tốt hơn cách nào. Gọi điện để đặt 200 món là dở; điền phiếu để hỏi một câu cũng dở.\n\n## Ví dụ nhỏ\n\n```text\nREST       GET /don-hang/123\nRPC        POST /rpc  { \"method\": \"huyDonHang\", \"params\": { \"id\": 123 } }\nGraphQL    query { donHang(id:123) { ma, sanPham { ten } } }\nSSE        GET /su-kien   → server đẩy liên tục\nWebSocket  ws://... → hai chiều\n```\n\n## Code chạy thế nào\n\n**REST — mạnh khi dữ liệu thật sự là tài nguyên:**\n\n```text\nĐược: ai cũng hiểu, cache HTTP hoạt động, công cụ sẵn có,\n      mã trạng thái mang ý nghĩa chuẩn\n\nVấp:  hành động không phải CRUD\n        \"gửi lại email xác nhận\" là tài nguyên gì?\n        → POST /nguoi-dung/1/xac-nhan-email  (chấp nhận được)\n        → đừng cố ép thành PUT trên một tài nguyên tưởng tượng\n\n      lấy dữ liệu liên quan\n        GET /don-hang/1  rồi  GET /nguoi-dung/5  rồi  GET /san-pham/9\n        ⇒ ba round-trip cho một màn hình\n```\n\n**RPC — mạnh khi bạn gọi một hành động:**\n\n```text\nĐược: ánh xạ thẳng sang lời gọi hàm, không phải nghĩ \"cái này là\n      tài nguyên gì\"; gRPC còn có hợp đồng sinh mã cho cả hai phía\n      và mã hoá nhị phân nhanh hơn JSON nhiều\n\nVấp:  cache HTTP gần như vô dụng (mọi thứ là POST)\n      trình duyệt không gọi gRPC trực tiếp được — cần gRPC-Web hoặc proxy\n      dễ trượt thành hàng trăm endpoint không có quy luật\n```\n\nĐây là lý do gRPC phổ biến **giữa các service nội bộ** nhưng hiếm ở API công khai: nó tối ưu cho hợp đồng chặt và tốc độ, đánh đổi bằng tính phổ dụng.\n\n**GraphQL — mạnh khi client cần đúng một hình dạng dữ liệu:**\n\n```text\nĐược: một round-trip cho dữ liệu lồng nhau; nhiều client với\n      nhu cầu khác nhau dùng chung một API; schema có kiểu\n\nVấp:  cache HTTP không dùng được (mọi thứ là POST /graphql)\n      N+1 query gần như CHẮC CHẮN xảy ra nếu không có DataLoader\n      client viết được truy vấn rất nặng ⇒ phải giới hạn ĐỘ SÂU\n      và ĐỘ PHỨC TẠP, nếu không đó là một lỗ hổng từ chối dịch vụ\n      giám sát khó: mọi request đều là POST /graphql\n```\n\nGraphQL trả một chi phí cố định đáng kể ở tầng máy chủ. Nó đáng khi bạn có **nhiều client với nhu cầu dữ liệu khác nhau** — và không đáng khi chỉ có một web app do chính bạn viết.\n\n## Cú pháp\n\n**Quyết định theo hình dạng bài toán:**\n\n```text\nDữ liệu là TÀI NGUYÊN, client đa dạng, muốn cache\n  → REST\n\nGọi HÀNH ĐỘNG giữa các service nội bộ, cần nhanh và hợp đồng chặt\n  → gRPC\n\nClient cần ĐỒ THỊ dữ liệu, nhiều loại client khác nhau\n  → GraphQL\n\nServer ĐẨY một chiều: thông báo, tiến độ, giá, log\n  → SSE\n\nHai chiều, độ trễ thấp: chat, cộng tác, game\n  → WebSocket\n```\n\n**Trộn nhiều kiểu là bình thường** — và thường là lựa chọn đúng:\n\n```text\nREST cho CRUD chính\n+ vài endpoint kiểu RPC cho hành động  (/don-hang/1/huy)\n+ SSE cho thông báo\n+ gRPC giữa các service nội bộ\n\nÉp cả hệ thống vào MỘT kiểu là cách chắc chắn nhất để\ncó vài chỗ gượng ép.\n```\n\n**Ba thứ không phụ thuộc kiểu giao tiếp** — làm được ở cả năm:\n\n```text\n① Phiên bản hoá và tương thích ngược ([[loi-versioning-va-tai-lieu]])\n② Idempotency cho thao tác ghi ([[idempotency-va-thu-lai]])\n③ Xác thực đầu vào ở biên ([[xac-thuc-dau-vao-va-bien]])\n```\n\nĐây là điểm đáng nhớ: phần lớn chất lượng của một API **không nằm ở kiểu giao tiếp**. Một REST API thiếu ba thứ trên tệ hơn một RPC API có đủ.\n\n## Tại sao cần nó\n\nVì chi phí chọn sai không nằm ở chỗ \"không chạy được\" — nó nằm ở ma sát hằng ngày:\n\n```text\nChọn GraphQL cho một web app đơn giản:\n  → trả chi phí schema, resolver, DataLoader, giới hạn độ phức tạp\n  → mất cache HTTP\n  → giám sát khó hơn\n  → và lợi ích \"client tự chọn trường\" không ai dùng vì chỉ có một client\n\nÉp mọi hành động vào REST:\n  → PUT /don-hang/1/trang-thai  { \"trangThai\": \"da-huy\" }\n  → client phải biết máy trạng thái nội bộ của bạn\n  → thay vì POST /don-hang/1/huy, nói đúng ý định\n```\n\n**Một câu hỏi lọc rất nhanh:** *\"client của tôi là ai?\"*\n\n```text\nChỉ web app của chính bạn        → REST đơn giản là đủ, đừng phức tạp hoá\nWeb + mobile + đối tác           → cân nhắc GraphQL, hoặc REST + BFF\nChỉ các service nội bộ           → gRPC đáng cân nhắc\nBên thứ ba không quen biết       → REST, vì nó phổ dụng nhất\n```\n\n## So sánh\n\n| | REST | gRPC | GraphQL | SSE | WebSocket |\n|---|---|---|---|---|---|\n| Hướng | client hỏi | client hỏi | client hỏi | **server đẩy** | **hai chiều** |\n| Cache HTTP | ✅ | ❌ | ❌ | ❌ | ❌ |\n| Trình duyệt hỗ trợ thẳng | ✅ | ❌ | ✅ | ✅ | ✅ |\n| Hợp đồng có kiểu | tuỳ (OpenAPI) | ✅ | ✅ | ❌ | ❌ |\n| Chi phí máy chủ | thấp | thấp | **cao** | thấp | vừa |\n\n## Dễ nhầm\n\n**1. Chọn theo thứ đang thịnh hành** thay vì theo hình dạng bài toán.\n\n**2. Ép mọi hành động vào REST.** Client phải biết trạng thái nội bộ của bạn.\n\n**3. GraphQL không giới hạn độ sâu và độ phức tạp.** Lỗ hổng từ chối dịch vụ.\n\n**4. GraphQL không có DataLoader.** N+1 gần như chắc chắn.\n\n**5. Dùng gRPC cho API công khai trên trình duyệt.**\n\n**6. WebSocket khi chỉ cần một chiều.** SSE đơn giản hơn nhiều.\n\n**7. Nghĩ phải chọn đúng một kiểu cho cả hệ thống.**\n\n**8. Bỏ qua cache HTTP** rồi tự xây cache — cái đầu miễn phí.\n\n**9. Tin rằng kiểu giao tiếp quyết định chất lượng API.** Phiên bản hoá, idempotency và xác thực mới quyết định.\n\n## Mẹo nhớ\n\n> **Hỏi hình dạng bài toán: tài nguyên, hành động, đồ thị, hay luồng?**\n>\n> **Trộn nhiều kiểu là bình thường. Ép một kiểu cho tất cả thì gượng.**\n>\n> **Chất lượng API phần lớn KHÔNG nằm ở kiểu giao tiếp.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Bốn hình dạng bài toán và công cụ tương ứng?\n2. GraphQL mạnh ở đâu và trả giá gì?\n3. Vì sao gRPC phổ biến nội bộ nhưng hiếm ở API công khai?\n4. Ba thứ quyết định chất lượng API mà không phụ thuộc kiểu giao tiếp?\n5. Câu hỏi nào lọc lựa chọn nhanh nhất?\n\n## Tự viết lại\n\nKhông nhìn lại, chọn kiểu giao tiếp và giải thích:\n\n```text\n① Quản lý sản phẩm cho trang quản trị\n② Huỷ đơn hàng\n③ Trang chi tiết cần sản phẩm + đánh giá + người bán trong một lần\n④ Hiển thị tiến độ xử lý video\n⑤ Chat hỗ trợ\n⑥ Service kho gọi service giá\n```\n\nTự kiểm: ở ③, nếu bạn chọn GraphQL, chi phí nào bạn phải chấp nhận — và có cách nào đạt kết quả tương tự với REST không?\n\n## Thử sức\n\nĐội đề xuất chuyển toàn bộ REST API sang GraphQL, lý do: \"client phải gọi nhiều lần mới đủ dữ liệu cho một màn hình\".\n\nBa câu để trả lời: bạn hỏi lại những gì để xác minh vấn đề; hai giải pháp **nhẹ hơn** GraphQL cho đúng vấn đề đó; và nếu vẫn chọn GraphQL, những chi phí nào phải chuẩn bị trước. Câu khó nhất: nếu chỉ có **một** client là web app của chính đội, lợi ích lớn nhất của GraphQL còn lại bao nhiêu?",
+    "tags": [
+      "api",
+      "rest",
+      "rpc",
+      "graphql",
+      "thiet-ke"
+    ],
+    "order": 1,
+    "level": "trung-cap",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-05T04:00:00.000Z",
+    "updatedAt": "2026-01-05T04:00:00.000Z"
+  },
+  {
+    "id": "note-rpc-va-grpc",
+    "topicId": "topic-api-adv",
+    "title": "RPC và gRPC",
+    "slug": "rpc-va-grpc",
+    "summary": "Gọi hàm qua mạng, hợp đồng bằng Protobuf, streaming — và ảo giác nguy hiểm rằng nó giống gọi hàm cục bộ.",
+    "content": "> **Sau bài này bạn sẽ:** viết được một hợp đồng gRPC, và biết những gì gọi qua mạng **không bao giờ** giống gọi hàm cục bộ.\n\n## Ý tưởng chính\n\nRPC làm cho việc gọi một hàm ở máy khác **trông giống** gọi hàm cục bộ.\n\nĐó vừa là điểm mạnh — mã đọc tự nhiên — vừa là cái bẫy lớn nhất: một lời gọi mạng **có thể thất bại, chậm, hoặc thành công mà bạn không biết**. Không lời gọi hàm cục bộ nào làm được ba việc đó.\n\n## Mental model\n\nHãy nghĩ tới **nhờ đồng nghiệp làm hộ một việc**.\n\n> **Ngồi cạnh** (gọi hàm cục bộ): quay sang, nhờ, họ làm, xong. Bạn biết chắc kết quả.\n>\n> **Nhờ qua tin nhắn** (RPC): bạn gửi tin, rồi chờ.\n>\n> Và có ba tình huống không tồn tại ở vế đầu:\n> - Họ **không đọc** tin nhắn (mất kết nối).\n> - Họ đọc, làm xong, nhưng **tin nhắn trả lời không tới bạn** (bạn tưởng thất bại, thực ra đã xong).\n> - Họ **đang bận** và trả lời sau 30 phút (chậm).\n\nCú pháp RPC che ba tình huống đó đi. Nhưng chúng vẫn ở đó, và mã của bạn phải xử lý chúng.\n\n## Ví dụ nhỏ\n\n```protobuf\nservice KhoService {\n  rpc KiemTonKho (KiemTonKhoRequest) returns (KiemTonKhoResponse);\n}\nmessage KiemTonKhoRequest { string san_pham_id = 1; }\nmessage KiemTonKhoResponse { int32 con_lai = 1; }\n```\n\n## Code chạy thế nào\n\n**Hợp đồng sinh mã cho cả hai phía — đây là giá trị chính:**\n\n```text\n① Viết file .proto — nguồn sự thật DUY NHẤT\n② Sinh mã cho server (Go, Java, Node...)  và client (bất kỳ ngôn ngữ nào)\n③ Hai bên có cùng kiểu, cùng tên trường, trình biên dịch kiểm\n\n⇒ Đổi tên trường trong .proto ⇒ client KHÔNG BIÊN DỊCH ĐƯỢC.\n⇒ So với REST + JSON: đổi tên trường ⇒ client nhận `undefined`\n  lúc chạy, ở production, có thể vài tuần sau.\n```\n\nĐây là khác biệt thật sự đáng giá của gRPC: nó chuyển một lớp lỗi từ **runtime** sang **thời điểm biên dịch**.\n\n**Số thứ tự trường — quy tắc không được vi phạm:**\n\n```protobuf\nmessage NguoiDung {\n  string ten = 1;\n  string email = 2;\n  // string dia_chi = 3;   ← đã bỏ\n  reserved 3;                // ← ĐÁNH DẤU, không dùng lại\n  int32 tuoi = 4;\n}\n```\n\n```text\nProtobuf mã hoá theo SỐ, không theo tên.\n⇒ Đổi tên trường: an toàn (số không đổi)\n⇒ Đổi SỐ, hoặc dùng lại số cũ cho trường mới: HỎNG IM LẶNG\n   Client cũ đọc số 3 tưởng là địa chỉ, nhận về một số nguyên.\n\n⇒ Quy tắc: chỉ THÊM trường mới với số mới. `reserved` cho số đã bỏ.\n```\n\nVì mọi trường trong proto3 đều tuỳ chọn, thêm trường là thay đổi tương thích ngược — client cũ đơn giản bỏ qua nó.\n\n## Cú pháp\n\n**Bốn kiểu lời gọi:**\n\n```protobuf\nrpc Lay (Req) returns (Res);                          // đơn — đơn\nrpc TaiLen (stream Chunk) returns (KetQua);           // client stream\nrpc TheoDoi (Req) returns (stream SuKien);            // server stream\nrpc Chat (stream Tin) returns (stream Tin);           // hai chiều\n```\n\n```text\nServer stream là thứ REST không có tương đương gọn:\n  \"theo dõi tiến độ job này\" — server đẩy cập nhật cho tới khi xong.\nClient stream: tải file lớn theo mảnh.\nHai chiều: chat, đồng bộ liên tục.\n```\n\n**Xử lý lỗi — mã trạng thái riêng, ánh xạ gần với HTTP:**\n\n```text\nOK                  0\nINVALID_ARGUMENT    3   ≈ 400\nNOT_FOUND           5   ≈ 404\nALREADY_EXISTS      6   ≈ 409\nPERMISSION_DENIED   7   ≈ 403\nRESOURCE_EXHAUSTED  8   ≈ 429\nUNAVAILABLE        14   ≈ 503  ← retry ĐƯỢC\nDEADLINE_EXCEEDED   4   ≈ 504  ← retry cẩn thận\n```\n\n```text\nChỉ retry UNAVAILABLE và (nếu thao tác idempotent) DEADLINE_EXCEEDED.\nRetry INVALID_ARGUMENT là lãng phí thuần: lần sau cũng vậy\n([[thiet-ke-cho-that-bai]]).\n```\n\n**Deadline — gRPC làm tốt hơn HTTP thường ở điểm này:**\n\n```go\nctx, cancel := context.WithTimeout(ctx, 2*time.Second)\ndefer cancel()\nres, err := client.KiemTonKho(ctx, req)\n```\n\n```text\nDeadline được TRUYỀN TIẾP qua các lời gọi phía sau.\n  A gọi B với deadline 2s.\n  B còn 1,8s ⇒ gọi C với deadline 1,8s.\n  Hết hạn ⇒ MỌI tầng dừng lại, không ai làm việc vô ích.\n\nVới HTTP thường, mỗi tầng tự đặt timeout riêng và chúng\nthường không nhất quán.\n```\n\n## Tại sao cần nó\n\nVì **ảo giác trong suốt** là nguồn của những lỗi khó nhất:\n\n```text\nres, err := client.TruTien(ctx, req)\nif err != nil {\n    // ← Trừ tiền ĐÃ XẢY RA hay CHƯA? Bạn KHÔNG BIẾT.\n    //   err có thể là: chưa tới nơi / đã xử lý nhưng phản hồi mất\n}\n```\n\n```text\nCùng một `err`, hai thực tế trái ngược.\n⇒ Retry mà thao tác không idempotent = trừ tiền hai lần.\n⇒ Không retry = có thể mất giao dịch.\n\n⇒ Mọi thao tác GHI qua RPC phải idempotent, hoặc mang khoá\n  idempotency ([[idempotency-va-thu-lai]]).\n```\n\nĐây không phải hạn chế của gRPC — nó là bản chất của mạng. gRPC chỉ làm nó **dễ quên hơn** vì cú pháp trông như gọi hàm.\n\n**Bốn thứ khác cần nhớ khi vận hành gRPC:**\n\n```text\n□ Trình duyệt KHÔNG gọi gRPC trực tiếp — cần gRPC-Web + proxy\n□ Payload nhị phân ⇒ không đọc được bằng mắt trong log\n  ⇒ cần công cụ riêng (grpcurl), và bật server reflection ở môi trường dev\n□ Load balancer HTTP/1 KHÔNG cân bằng được gRPC:\n  gRPC giữ MỘT kết nối HTTP/2 dài ⇒ mọi request đi về một máy\n  ⇒ cần load balancer hiểu HTTP/2, hoặc cân bằng ở tầng client\n□ Cache HTTP không dùng được\n```\n\nĐiểm thứ ba là bất ngờ phổ biến nhất khi triển khai gRPC lần đầu: hệ thống chạy đúng, nhưng tải dồn hết vào một máy ([[mo-rong-va-can-bang-tai]]).\n\n## So sánh\n\n| | REST + JSON | gRPC |\n|---|---|---|\n| Hợp đồng | tài liệu (OpenAPI) | **sinh mã, biên dịch kiểm** |\n| Mã hoá | văn bản | nhị phân, nhỏ hơn |\n| Đổi tên trường | hỏng lúc chạy | vẫn chạy (mã theo số) |\n| Streaming | khó | 4 kiểu sẵn có |\n| Trình duyệt | ✅ | cần proxy |\n| Đọc log bằng mắt | ✅ | ❌ |\n| Cân bằng tải | dễ | cần L7 hiểu HTTP/2 |\n\n## Dễ nhầm\n\n**1. Coi lời gọi RPC như gọi hàm cục bộ.** Nó thất bại, chậm, và có thể thành công mà bạn không biết.\n\n**2. Không idempotent cho thao tác ghi.** Retry là trừ tiền hai lần.\n\n**3. Dùng lại số trường đã bỏ.** Hỏng im lặng ở client cũ.\n\n**4. Đổi số thứ tự trường.**\n\n**5. Không đặt deadline.** Mất lợi ích lớn nhất của gRPC.\n\n**6. Retry mọi mã lỗi.** Chỉ `UNAVAILABLE` mới đáng.\n\n**7. Dùng load balancer HTTP/1 cho gRPC.** Tải dồn về một máy.\n\n**8. Định dùng gRPC thẳng từ trình duyệt.**\n\n**9. Bật server reflection ở production.** Nó phơi bày toàn bộ hợp đồng.\n\n**10. Không có công cụ debug.** Payload nhị phân, log vô dụng nếu không chuẩn bị trước.\n\n## Mẹo nhớ\n\n> **RPC trông như gọi hàm cục bộ — đó là điểm mạnh và là cái bẫy.**\n>\n> **Protobuf mã hoá theo SỐ. Chỉ THÊM số mới; số đã bỏ thì `reserved`.**\n>\n> **gRPC giữ một kết nối HTTP/2 dài ⇒ cần load balancer hiểu HTTP/2.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Giá trị chính của hợp đồng .proto là gì?\n2. Vì sao đổi tên trường an toàn mà đổi số thì không?\n3. Bốn kiểu lời gọi gRPC?\n4. Deadline được truyền tiếp nghĩa là gì, lợi ích ra sao?\n5. Ba tình huống mạng mà lời gọi hàm cục bộ không có?\n\n## Tự viết lại\n\nKhông nhìn lại, viết file `.proto` cho một service kho:\n\n```text\n① kiểm tồn kho một sản phẩm\n② giữ hàng (thao tác GHI — chú ý idempotency)\n③ theo dõi thay đổi tồn kho theo thời gian thực\n④ đánh dấu một trường đã bỏ\n```\n\nTự kiểm: ở ②, nếu client gọi lại vì timeout, thiết kế của bạn ngăn giữ hàng hai lần bằng cách nào?\n\n## Thử sức\n\nSau khi chuyển hai service nội bộ sang gRPC, mọi thứ chạy đúng, nhưng bảng theo dõi cho thấy **một máy trong ba máy nhận gần hết traffic**.\n\nBa câu để trả lời: nguyên nhân; hai cách sửa và đánh đổi của mỗi cách; và bạn xác nhận đã sửa bằng số liệu nào. Câu khó nhất: nếu bạn chuyển sang cân bằng ở tầng client, cái gì phải có thêm để nó biết danh sách máy đang sống?",
+    "tags": [
+      "api",
+      "rpc",
+      "grpc",
+      "protobuf",
+      "thiet-ke"
+    ],
+    "order": 2,
+    "level": "trung-cap",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-05T05:00:00.000Z",
+    "updatedAt": "2026-01-05T05:00:00.000Z"
+  },
+  {
+    "id": "note-graphql-cho-backend",
+    "topicId": "topic-api-adv",
+    "title": "GraphQL nhìn từ phía backend",
+    "slug": "graphql-cho-backend",
+    "summary": "N+1, giới hạn độ phức tạp, cache — ba chi phí mà phía client không nhìn thấy.",
+    "content": "> **Sau bài này bạn sẽ:** biết ba chi phí GraphQL đẩy sang backend, và cách xử lý từng cái.\n\n## Ý tưởng chính\n\nGraphQL chuyển quyền quyết định **\"lấy dữ liệu gì\"** từ backend sang client.\n\nClient được lợi rõ ràng: một round-trip, đúng những trường cần. Nhưng quyền đó đi kèm ba hệ quả mà backend phải gánh: **truy vấn N+1**, **truy vấn tuỳ ý có thể rất nặng**, và **mất cache HTTP**.\n\nBa thứ này không tự biến mất. Chúng phải được xử lý bằng mã.\n\n## Mental model\n\nHãy nghĩ tới **buffet tự chọn so với set menu**.\n\n> **Set menu (REST)**: bếp biết trước sẽ nấu gì, chuẩn bị sẵn, tối ưu được. Khách nhận đúng phần đã định — có thể thừa món không thích.\n>\n> **Buffet (GraphQL)**: khách lấy đúng thứ mình muốn, không thừa. Nhưng bếp **không biết trước** ai lấy gì, phải sẵn sàng cho mọi tổ hợp.\n>\n> Và có một vị khách chất đầy mười đĩa. Ở nhà hàng, người ta nhìn thấy và can thiệp. Ở API, **không ai nhìn cả** — nên bếp phải tự đặt giới hạn.\n\nVị khách mười đĩa đó là truy vấn lồng sâu. Nó không phải tấn công có chủ đích — thường chỉ là một client viết truy vấn không cẩn thận.\n\n## Ví dụ nhỏ\n\n```graphql\nquery {\n  donHang(id: \"1\") {\n    ma\n    khachHang { ten }\n    sanPham { ten, gia }\n  }\n}\n```\n\n## Code chạy thế nào\n\n**N+1 — vì sao nó gần như chắc chắn xảy ra:**\n\n```graphql\nquery { donHangs(limit: 100) { ma, khachHang { ten } } }\n```\n\n```text\nResolver chạy theo TỪNG NODE trong cây kết quả:\n  ① donHangs      → 1 truy vấn, trả 100 đơn\n  ② khachHang     → chạy 100 LẦN, mỗi lần 1 truy vấn\n⇒ 101 truy vấn.\n\nĐây không phải lỗi ai viết ẩu. Đó là CÁCH GraphQL thực thi:\nmỗi resolver chỉ biết node của nó, không biết 99 node kia\ncũng đang cần cùng loại dữ liệu.\n```\n\n**DataLoader — gom trong một vòng lặp sự kiện:**\n\n```ts\nconst khachHangLoader = new DataLoader(async (ids: readonly string[]) => {\n  const ds = await db.khachHang.findMany({ where: { id: { in: [...ids] } } })\n  const theoId = new Map(ds.map((k) => [k.id, k]))\n  return ids.map((id) => theoId.get(id) ?? null)   // PHẢI đúng thứ tự đầu vào\n})\n\n// resolver\nkhachHang: (don) => khachHangLoader.load(don.khachHangId)\n```\n\n```text\nCơ chế: DataLoader gom mọi `.load()` xảy ra trong CÙNG một tick,\ngọi hàm lô MỘT lần.\n⇒ 101 truy vấn → 2.\n\nHai điều kiện dễ sai:\n  ① Hàm lô phải trả về mảng ĐÚNG THỨ TỰ và ĐÚNG SỐ LƯỢNG đầu vào —\n     thiếu một phần tử là dữ liệu gán nhầm cho node khác\n  ② Tạo DataLoader MỚI cho MỖI request — dùng chung giữa các request\n     nghĩa là cache rò rỉ dữ liệu giữa những người dùng khác nhau\n```\n\nĐiều kiện ② là một lỗ hổng bảo mật thật, không chỉ là bug hiệu năng.\n\n## Cú pháp\n\n**Giới hạn truy vấn — bắt buộc với API công khai:**\n\n```text\n① ĐỘ SÂU\n   { a { b { c { d { e ... } } } } }\n   Với quan hệ hai chiều, một truy vấn lồng 15 tầng\n   có thể quét gần như cả CSDL.\n   ⇒ Chặn ở độ sâu 7–10.\n\n② ĐỘ PHỨC TẠP — chính xác hơn độ sâu\n   Gán điểm cho mỗi trường; trường có `limit` nhân theo limit.\n   Tổng điểm vượt ngưỡng ⇒ từ chối TRƯỚC KHI thực thi.\n   ⇒ Chặn được `donHangs(limit: 10000) { sanPham { ... } }`\n     mà độ sâu chỉ là 2.\n\n③ SỐ NODE TỐI ĐA và TIMEOUT truy vấn\n\n④ TẮT INTROSPECTION ở production\n   Nó phơi bày toàn bộ schema cho người lạ.\n```\n\n```text\nThiếu ① và ②, GraphQL công khai là một lỗ hổng từ chối dịch vụ\nsẵn có: kẻ tấn công không cần công cụ gì, chỉ cần một truy vấn.\n```\n\n**Truy vấn có định danh — cách mạnh nhất, nếu client do bạn kiểm soát:**\n\n```text\nChỉ chấp nhận các truy vấn ĐÃ ĐĂNG KÝ TRƯỚC, client gửi mã băm.\n\n⇒ Không ai gửi được truy vấn tuỳ ý  ⇒ bài toán độ phức tạp biến mất\n⇒ Payload nhỏ hơn\n⇒ Biết trước tập truy vấn ⇒ tối ưu được, giám sát được\n```\n\nĐổi lại, client mất khả năng tự do đặt truy vấn — nên nó chỉ dùng được khi client là của chính bạn.\n\n**Cache — GraphQL bỏ mất cache HTTP:**\n\n```text\nMọi truy vấn là POST /graphql ⇒ CDN và trình duyệt không cache được.\n\nBa mức bù lại:\n  ① Cache theo TRƯỜNG: đánh dấu trường nào cache được, bao lâu\n  ② Cache theo THỰC THỂ ở tầng ứng dụng (Redis)\n  ③ Cache ở CLIENT (Apollo, urql) — chỉ giúp client đó\n\n⇒ Không cái nào rẻ như một dòng `Cache-Control` ([[cache-nhieu-tang]]).\n```\n\n**Giám sát:** mọi request đều là `POST /graphql` nên chỉ số theo endpoint trở nên vô nghĩa. Cần ghi **tên operation** vào log và đo theo từng operation — nếu không, bạn thấy \"p95 của /graphql là 800ms\" mà không biết truy vấn nào gây ra ([[quan-sat-he-thong]]).\n\n## Tại sao cần nó\n\nVì quyết định dùng GraphQL thường được đưa ra vì lợi ích phía client, còn chi phí thì đổ hết sang backend:\n\n```text\nClient thấy:   một round-trip, đúng trường cần, kiểu rõ ràng\nBackend gánh:  DataLoader cho mọi quan hệ\n               giới hạn độ sâu và độ phức tạp\n               tự xây lại cache\n               giám sát theo operation\n               phân quyền ở TỪNG TRƯỜNG\n```\n\nDòng cuối đáng nhấn: với REST, bạn kiểm quyền ở endpoint. Với GraphQL, client tự ghép trường — nên **mỗi trường nhạy cảm phải tự kiểm quyền**, và một trường quên kiểm là một đường rò dữ liệu qua bất kỳ truy vấn nào chạm tới nó ([[phan-quyen-theo-ban-ghi]]).\n\n**Khi nào GraphQL đáng:**\n\n```text\nĐáng:      nhiều loại client với nhu cầu dữ liệu khác nhau\n           (web, iOS, Android, đối tác)\n           dữ liệu quan hệ sâu, màn hình cần nhiều nguồn\n           đội frontend và backend tách biệt, muốn giảm vòng thương lượng\n\nKhông đáng: một web app do chính đội viết\n           dữ liệu phẳng, chủ yếu CRUD\n           cần cache HTTP mạnh\n           đội nhỏ, chưa có ai vận hành nổi phần chi phí trên\n```\n\n## So sánh\n\n| | REST | GraphQL |\n|---|---|---|\n| Số round-trip cho màn hình phức tạp | nhiều | **1** |\n| Cache HTTP | ✅ | ❌ |\n| N+1 | tránh được dễ | cần DataLoader |\n| Giới hạn tải từ client | tự nhiên | **phải tự đặt** |\n| Phân quyền | theo endpoint | **theo từng trường** |\n| Giám sát | theo endpoint | theo operation |\n\n## Dễ nhầm\n\n**1. Không dùng DataLoader.** N+1 gần như chắc chắn.\n\n**2. DataLoader dùng chung giữa các request.** Rò rỉ dữ liệu giữa người dùng.\n\n**3. Hàm lô trả sai thứ tự.** Dữ liệu gán nhầm node.\n\n**4. Không giới hạn độ sâu và độ phức tạp.** Lỗ hổng từ chối dịch vụ.\n\n**5. Bật introspection ở production.**\n\n**6. Phân quyền ở resolver gốc, không ở từng trường.**\n\n**7. Không đo theo operation.** Số liệu vô nghĩa.\n\n**8. Tưởng GraphQL tự động nhanh hơn.** Nó giảm round-trip, không giảm việc CSDL.\n\n**9. Trả lỗi kèm chi tiết nội bộ trong mảng `errors`.**\n\n**10. Chọn GraphQL khi chỉ có một client.** Trả chi phí, không nhận lợi ích.\n\n## Mẹo nhớ\n\n> **N+1 là mặc định của GraphQL, không phải tai nạn — DataLoader là bắt buộc.**\n>\n> **DataLoader phải tạo MỚI mỗi request, và trả đúng thứ tự.**\n>\n> **Không giới hạn độ phức tạp = một lỗ hổng từ chối dịch vụ sẵn có.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Vì sao N+1 gần như chắc chắn xảy ra trong GraphQL?\n2. DataLoader hoạt động thế nào, hai điều kiện dễ sai?\n3. Giới hạn độ sâu khác giới hạn độ phức tạp ra sao?\n4. Vì sao phân quyền GraphQL phải ở từng trường?\n5. Ba chi phí GraphQL đẩy sang backend?\n\n## Tự viết lại\n\nKhông nhìn lại, viết cho schema có `DonHang { khachHang, sanPham[] }`:\n\n```text\n① resolver ngây thơ, chỉ ra chỗ N+1\n② phiên bản dùng DataLoader\n③ nơi khởi tạo DataLoader\n④ ba giới hạn cần bật\n```\n\nTự kiểm: ở ③, nếu bạn khởi tạo ở module cấp cao nhất thay vì trong context của request, chuyện gì xảy ra khi hai người dùng gọi cùng lúc?\n\n## Thử sức\n\nGraphQL API vừa lên production. Sau một tuần: CSDL quá tải vào giờ cao điểm, log cho thấy hàng chục nghìn truy vấn giống nhau mỗi phút, và có một truy vấn duy nhất chạy 40 giây.\n\nBa câu để trả lời: hai vấn đề riêng biệt ở đây là gì; cách sửa từng cái; và bạn tìm ra **truy vấn nào** gây ra 40 giây bằng cách nào khi mọi request đều là `POST /graphql`. Câu khó nhất: nếu API này là công khai cho đối tác, biện pháp nào bạn **phải** bật trước khi mở lại?",
+    "tags": [
+      "api",
+      "graphql",
+      "hieu-nang",
+      "thiet-ke"
+    ],
+    "order": 3,
+    "level": "trung-cap",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-05T06:00:00.000Z",
+    "updatedAt": "2026-01-05T06:00:00.000Z"
+  },
+  {
+    "id": "note-websocket-va-sse",
+    "topicId": "topic-api-adv",
+    "title": "WebSocket và SSE",
+    "slug": "websocket-va-sse",
+    "summary": "Hai cách để server chủ động đẩy dữ liệu — và vì sao SSE thường là lựa chọn đúng dù ít được nhắc tới.",
+    "content": "> **Sau bài này bạn sẽ:** chọn đúng giữa SSE và WebSocket, và biết phải chuẩn bị gì khi vận hành kết nối dài.\n\n## Ý tưởng chính\n\nHTTP thường là **client hỏi, server trả lời**. Server không tự nói được.\n\nHai cách phá vỡ điều đó: **SSE** (một chiều, server → client, chạy trên HTTP thường) và **WebSocket** (hai chiều, nâng cấp lên một giao thức riêng).\n\nPhần lớn nhu cầu \"thời gian thực\" thật ra là **một chiều** — và đó là lý do SSE thường đúng hơn.\n\n## Mental model\n\nHãy nghĩ tới **hai cách theo dõi một chuyến giao hàng**.\n\n> **SSE = đăng ký nhận thông báo**. Bên giao hàng nhắn cho bạn mỗi khi có cập nhật. Bạn chỉ nhận, không nhắn lại qua kênh đó — muốn hỏi gì thì gọi tổng đài (một request HTTP bình thường).\n>\n> **WebSocket = mở một cuộc gọi và giữ máy**. Cả hai nói được bất cứ lúc nào. Mạnh hơn hẳn — nhưng bạn phải giữ đường dây, và nếu rớt sóng thì phải gọi lại và nói lại từ đâu.\n\nCâu hỏi chọn giữa hai cái rất gọn: **client có cần gửi gì qua kênh đó không?** Không cần ⇒ SSE.\n\n## Ví dụ nhỏ\n\n```ts\n// SSE — server\nres.writeHead(200, {\n  'Content-Type': 'text/event-stream',\n  'Cache-Control': 'no-cache',\n  Connection: 'keep-alive',\n})\nres.write(`data: ${JSON.stringify({ tienDo: 42 })}\\n\\n`)\n```\n\n```js\n// SSE — client. TỰ ĐỘNG kết nối lại, không cần viết gì thêm.\nconst es = new EventSource('/su-kien')\nes.onmessage = (e) => capNhat(JSON.parse(e.data))\n```\n\n## Code chạy thế nào\n\n**SSE — điều làm nó nhẹ hơn nhiều so với vẻ ngoài:**\n\n```text\nChạy trên HTTP THƯỜNG. Hệ quả:\n  □ Đi qua proxy, CDN, tường lửa như mọi request khác\n  □ Dùng nguyên cơ chế xác thực sẵn có (cookie, header)\n  □ Nén, HTTP/2 hoạt động bình thường\n  □ Trình duyệt TỰ kết nối lại khi đứt — bạn không viết dòng nào\n\nVà có `Last-Event-ID`:\n  Server gán id cho mỗi sự kiện.\n  Client kết nối lại ⇒ trình duyệt TỰ gửi id cuối cùng nhận được\n  ⇒ server gửi tiếp từ đó ⇒ KHÔNG MẤT SỰ KIỆN.\n```\n\nCơ chế `Last-Event-ID` là thứ WebSocket **không có sẵn** — với WebSocket bạn phải tự thiết kế cách khôi phục sau khi đứt.\n\n**WebSocket — mạnh hơn, và mọi thứ phải tự làm:**\n\n```text\nBắt tay: HTTP request thường với `Upgrade: websocket`\n       → sau đó KHÔNG còn là HTTP nữa\n\nPhải tự viết:\n  □ Kết nối lại có backoff (không có sẵn như EventSource)\n  □ Heartbeat ping/pong — nếu không, proxy và NAT âm thầm\n    cắt kết nối nhàn rỗi sau vài phút ([[tuong-lua-nat-va-vpn]])\n  □ Xác thực: header tuỳ chỉnh KHÔNG gửi được từ trình duyệt\n    ⇒ dùng cookie, hoặc token trong query (rồi nó vào log),\n      hoặc gửi token trong tin nhắn đầu tiên\n  □ Khôi phục trạng thái sau khi đứt\n  □ Định dạng tin nhắn, kiểu, phiên bản — không có chuẩn nào cả\n```\n\nDanh sách này là lý do WebSocket \"đơn giản\" trong bản demo và **không đơn giản** trong sản phẩm thật.\n\n## Cú pháp\n\n**Ba giới hạn của SSE cần biết trước:**\n\n```text\n① Chỉ một chiều — client gửi thì dùng request HTTP thường (thường là đủ)\n② Chỉ gửi được VĂN BẢN — nhị phân phải mã hoá base64\n③ Trên HTTP/1.1, trình duyệt giới hạn ~6 kết nối mỗi tên miền\n   ⇒ Mở SSE ở nhiều tab là hết quota, các tab sau treo\n   ⇒ Trên HTTP/2 thì hết vấn đề này ([[http1-http2-http3]])\n```\n\nGiới hạn ③ là bất ngờ phổ biến nhất với SSE — và nó biến mất khi bật HTTP/2.\n\n**Mở rộng ra nhiều máy — vấn đề chung của cả hai:**\n\n```text\nKết nối là CÓ TRẠNG THÁI: nó gắn với MỘT tiến trình cụ thể.\n\n  Người dùng A kết nối tới máy 1\n  Sự kiện cho A phát sinh ở máy 2\n  ⇒ Máy 2 KHÔNG gửi được cho A.\n\nCách xử lý: một kênh chung giữa các máy.\n  Redis Pub/Sub, hoặc hàng đợi.\n  Máy 2 phát lên kênh ⇒ máy 1 đang giữ kết nối của A thì gửi xuống.\n```\n\nĐây là điểm khiến kết nối dài khác hẳn API thường: bạn **không còn phi trạng thái** nữa, và mọi thứ về mở rộng phải tính lại ([[mo-rong-va-can-bang-tai]]).\n\n**Vận hành — bốn thứ hay bị bỏ sót:**\n\n```text\n□ TIMEOUT của proxy: Nginx mặc định 60s ⇒ kết nối dài bị cắt\n  ⇒ `proxy_read_timeout 3600s;` và tắt buffer cho SSE\n□ HEARTBEAT: gửi comment `:\\n\\n` mỗi 30s giữ kết nối sống qua NAT\n□ GIỚI HẠN số kết nối mỗi người dùng — nếu không, một client lỗi\n  mở hàng nghìn kết nối\n□ THOÁT SẠCH: khi nhận SIGTERM, đóng kết nối có báo trước\n  để client kết nối lại chủ động thay vì thấy lỗi\n```\n\n**Và một câu hỏi nên hỏi trước:** có thật sự cần đẩy không?\n\n```text\nCập nhật vài giây một lần, dữ liệu không quan trọng\n  → polling mỗi 5–10 giây thường ĐỦ, và đơn giản hơn nhiều.\n\nĐẩy thật sự cần khi: độ trễ dưới một giây quan trọng,\nhoặc số client lớn tới mức polling tạo tải vô ích đáng kể.\n```\n\n## Tại sao cần nó\n\nVì WebSocket hay được chọn theo phản xạ, còn SSE thì bị bỏ qua:\n\n```text\nNhu cầu thật của phần lớn tính năng \"thời gian thực\":\n  thông báo, tiến độ job, cập nhật giá, log trực tiếp,\n  streaming phản hồi của mô hình AI\n⇒ TẤT CẢ đều một chiều ⇒ SSE đủ, và rẻ hơn nhiều về vận hành.\n\nThật sự cần hai chiều: chat, cộng tác thời gian thực (con trỏ,\nsoạn thảo chung), game.\n```\n\nStreaming token của LLM là ví dụ đáng chú ý: gần như mọi API mô hình đều dùng SSE, không dùng WebSocket — vì luồng token chỉ đi một chiều.\n\n## So sánh\n\n| | SSE | WebSocket | Polling |\n|---|---|---|---|\n| Hướng | server → client | hai chiều | client hỏi |\n| Giao thức | HTTP thường | riêng, sau Upgrade | HTTP |\n| Tự kết nối lại | ✅ sẵn có | tự viết | không cần |\n| Khôi phục sự kiện đã mất | ✅ `Last-Event-ID` | tự viết | không cần |\n| Qua proxy/CDN | ✅ dễ | cần cấu hình | ✅ |\n| Nhị phân | ❌ | ✅ | ✅ |\n| Độ phức tạp vận hành | thấp | **cao** | rất thấp |\n\n## Dễ nhầm\n\n**1. Chọn WebSocket khi chỉ cần một chiều.** Trả chi phí vận hành không cần.\n\n**2. Không heartbeat.** Proxy và NAT cắt kết nối im lặng.\n\n**3. Quên `proxy_read_timeout`.** Nginx cắt sau 60 giây.\n\n**4. Quên tắt buffer cho SSE ở proxy.** Sự kiện bị giữ lại, tới thành cụm.\n\n**5. Không xử lý mở rộng nhiều máy.** Sự kiện phát ở máy khác không tới được.\n\n**6. Token trong query string của WebSocket.** Nó vào log máy chủ và proxy.\n\n**7. Không giới hạn số kết nối mỗi người dùng.**\n\n**8. Không dùng `Last-Event-ID`.** Mất sự kiện mỗi lần đứt.\n\n**9. Mở nhiều SSE trên HTTP/1.1.** Hết quota 6 kết nối, tab sau treo.\n\n**10. Dùng đẩy khi polling 10 giây là đủ.**\n\n## Mẹo nhớ\n\n> **Client có cần GỬI gì qua kênh đó không? Không ⇒ SSE.**\n>\n> **SSE chạy trên HTTP thường: tự kết nối lại, `Last-Event-ID`, qua proxy dễ.**\n>\n> **Kết nối dài là CÓ TRẠNG THÁI — nhiều máy thì cần một kênh chung.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Câu hỏi nào quyết định chọn SSE hay WebSocket?\n2. Bốn thứ SSE có sẵn mà WebSocket phải tự viết?\n3. `Last-Event-ID` giải quyết gì?\n4. Vì sao kết nối dài gây khó khi mở rộng nhiều máy, và cách xử lý?\n5. Ba giới hạn của SSE?\n\n## Tự viết lại\n\nKhông nhìn lại, thiết kế cho *\"hiển thị tiến độ xử lý video, có thể mất tới 10 phút\"*:\n\n```text\n① chọn SSE hay WebSocket, vì sao\n② server gửi gì, bao lâu một lần\n③ xử lý khi client mất mạng giữa chừng\n④ chạy trên 3 máy chủ thì sao\n⑤ cấu hình proxy cần sửa\n```\n\nTự kiểm: ở ③, nếu client mất mạng 2 phút rồi quay lại, họ có thấy các cập nhật đã bỏ lỡ không — nhờ cơ chế nào?\n\n## Thử sức\n\nTính năng thông báo dùng WebSocket. Người dùng báo: thông báo **ngừng tới sau vài phút**, phải tải lại trang mới có lại. Log máy chủ không có lỗi nào.\n\nBa câu để trả lời: hai nguyên nhân khả dĩ nhất, và vì sao log im lặng; cách sửa từng cái; và vì sao SSE có thể đã tránh được toàn bộ chuyện này. Câu khó nhất: nếu vấn đề chỉ xảy ra với người dùng ở một công ty cụ thể, bạn nghi ngờ thiết bị nào trên đường truyền của họ?",
+    "tags": [
+      "api",
+      "websocket",
+      "sse",
+      "realtime",
+      "thiet-ke"
+    ],
+    "order": 4,
+    "level": "trung-cap",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-05T07:00:00.000Z",
+    "updatedAt": "2026-01-05T07:00:00.000Z"
+  },
+  {
+    "id": "note-hop-dong-va-tuong-thich-nguoc",
+    "topicId": "topic-api-adv",
+    "title": "Hợp đồng API và tương thích ngược",
+    "slug": "hop-dong-va-tuong-thich-nguoc",
+    "summary": "Thay đổi nào an toàn, thay đổi nào phá vỡ client, và cách gỡ bỏ một trường mà không làm hỏng ai.",
+    "content": "> **Sau bài này bạn sẽ:** phân loại được một thay đổi API là an toàn hay phá vỡ, và gỡ bỏ trường cũ theo quy trình.\n\n## Ý tưởng chính\n\nKhi API của bạn có client bạn **không kiểm soát** — app di động đã cài, đối tác, script của người dùng — thì API không còn là mã. Nó là **hợp đồng**.\n\nVà với hợp đồng, câu hỏi không phải \"cách nào đẹp hơn\" mà là: **thay đổi này có làm ai đang chạy bị hỏng không?**\n\n## Mental model\n\nHãy nghĩ tới **đổi ổ cắm điện trong toà nhà cho thuê**.\n\n> **Thêm một ổ cắm mới ở tường** — không ai bị ảnh hưởng. Ai cần thì dùng.\n>\n> **Đổi ổ cũ sang chuẩn khác** — mọi thiết bị đang cắm đều hỏng, cùng lúc, và người thuê không hề được hỏi ý kiến.\n>\n> Muốn đổi thật thì: lắp ổ mới **bên cạnh**, dán thông báo, cho thời hạn vài tháng, quan sát xem còn ai dùng ổ cũ, rồi mới tháo.\n\nBa bước đó — thêm cái mới, báo trước, **đo xem còn ai dùng**, rồi mới gỡ — là toàn bộ quy trình gỡ bỏ an toàn. Bước \"đo\" là bước hay bị bỏ nhất và là bước duy nhất cho bạn biết khi nào gỡ được.\n\n## Ví dụ nhỏ\n\n```json\n// An toàn: thêm trường mới\n{ \"id\": 1, \"ten\": \"An\", \"email\": \"an@vd.com\" }\n\n// Phá vỡ: đổi tên trường\n{ \"id\": 1, \"hoTen\": \"An\" }     // client cũ đọc `ten` → undefined\n```\n\n## Code chạy thế nào\n\n**Bảng phân loại — dùng khi review mọi thay đổi API:**\n\n```text\nAN TOÀN (client cũ vẫn chạy)\n  ✅ Thêm trường mới vào phản hồi\n  ✅ Thêm tham số TUỲ CHỌN vào request\n  ✅ Thêm endpoint mới\n  ✅ Thêm giá trị enum mới — CHỈ KHI client được yêu cầu\n     bỏ qua giá trị lạ; nếu không, đây là thay đổi phá vỡ\n  ✅ Nới lỏng ràng buộc (cho phép chuỗi dài hơn)\n\nPHÁ VỠ (client cũ hỏng)\n  ❌ Xoá hoặc đổi tên trường\n  ❌ Đổi kiểu dữ liệu — kể cả \"1\" thành 1\n  ❌ Thêm tham số BẮT BUỘC\n  ❌ Siết ràng buộc (giảm độ dài tối đa)\n  ❌ Đổi ý nghĩa của một trường mà giữ nguyên tên  ← nguy hiểm nhất\n  ❌ Đổi mã trạng thái trả về\n  ❌ Đổi thứ tự mặc định của danh sách\n```\n\nDòng \"đổi ý nghĩa mà giữ tên\" đáng dừng lại: nó **không** gây lỗi ở client — nó gây **kết quả sai**. Ví dụ `soLuong` từ nghĩa \"đã đặt\" đổi thành \"còn lại\". Không ai báo lỗi; báo cáo thì sai.\n\n**Nguyên tắc Postel — và giới hạn của nó:**\n\n```text\n\"Nghiêm khắc với thứ bạn gửi, khoan dung với thứ bạn nhận.\"\n\nÁp dụng: client PHẢI bỏ qua trường lạ trong phản hồi.\n⇒ Nếu client dùng `.strict()` cho phản hồi từ server,\n  thì thêm một trường mới cũng làm nó hỏng — và bên server\n  không có cách nào thêm gì nữa.\n\nNhưng KHOAN DUNG CÓ GIỚI HẠN:\n  Ở phía SERVER nhận dữ liệu ghi, `.strict()` là ĐÚNG —\n  chấp nhận trường lạ là mở đường cho gán đè thuộc tính\n  ([[xac-thuc-dau-vao-va-bien]]).\n\n⇒ Khoan dung khi ĐỌC phản hồi. Nghiêm khắc khi NHẬN dữ liệu ghi.\n```\n\n## Cú pháp\n\n**Gỡ bỏ một trường — quy trình bốn bước:**\n\n```text\n① THÊM trường mới, GIỮ trường cũ. Cả hai cùng trả về.\n   { \"ten\": \"An\", \"hoTen\": \"An\" }\n\n② ĐÁNH DẤU deprecated\n   - tài liệu\n   - header `Deprecation: true` và `Sunset: <ngày>`\n   - thông báo trực tiếp tới đối tác\n\n③ ĐO — bước quyết định\n   Ghi log mỗi khi trường cũ được ĐỌC (hoặc mỗi khi client\n   không gửi trường mới). Theo dõi:\n     - còn bao nhiêu request dùng nó\n     - client nào, phiên bản nào\n   ⇒ Đây là dữ liệu duy nhất trả lời được \"gỡ được chưa\".\n\n④ GỠ — chỉ khi ③ về gần 0, và đã qua thời hạn đã báo.\n```\n\n```text\nBước ③ không có thì bước ④ là đoán.\nVà với app di động, \"gần 0\" có thể mất nhiều tháng —\nngười dùng không cập nhật app.\n```\n\n**Phiên bản hoá — ba cách, và cách thứ tư thường tốt hơn:**\n\n```text\n① URL      /v1/nguoi-dung, /v2/nguoi-dung\n   + Rõ ràng, dễ định tuyến, dễ nói chuyện\n   − Phải duy trì song song hai bộ mã\n\n② Header   Accept: application/vnd.api.v2+json\n   + URL sạch\n   − Khó test bằng tay, dễ quên\n\n③ Query    ?version=2\n   + Đơn giản\n   − Lẫn với tham số nghiệp vụ\n\n④ KHÔNG PHIÊN BẢN — chỉ thay đổi tương thích ngược\n   Đây là cách rẻ nhất, và khả thi hơn nhiều người nghĩ:\n   phần lớn thay đổi CÓ THỂ làm theo kiểu cộng thêm.\n```\n\nNâng phiên bản là quyết định đắt: nó nhân đôi bề mặt phải bảo trì, test và tài liệu. Nên nó xứng đáng khi thay đổi thật sự lớn — không phải khi bạn muốn đổi tên một trường ([[loi-versioning-va-tai-lieu]]).\n\n**Hợp đồng phải được kiểm tự động:**\n\n```text\n□ OpenAPI / .proto trong repo, sinh từ mã hoặc kiểm ngược lại mã\n□ CI so schema mới với schema cũ, CHẶN thay đổi phá vỡ\n  (buf breaking cho protobuf, oasdiff cho OpenAPI)\n□ Contract test: client và server cùng kiểm một hợp đồng chung\n\nKhông có bước tự động thì \"tương thích ngược\" phụ thuộc vào\nviệc người review có nhớ bảng phân loại ở trên hay không.\n```\n\nĐây là cùng nguyên lý với việc để linter giữ ranh giới module: **quy tắc do máy giữ mới thật sự tồn tại** ([[cau-truc-du-an-va-phu-thuoc]]).\n\n## Tại sao cần nó\n\nVì cái giá của một thay đổi phá vỡ không cân xứng:\n\n```text\nBạn tiết kiệm: vài giờ, vì không phải giữ trường cũ.\nNgười khác trả: mọi client phải sửa và phát hành lại,\n                app di động phải chờ người dùng cập nhật,\n                đối tác phải xếp lịch cho việc họ không muốn làm.\n\nVà với app di động: người dùng KHÔNG BAO GIỜ cập nhật hết.\nLuôn còn một phần trăm chạy bản cũ, có thể nhiều năm.\n```\n\n**Bốn thứ nên có ngay từ API đầu tiên:**\n\n```text\n□ Trường có thể null thì khai rõ trong hợp đồng ngay từ đầu\n  — đổi từ \"luôn có\" sang \"có thể null\" là thay đổi phá vỡ\n□ Danh sách LUÔN bọc trong object: { \"items\": [...] }\n  — trả mảng trần thì không thêm được `total`, `nextCursor` sau này\n□ Enum: khai rõ client phải bỏ qua giá trị lạ\n□ Thứ tự mặc định của danh sách phải xác định và không đổi\n```\n\nBốn thứ này gần như miễn phí lúc thiết kế, và rất đắt để thêm sau.\n\n## So sánh\n\n| Thay đổi | An toàn? | Vì sao |\n|---|---|---|\n| Thêm trường vào phản hồi | ✅ | client cũ bỏ qua |\n| Thêm tham số tuỳ chọn | ✅ | client cũ không gửi |\n| Đổi tên trường | ❌ | client cũ nhận `undefined` |\n| `\"1\"` → `1` | ❌ | kiểu đổi |\n| Thêm trường bắt buộc | ❌ | client cũ không gửi |\n| Đổi ý nghĩa, giữ tên | ❌❌ | **không lỗi, chỉ sai** |\n\n## Dễ nhầm\n\n**1. Đổi tên trường \"cho đẹp\".**\n\n**2. Đổi ý nghĩa mà giữ tên.** Không ai báo lỗi, dữ liệu thì sai.\n\n**3. Thêm tham số bắt buộc.**\n\n**4. Trả mảng trần cho danh sách.** Không thêm được metadata sau này.\n\n**5. Gỡ trường mà không đo còn ai dùng.**\n\n**6. Không có bước deprecated và thời hạn.**\n\n**7. Client dùng `.strict()` cho phản hồi.** Server không thêm được gì nữa.\n\n**8. Server không `.strict()` cho dữ liệu ghi.** Gán đè thuộc tính.\n\n**9. Nâng phiên bản cho thay đổi nhỏ.** Nhân đôi bề mặt bảo trì.\n\n**10. Không kiểm tương thích trong CI.** Phụ thuộc trí nhớ người review.\n\n## Mẹo nhớ\n\n> **CỘNG THÊM thì an toàn. XOÁ, ĐỔI TÊN, ĐỔI KIỂU thì phá vỡ.**\n>\n> **Đổi Ý NGHĨA mà giữ tên là tệ nhất — không lỗi, chỉ sai.**\n>\n> **Trước khi gỡ phải ĐO còn ai dùng. Không đo thì là đoán.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Năm thay đổi an toàn và năm thay đổi phá vỡ?\n2. Vì sao \"đổi ý nghĩa, giữ tên\" nguy hiểm hơn xoá trường?\n3. Bốn bước gỡ bỏ một trường, bước nào hay bị bỏ?\n4. Khoan dung khi nào và nghiêm khắc khi nào?\n5. Bốn thứ nên có ngay từ API đầu tiên?\n\n## Tự viết lại\n\nAPI đang trả `{ \"ten\": \"Nguyễn An\" }`, cần tách thành `hoTen` và `tenGoi`. Có app di động và ba đối tác đang dùng.\n\nKhông nhìn lại, viết:\n\n```text\n① kế hoạch bốn bước\n② phản hồi API ở mỗi giai đoạn\n③ cách đo còn ai dùng trường cũ\n④ mốc thời gian thực tế\n```\n\nTự kiểm: mốc ở ④ của bạn tính từ đâu — từ lúc bạn thông báo, hay từ lúc lượng dùng trường cũ về gần 0?\n\n## Thử sức\n\nĐội đổi `soLuong` trong API từ nghĩa \"số đã đặt\" sang \"số còn lại\". Không client nào báo lỗi. Ba tuần sau, kế toán phát hiện báo cáo tồn kho sai từ đúng ngày đó.\n\nBa câu để trả lời: vì sao không có lỗi nào; đáng lẽ nên làm thế nào; và bạn thêm gì vào quy trình để loại thay đổi này bị chặn ở CI hoặc ở review. Câu khó nhất: kiểm tra tự động **có bắt được** thay đổi kiểu này không — nếu không, cơ chế nào bắt được?",
+    "tags": [
+      "api",
+      "versioning",
+      "hop-dong",
+      "thiet-ke"
+    ],
+    "order": 5,
+    "level": "nang-cao",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-05T08:00:00.000Z",
+    "updatedAt": "2026-01-05T08:00:00.000Z"
+  },
+  {
+    "id": "note-go-loi-nhu-mot-quy-trinh",
+    "topicId": "topic-debug",
+    "title": "Gỡ lỗi như một quy trình",
+    "slug": "go-loi-nhu-mot-quy-trinh",
+    "summary": "Thay đoán mò bằng vòng lặp giả thuyết — quan sát, dự đoán, kiểm chứng, thu hẹp.",
+    "content": "> **Sau bài này bạn sẽ:** có một vòng lặp cố định để chạy khi gặp bug, thay vì thử ngẫu nhiên tới lúc may mắn.\n\n## Ý tưởng chính\n\nGỡ lỗi không phải tài năng. Nó là **một quy trình**: thu hẹp không gian tìm kiếm bằng cách đặt giả thuyết và kiểm chứng từng cái.\n\nNgười gỡ lỗi giỏi không đoán đúng hơn. Họ **loại trừ nhanh hơn** — và họ không bao giờ sửa gì trước khi biết chắc nguyên nhân.\n\n## Mental model\n\nHãy nghĩ tới **trò chơi đoán số từ 1 tới 1000**.\n\n> Đoán ngẫu nhiên: trung bình 500 lượt.\n>\n> Đoán 500, được trả lời \"nhỏ hơn\" ⇒ còn 500 số. Đoán 250 ⇒ còn 250. **Mười lượt là ra**, dù bắt đầu với 1000 khả năng.\n>\n> Điều làm nó hiệu quả không phải đoán khéo, mà là **mỗi lượt đoán loại bỏ một nửa**.\n\nSửa code rồi xem có hết bug không là \"đoán ngẫu nhiên\". Đặt một giả thuyết và kiểm nó bằng một phép đo là \"chia đôi\". Khác biệt giữa hai cách là hàng giờ.\n\n## Ví dụ nhỏ\n\n```text\nGiả thuyết: \"Truy vấn trả về mảng rỗng.\"\nKiểm:       log số dòng trả về ngay sau truy vấn.\nKết quả:    12 dòng ⇒ giả thuyết SAI, loại bỏ. Đi tiếp.\n```\n\n## Code chạy thế nào\n\n**Vòng lặp năm bước:**\n\n```text\n① TÁI HIỆN\n   Tìm cách gây ra bug MỘT CÁCH ĐÁNG TIN CẬY.\n   Không tái hiện được ⇒ không biết mình đã sửa hay chưa.\n\n② THU HẸP\n   Bug ở tầng nào? Frontend hay backend? Trước hay sau CSDL?\n   Mỗi câu trả lời cắt đôi không gian tìm kiếm.\n\n③ ĐẶT GIẢ THUYẾT — cụ thể và KIỂM ĐƯỢC\n   ❌ \"Có gì đó sai trong hàm xử lý đơn hàng\"\n   ✅ \"Hàm nhận `soLuong` là chuỗi thay vì số\"\n\n④ KIỂM CHỨNG bằng phép đo NHỎ NHẤT\n   Một dòng log, một breakpoint, một truy vấn.\n   KHÔNG sửa gì ở bước này.\n\n⑤ Sai giả thuyết ⇒ về ③.  Đúng ⇒ sửa, rồi kiểm lại từ ①.\n```\n\n**Vì sao bước ① không được bỏ:**\n\n```text\nKhông tái hiện được mà vẫn sửa:\n  → bạn thay đổi mã dựa trên phỏng đoán\n  → bug \"hết\" (hoặc chỉ trở nên hiếm hơn)\n  → nó quay lại sau ba tuần, và giờ có thêm một thay đổi\n    không cần thiết trong mã\n\n⇒ Thời gian bỏ ra để tái hiện gần như luôn được hoàn lại.\n```\n\nVà tái hiện được cho bạn một thứ nữa: **một test**. Bug tái hiện được là bug viết được test cho nó, và test đó ngăn nó quay lại ([[tdd-trong-thuc-te]]).\n\n## Cú pháp\n\n**Chia đôi trong thực tế — bốn cách áp dụng:**\n\n```text\n① THEO TẦNG\n   Log ở biên mỗi tầng: request vào, ra khỏi service, vào CSDL.\n   Dữ liệu đúng tới đâu, sai từ đâu?\n\n② THEO THỜI GIAN — `git bisect`\n   \"Tuần trước còn chạy\" ⇒ để git tìm commit gây ra.\n   20 commit → 5 lần thử. 1000 commit → 10 lần thử.\n\n③ THEO DỮ LIỆU\n   Hỏng với mọi bản ghi, hay chỉ một số? Cái nào khác biệt?\n\n④ THEO CẤU HÌNH\n   Chạy ở dev, hỏng ở production ⇒ khác biệt nào?\n   Bỏ dần từng khác biệt cho tới khi bug xuất hiện ở dev.\n```\n\n```bash\ngit bisect start\ngit bisect bad                 # hiện tại hỏng\ngit bisect good v1.4.0         # bản này còn tốt\n# git tự checkout điểm giữa; bạn thử rồi báo good/bad\ngit bisect good\ngit bisect reset\n```\n\n`git bisect` là công cụ bị đánh giá thấp nhất trong bộ này: nó biến \"bug này từ đâu ra\" thành một tìm kiếm nhị phân có kết quả xác định.\n\n**Bốn câu hỏi đầu tiên cho mọi bug:**\n\n```text\n① VỪA THAY ĐỔI GÌ?      deploy, config, dữ liệu, phiên bản thư viện,\n                        hay một dịch vụ bên ngoài\n                        ⇒ ~80% bug có một thay đổi đứng ngay trước nó\n② HỎNG VỚI AI?          mọi người, một nhóm, hay một người?\n③ TỪ KHI NÀO?           luôn hỏng, hay từ một thời điểm?\n④ SỐ LIỆU NÓI GÌ?       log, metric, trace ở khoảng thời gian đó\n```\n\nCâu ① có tỉ lệ trúng cao nhất và tốn ít thời gian nhất. Nó nên là câu đầu tiên, luôn luôn.\n\n**Sáu giả định cần kiểm, không được tin:**\n\n```text\n□ \"Chắc chắn hàm này được gọi\"      → log vào và kiểm\n□ \"Biến này chắc chắn có giá trị\"   → in ra\n□ \"Truy vấn này trả về dữ liệu\"     → chạy tay\n□ \"Config đã đúng\"                  → in ra giá trị THẬT lúc chạy\n□ \"Mã mới đã lên production\"        → kiểm phiên bản đang chạy\n□ \"Cache đã được xoá\"               → kiểm\n\nBug ẩn trong đúng những chỗ bạn không kiểm vì \"chắc chắn đúng rồi\".\n```\n\n## Tại sao cần nó\n\nVì cách gỡ lỗi phổ biến nhất là cách tệ nhất:\n\n```text\nSửa thử → chạy lại → vẫn hỏng → sửa thử chỗ khác → ...\n\nBa vấn đề:\n  ① Không thu hẹp gì cả — mỗi lần thử là một lần đoán ngẫu nhiên\n  ② Tích tụ thay đổi không cần thiết trong mã\n  ③ Nếu \"hết\" thì bạn KHÔNG BIẾT VÌ SAO\n     ⇒ không học được gì, và không biết nó có quay lại không\n```\n\nĐiểm ③ là chi phí lớn nhất và ít ai tính: một bug \"tự hết\" là một bug bạn sẽ gặp lại.\n\n**Ghi lại trong lúc làm** — một dòng mỗi bước:\n\n```text\n14:05  tái hiện được với đơn có mã giảm giá\n14:12  log: soLuong = \"2\" (chuỗi!) khi đi vào service\n14:15  nguồn: query string không được ép kiểu\n14:20  sửa: dùng z.coerce.number() trong schema\n14:25  thêm test cho ca này\n```\n\nBản ghi này mất một phút để viết và trả lại nhiều lần: nó ngăn bạn thử lại cùng một thứ, nó là nội dung của phần mô tả trong PR, và nếu phải bàn giao cho người khác thì nó là toàn bộ ngữ cảnh.\n\n**Khi bế tắc — bốn cách phá:**\n\n```text\n□ Giải thích bug cho người khác (hoặc cho một tờ giấy)\n  → Bạn buộc phải nói rõ giả định, và chỗ sai thường lộ ra ở đó.\n□ Đọc lại thông báo lỗi. TOÀN VĂN. Chậm.\n  → Nó thường đã nói đúng vấn đề.\n□ Kiểm những thứ \"chắc chắn đúng\".\n□ Nghỉ 15 phút.\n  → Nghe như lời khuyên sáo rỗng, nhưng bế tắc thường là do\n    bạn đang bám vào một giả thuyết đã bị loại.\n```\n\n## So sánh\n\n| | Đoán mò | Có quy trình |\n|---|---|---|\n| Mỗi bước | thử ngẫu nhiên | loại bỏ một nửa |\n| Biết vì sao hết bug | ❌ | ✅ |\n| Thay đổi mã ngoài ý muốn | nhiều | không |\n| Bug quay lại | có thể | có test chặn |\n| Thời gian | không đoán được | tuyến tính, dự đoán được |\n\n## Dễ nhầm\n\n**1. Sửa trước khi hiểu.** Bug \"hết\" mà không biết vì sao.\n\n**2. Bỏ bước tái hiện.** Không biết mình đã sửa hay chưa.\n\n**3. Giả thuyết mơ hồ.** \"Có gì đó sai ở đâu đó\" không kiểm được.\n\n**4. Vừa sửa vừa kiểm.** Không biết thay đổi nào có tác dụng.\n\n**5. Đổi nhiều thứ một lúc.** Mất khả năng quy nguyên nhân.\n\n**6. Không hỏi \"vừa thay đổi gì\".** Bỏ qua câu có tỉ lệ trúng cao nhất.\n\n**7. Đọc thông báo lỗi qua loa.** Nó thường đã nói đúng vấn đề.\n\n**8. Không dùng `git bisect`** khi biết \"tuần trước còn chạy\".\n\n**9. Tin vào giả định.** Bug ẩn ở chỗ bạn không kiểm.\n\n**10. Sửa xong không viết test.** Bug quay lại.\n\n## Mẹo nhớ\n\n> **Tái hiện → thu hẹp → giả thuyết → KIỂM (đừng sửa) → lặp.**\n>\n> **Câu hỏi đầu tiên luôn là: \"VỪA THAY ĐỔI GÌ?\"**\n>\n> **Mỗi bước phải loại bỏ một nửa. Nếu không, bạn đang đoán.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Năm bước của vòng lặp gỡ lỗi?\n2. Vì sao không được bỏ bước tái hiện?\n3. Bốn cách áp dụng chia đôi?\n4. Bốn câu hỏi đầu tiên, câu nào có tỉ lệ trúng cao nhất?\n5. Vì sao \"bug tự hết\" là một vấn đề chứ không phải may mắn?\n\n## Tự viết lại\n\nBug: *\"Người dùng báo tổng đơn hàng đôi khi sai vài đồng.\"* Không nhìn lại, viết:\n\n```text\n① cách tái hiện\n② ba giả thuyết cụ thể, kiểm được\n③ với mỗi giả thuyết, phép đo nhỏ nhất để kiểm\n④ thứ tự kiểm và vì sao thứ tự đó\n```\n\nTự kiểm: ba giả thuyết của bạn có cái nào **không kiểm được bằng một phép đo** không — nếu có, hãy làm nó cụ thể hơn.\n\n## Thử sức\n\nBug chỉ xảy ra ở production, khoảng 1% request, và bạn không tái hiện được ở dev.\n\nBa câu để trả lời: bạn thu hẹp bằng cách nào **khi không tái hiện được**; bạn thêm gì vào mã để lần sau có đủ thông tin; và bạn xác nhận đã sửa thế nào khi không có cách gây bug theo ý muốn. Câu khó nhất: \"1% request\" gợi ý gì về **hình dạng** nguyên nhân — và nó loại bỏ được nhóm giả thuyết nào ngay lập tức?",
+    "tags": [
+      "go-loi",
+      "phuong-phap",
+      "tu-duy"
+    ],
+    "order": 1,
+    "level": "co-ban",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-05T09:00:00.000Z",
+    "updatedAt": "2026-01-05T09:00:00.000Z"
+  },
+  {
+    "id": "note-doc-stack-trace-va-log",
+    "topicId": "topic-debug",
+    "title": "Đọc stack trace và log",
+    "slug": "doc-stack-trace-va-log",
+    "summary": "Dòng nào trong stack trace là của bạn, lỗi async mất stack ra sao, và đọc log từ đầu sự cố.",
+    "content": "> **Sau bài này bạn sẽ:** tìm được dòng đáng đọc trong một stack trace 60 dòng, và biết vì sao lỗi async thường mất dấu.\n\n## Ý tưởng chính\n\nMột stack trace đã nói cho bạn **chuyện gì xảy ra và ở đâu**. Nó bị bỏ qua vì trông dài và phần lớn nội dung không liên quan.\n\nNhưng cấu trúc của nó rất đơn giản, và có hai quy tắc đọc: **dòng đầu nói lỗi gì**, và **dòng đầu tiên thuộc mã của bạn nói lỗi ở đâu**.\n\n## Mental model\n\nHãy nghĩ tới **lịch sử cuộc gọi chuyển tiếp**.\n\n> Bạn gọi tổng đài → tổng đài chuyển sang phòng kinh doanh → phòng kinh doanh chuyển sang một nhân viên → nhân viên đó gặp sự cố.\n>\n> Stack trace là danh sách đó, **đọc từ dưới lên**: ai gọi ai, cho tới chỗ hỏng. Dòng **trên cùng** là nơi nó nổ; các dòng dưới là đường dẫn tới đó.\n>\n> Và phần lớn danh sách là các tổng đài trung gian — thư viện, framework. Chỗ bạn cần là **nhân viên đầu tiên thuộc công ty bạn**.\n\n## Ví dụ nhỏ\n\n```text\nTypeError: Cannot read properties of undefined (reading 'toFixed')\n    at tinhTong (/app/src/don-hang/service.ts:42:28)      ← MÃ CỦA BẠN\n    at DonHangService.tao (/app/src/don-hang/service.ts:15:20)\n    at /app/node_modules/express/lib/router/route.js:149:13\n    at Layer.handle (/app/node_modules/express/lib/router/layer.js:95:5)\n```\n\n## Code chạy thế nào\n\n**Đọc theo ba bước:**\n\n```text\n① DÒNG ĐẦU: loại lỗi + thông báo\n   \"Cannot read properties of undefined (reading 'toFixed')\"\n   ⇒ Một thứ là `undefined`, và bạn gọi `.toFixed` trên nó.\n   ⇒ Đã biết CHUYỆN GÌ.\n\n② DÒNG ĐẦU TIÊN CÓ ĐƯỜNG DẪN CỦA BẠN\n   service.ts:42:28\n   ⇒ Đã biết Ở ĐÂU. Mở đúng dòng đó.\n\n③ CÁC DÒNG SAU: đường dẫn tới đó\n   Đọc khi cần biết \"vì sao hàm này lại được gọi với dữ liệu đó\".\n   Bỏ qua mọi dòng trong node_modules — trừ khi bạn nghi thư viện.\n```\n\nBa bước này giải quyết phần lớn trace. Cái mất thời gian là khi trace **không có dòng nào của bạn** — và đó thường là dấu hiệu của một trong hai chuyện: lỗi async mất ngữ cảnh, hoặc lỗi xảy ra trong callback do thư viện gọi.\n\n**Lỗi async — vì sao stack bị cắt:**\n\n```js\n// ❌ Không await ⇒ stack trace không có mã của bạn\nfunction xuLy() { layDuLieu() }        // promise bị bỏ rơi\n\n// Trace nhận được:\n// UnhandledPromiseRejection\n//     at processTicksAndRejections (node:internal/...)\n// ⇒ Không có dòng nào của bạn. Vô dụng.\n\n// ✅ await giữ được ngữ cảnh\nasync function xuLy() { await layDuLieu() }\n```\n\n```text\nVì sao: stack trace là ngăn xếp lời gọi HIỆN TẠI.\nKhi callback chạy, ngăn xếp gốc đã bị tháo bỏ từ lâu.\n\nCách chữa:\n  □ Luôn `await` (hoặc `.catch()` có chủ đích)\n  □ Bọc lỗi kèm ngữ cảnh: `new Error('...', { cause: e })`\n  □ Node ≥ 12: `--async-stack-traces` (mặc định bật ở bản mới)\n```\n\n**Source map — không có thì trace vô dụng ở production:**\n\n```text\nKhông có source map:\n  at t (/app/.next/server/chunks/8912.js:1:48273)\n  ⇒ Mã đã minify. Không tra được về dòng nào.\n\nCó source map:\n  at tinhTong (/app/src/don-hang/service.ts:42:28)\n\n⇒ Cấu hình `sourcemap: true` và tải map lên hệ thống theo dõi lỗi\n  (Sentry và tương tự). Đừng phục vụ map công khai —\n  nó là mã nguồn của bạn.\n```\n\n## Cú pháp\n\n**Đọc log — quy tắc quan trọng nhất:**\n\n```text\nĐọc từ THỜI ĐIỂM SỰ CỐ BẮT ĐẦU, không đọc từ cuối.\n\nBản năng là `tail -f` để xem lỗi mới nhất.\nNhưng lỗi mới nhất thường là HẬU QUẢ thứ n:\n  \"connection pool exhausted\" ← hậu quả\n  \"connection pool exhausted\"\n  ... (hàng nghìn dòng)\n  \"query timeout on orders\"   ← NGUYÊN NHÂN, 4 phút trước\n```\n\n```bash\njournalctl -u app --since \"14:30\" | head -100     # từ lúc bắt đầu\ngrep -c \"ERROR\" app.log                            # đếm, để so trước/sau\ngrep \"traceId=abc123\" app.log                      # toàn bộ một request\n```\n\n**Lỗi đầu tiên khác lỗi ồn nhất:**\n\n```text\nLỗi xuất hiện 5.000 lần thường là hậu quả.\nLỗi xuất hiện 1 lần, sớm nhất, thường là nguyên nhân.\n\n⇒ Sắp theo THỜI GIAN để tìm nguyên nhân.\n  Sắp theo SỐ LƯỢNG để biết mức ảnh hưởng.\n  Hai câu hỏi khác nhau, hai cách sắp khác nhau.\n```\n\n**Bốn thứ phải có trong mỗi dòng log lỗi:**\n\n```text\n□ traceId          — nối được toàn bộ hành trình request\n□ Ngữ cảnh nghiệp vụ — userId, donHangId... KHÔNG có dữ liệu nhạy cảm\n□ Lỗi ĐẦY ĐỦ, kể cả `cause`\n□ Thời gian có múi giờ rõ ràng\n```\n\n```ts\n// ❌ Mất gần hết thông tin\nlogger.error('Lỗi khi lưu đơn: ' + err.message)\n\n// ✅\nlogger.error({\n  event: 'don_hang.luu_that_bai',\n  donHangId: don.id,\n  userId: user.id,\n  traceId: ctx.traceId,\n  err,                     // logger có cấu trúc tự tuần tự hoá cả stack và cause\n})\n```\n\nGhi `err.message` thay vì `err` là lỗi phổ biến nhất: bạn giữ lại câu chữ và **bỏ mất stack trace** — đúng phần có giá trị nhất ([[xu-ly-loi-va-ket-qua]]).\n\n## Tại sao cần nó\n\nVì thông tin để tìm ra bug thường **đã có sẵn** — chỉ chưa được đọc đúng:\n\n```text\nBa tình huống rất hay gặp:\n  ① Thông báo lỗi đã nói đúng vấn đề, nhưng bị đọc qua loa\n  ② Stack trace chỉ đúng dòng, nhưng bị bỏ qua vì dài\n  ③ Log có đủ dữ liệu, nhưng đọc từ cuối nên chỉ thấy hậu quả\n```\n\n**Đọc thông báo lỗi cho đúng — bốn ví dụ:**\n\n```text\n\"Cannot read properties of undefined (reading 'x')\"\n  ⇒ Thứ TRƯỚC dấu chấm là undefined, không phải `x`.\n\n\"ECONNREFUSED 127.0.0.1:5432\"\n  ⇒ Đã nói cả IP và cổng: bạn đang gọi localhost.\n    Trong container, đó gần như luôn là sai cấu hình.\n\n\"Maximum call stack size exceeded\"\n  ⇒ Đệ quy không có điều kiện dừng, hoặc dữ liệu có vòng.\n\n\"ENOENT: no such file or directory, open 'config.json'\"\n  ⇒ Đường dẫn TƯƠNG ĐỐI. Câu hỏi là: chạy từ thư mục nào?\n```\n\nMỗi thông báo trên đã chứa gần đủ để tìm ra nguyên nhân. Kỹ năng cần rèn là **đọc chậm và đọc hết**.\n\n## So sánh\n\n| Nguồn | Trả lời | Hạn chế |\n|---|---|---|\n| Thông báo lỗi | chuyện gì xảy ra | không nói vì sao |\n| Stack trace | ở đâu, gọi từ đâu | mất dấu với async |\n| Log | ngữ cảnh và trình tự | chỉ có nếu đã ghi |\n| Metric | có bất thường không | không nói chi tiết |\n\n## Dễ nhầm\n\n**1. Bỏ qua stack trace vì dài.** Dòng cần đọc chỉ là dòng thứ hai.\n\n**2. Đọc log từ cuối.** Chỉ thấy hậu quả.\n\n**3. Ưu tiên lỗi ồn nhất.** Lỗi **sớm nhất** mới là nguyên nhân.\n\n**4. Log `err.message` thay vì `err`.** Mất stack trace.\n\n**5. Bọc lỗi mà không giữ `cause`.**\n\n**6. Không `await`.** Stack trace không có mã của bạn.\n\n**7. Không có source map ở production.** Trace vô dụng.\n\n**8. Phục vụ source map công khai.** Phơi mã nguồn.\n\n**9. Không có `traceId`.** Không nối được các dòng log của cùng một request.\n\n**10. Đọc thông báo lỗi qua loa.** Nó thường đã nói đúng vấn đề.\n\n## Mẹo nhớ\n\n> **Dòng đầu = LỖI GÌ. Dòng đầu tiên có đường dẫn của bạn = Ở ĐÂU.**\n>\n> **Đọc log từ lúc sự cố BẮT ĐẦU. Lỗi ồn nhất là hậu quả.**\n>\n> **Log cả object `err`, đừng chỉ log `err.message`.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Ba bước đọc một stack trace?\n2. Vì sao lỗi async thường mất stack trace, và cách chữa?\n3. Vì sao đọc log từ đầu sự cố chứ không từ cuối?\n4. Bốn thứ phải có trong mỗi dòng log lỗi?\n5. `Cannot read properties of undefined (reading 'x')` — cái gì là `undefined`?\n\n## Tự viết lại\n\nKhông nhìn lại:\n\n```text\n① Cho một stack trace 40 dòng, viết ra quy tắc chọn dòng cần đọc\n② Viết một dòng log lỗi đầy đủ cho luồng thanh toán\n③ Ba lệnh điều tra khi có sự cố lúc 14:32\n④ Giải thích ba thông báo lỗi bằng lời của bạn\n```\n\nTự kiểm: dòng log ở ② của bạn có chứa dữ liệu nào **không được phép ghi** không?\n\n## Thử sức\n\nSentry báo 3.000 lỗi `Cannot read properties of undefined (reading 'id')` trong một giờ. Stack trace chỉ có các dòng trong `node_modules`.\n\nBa câu để trả lời: vì sao trace không có mã của bạn, và điều đó gợi ý loại lỗi nào; bạn thu hẹp bằng cách nào **với thông tin hiện có**; và bạn thêm gì để lần sau có trace dùng được. Câu khó nhất: 3.000 lỗi trong một giờ — bạn xác định có bao nhiêu **người dùng thật** bị ảnh hưởng bằng cách nào, và vì sao con số đó quan trọng hơn 3.000?",
+    "tags": [
+      "go-loi",
+      "log",
+      "stack-trace",
+      "phuong-phap"
+    ],
+    "order": 2,
+    "level": "co-ban",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-05T10:00:00.000Z",
+    "updatedAt": "2026-01-05T10:00:00.000Z"
+  },
+  {
+    "id": "note-cong-cu-go-loi",
+    "topicId": "topic-debug",
+    "title": "Công cụ gỡ lỗi",
+    "slug": "cong-cu-go-loi",
+    "summary": "Debugger, log, profiler, bisect — mỗi công cụ trả lời câu hỏi gì, và khi nào log tốt hơn debugger.",
+    "content": "> **Sau bài này bạn sẽ:** chọn đúng công cụ theo câu hỏi đang có, thay vì dùng mãi một cái.\n\n## Ý tưởng chính\n\nMỗi công cụ gỡ lỗi trả lời **một loại câu hỏi**. Dùng sai công cụ không phải là sai — nó chỉ chậm hơn nhiều lần.\n\nVà có một điều trái với lời khuyên thường gặp: **`console.log` không phải công cụ của người mới**. Với bug bất đồng bộ, bug chỉ xuất hiện ở production, hay bug xảy ra một lần trong nghìn lần, nó tốt hơn debugger.\n\n## Mental model\n\nHãy nghĩ tới **dụng cụ của một người sửa xe**.\n\n> **Đèn pin** — nhìn vào một chỗ cụ thể, thấy rõ trạng thái ngay lúc đó. Đó là debugger.\n>\n> **Hộp đen ghi hành trình** — không thấy gì lúc này, nhưng biết được chuyện gì đã xảy ra trên đường, kể cả khi bạn không có mặt. Đó là log.\n>\n> **Máy đo tiêu thụ nhiên liệu** — không nói xe hỏng ở đâu, nói xe tốn nhiên liệu ở đâu. Đó là profiler.\n>\n> **Sổ bảo dưỡng** — \"lần trước sửa gì? từ đó có gì thay đổi?\". Đó là `git bisect`.\n\nBạn không dùng đèn pin để tìm chỗ tốn nhiên liệu, và không dùng hộp đen để xem hiện tại. Câu hỏi quyết định dụng cụ.\n\n## Ví dụ nhỏ\n\n```text\n\"Biến này bằng gì tại đây?\"        → debugger\n\"Chuyện gì đã xảy ra lúc 3h sáng?\"  → log\n\"Vì sao chậm?\"                      → profiler\n\"Từ commit nào bắt đầu hỏng?\"       → git bisect\n```\n\n## Code chạy thế nào\n\n**Debugger — mạnh khi bạn tái hiện được tại chỗ:**\n\n```bash\nnode --inspect-brk server.js      # rồi mở chrome://inspect\n```\n\n```text\nBa thứ debugger làm mà log không làm được:\n  ① Xem TOÀN BỘ trạng thái — mọi biến trong mọi khung, không phải\n    chỉ những biến bạn nghĩ ra để in\n  ② Chạy từng dòng, thấy luồng điều khiển thật đi đường nào\n  ③ Breakpoint có ĐIỀU KIỆN — dừng chỉ khi `don.id === 'abc'`\n    ⇒ đây là tính năng bị dùng ít nhất và hữu ích nhất:\n      nó cho phép bắt đúng một trường hợp trong hàng nghìn\n\nĐiểm yếu:\n  ✗ Dừng tiến trình ⇒ vô dụng với bug về thời gian, race condition\n  ✗ Không dùng được ở production\n  ✗ Kém với bất đồng bộ: bước qua một `await` là mất mạch\n```\n\n**Log — mạnh khi bạn không có mặt lúc bug xảy ra:**\n\n```text\nLog thắng debugger ở bốn tình huống:\n  □ Bug ở production\n  □ Bug bất đồng bộ, nhiều luồng, hoặc phụ thuộc thời gian\n  □ Bug xảy ra 1 lần trong 1.000\n  □ Cần thấy TRÌNH TỰ, không phải một thời điểm\n```\n\n```ts\n// Log tạm để gỡ lỗi: gắn NHÃN để lọc và xoá dễ\nlogger.debug({ dbg: 'don-hang', buoc: 'truoc-tinh-tong', don })\n// Xong việc: grep 'dbg:' và xoá hết. Đừng để lại.\n```\n\nLog tạm không có nhãn thống nhất là thứ tích tụ trong mã và không ai dám xoá — một nhãn quy ước giải quyết chuyện đó.\n\n## Cú pháp\n\n**Profiler — trả lời \"chậm ở đâu\", không trả lời \"sai ở đâu\":**\n\n```bash\nnode --cpu-prof server.js         # sinh file .cpuprofile, mở trong DevTools\nnode --heap-prof server.js        # cho rò rỉ bộ nhớ\n```\n\n```text\nĐọc kết quả:\n  Self time   thời gian TRONG chính hàm đó       → hàm nặng CPU\n  Total time  gồm cả các hàm nó gọi              → nhánh nặng\n\nBẫy phổ biến: hàm có total time cao nhất thường là `main`\nhoặc handler gốc — nó gọi mọi thứ. Hãy tìm hàm có SELF TIME cao.\n```\n\nVà với ứng dụng web, trước khi mở profiler: hầu hết chậm là do **chờ I/O**, không phải CPU. Profiler CPU sẽ cho thấy một biểu đồ gần như rỗng — và đó chính là câu trả lời ([[hieu-nang-va-do-luong]]).\n\n**Sáu công cụ theo tầng:**\n\n```text\nTrình duyệt   DevTools: Network (thấy request thật), Performance,\n              React DevTools (thấy component nào render lại)\nNode          --inspect, --cpu-prof, --heap-prof\nHệ điều hành  strace (syscall), lsof (fd đang mở), ss (kết nối)\n              ([[syscall-va-ranh-gioi-nhan]])\nCSDL          EXPLAIN ANALYZE, pg_stat_activity (truy vấn đang chạy)\nMạng          curl -v, tcpdump, mitmproxy\nGit           bisect, blame, log -S'chuỗi' (tìm commit thêm/xoá một chuỗi)\n```\n\n`git log -S` ít được biết và rất hữu ích: nó tìm commit nào **thêm hoặc xoá** một chuỗi cụ thể — trả lời \"dòng này từ đâu ra\" nhanh hơn `blame` khi mã đã bị di chuyển.\n\n**Gỡ lỗi ở production — làm được, nhưng có luật:**\n\n```text\n✅ Đọc log, metric, trace\n✅ Bật log mức DEBUG cho MỘT người dùng hoặc MỘT tỉ lệ nhỏ\n✅ Chụp heap snapshot (chú ý: nó dừng tiến trình một lúc)\n✅ Đọc `pg_stat_activity` xem truy vấn nào đang chạy\n\n❌ Debugger dừng tiến trình\n❌ Sửa mã trực tiếp trên máy chủ\n❌ Bật log DEBUG cho toàn bộ traffic — hoá đơn log và I/O\n❌ Thử nghiệm mà không ai biết\n```\n\nNguyên tắc chung: ở production bạn **quan sát**, không can thiệp. Muốn can thiệp thì tái hiện ở staging ([[su-co-va-hau-kiem]]).\n\n## Tại sao cần nó\n\nVì dùng một công cụ cho mọi việc là nguyên nhân phổ biến nhất của gỡ lỗi chậm:\n\n```text\nChỉ dùng console.log:\n  → bug hiệu năng: in ra thời gian ở 20 chỗ, thay vì một lần profiler\n  → cần xem toàn bộ trạng thái: in từng biến một, đoán biến nào cần\n\nChỉ dùng debugger:\n  → bug ở production: không dùng được, và bạn không có gì khác\n  → race condition: đặt breakpoint là bug biến mất\n```\n\n**Chọn công cụ theo câu hỏi:**\n\n```text\n\"Biến này bằng gì?\"                 → debugger, hoặc một log\n\"Luồng đi đường nào?\"                → debugger từng bước, hoặc log ở mỗi nhánh\n\"Chuyện gì xảy ra lúc 3h sáng?\"      → log\n\"Chậm ở đâu?\"                        → profiler\n\"Truy vấn nào chậm?\"                 → EXPLAIN ANALYZE, pg_stat_statements\n\"Rò rỉ bộ nhớ ở đâu?\"                → heap snapshot, so hai thời điểm\n\"Từ khi nào hỏng?\"                   → git bisect\n\"Request thật gửi gì?\"               → DevTools Network, curl -v, mitmproxy\n\"Tiến trình đang kẹt ở đâu?\"         → strace, hoặc stack dump\n```\n\nBảng này là phần đáng mang đi nhất của bài: khi bế tắc, hỏi *\"câu hỏi hiện tại của mình là gì\"* thường nhanh hơn là thử thêm một lần nữa bằng công cụ cũ.\n\n## So sánh\n\n| Công cụ | Trả lời | Dùng ở production |\n|---|---|---|\n| Debugger | trạng thái tại một điểm | ❌ |\n| Log | trình tự, chuyện đã xảy ra | ✅ |\n| Profiler | thời gian tiêu ở đâu | ⚠️ có chi phí |\n| Heap snapshot | bộ nhớ giữ ở đâu | ⚠️ dừng tiến trình |\n| `git bisect` | thay đổi nào gây ra | — |\n| `strace` | tiến trình đang làm gì | ⚠️ chậm 10–100× |\n\n## Dễ nhầm\n\n**1. Chỉ dùng một công cụ cho mọi loại bug.**\n\n**2. Dùng debugger cho race condition.** Breakpoint làm bug biến mất.\n\n**3. Dùng log để tìm bug hiệu năng.** Profiler nhanh hơn nhiều.\n\n**4. Đọc total time thay vì self time.** `main` luôn cao nhất.\n\n**5. Mở CPU profiler cho vấn đề chờ I/O.** Biểu đồ rỗng.\n\n**6. Debugger ở production.** Dừng tiến trình.\n\n**7. Bật log DEBUG toàn bộ traffic.** Hoá đơn và I/O.\n\n**8. Log tạm không có nhãn.** Tích tụ, không ai dám xoá.\n\n**9. Không dùng breakpoint có điều kiện.** Bấm \"continue\" hàng trăm lần.\n\n**10. Bỏ qua `git bisect`** khi biết trước đó còn chạy.\n\n## Mẹo nhớ\n\n> **Câu hỏi quyết định công cụ. Bế tắc thì hỏi lại: \"câu hỏi của mình là gì?\"**\n>\n> **Log THẮNG debugger ở production, ở bug async, và ở bug 1/1000.**\n>\n> **Profiler: đọc SELF TIME, không đọc total time.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Ba thứ debugger làm mà log không làm được?\n2. Bốn tình huống log tốt hơn debugger?\n3. Self time khác total time thế nào?\n4. Được và không được làm gì khi gỡ lỗi ở production?\n5. `git log -S` trả lời câu hỏi gì?\n\n## Tự viết lại\n\nKhông nhìn lại, chọn công cụ và giải thích cho từng bug:\n\n```text\n① Trang danh sách mất 4 giây\n② API trả về dữ liệu sai, chỉ với một khách hàng cụ thể\n③ Node chiếm 4 GB RAM sau 6 giờ chạy\n④ Tính năng hỏng, tuần trước còn chạy\n⑤ Hai request đồng thời làm dữ liệu sai\n⑥ Container chạy nhưng không nhận kết nối\n```\n\nTự kiểm: ở ⑤, vì sao debugger là lựa chọn tệ — và bạn dùng gì thay thế?\n\n## Thử sức\n\nBug: một endpoint trả về dữ liệu sai, nhưng **chỉ với một khách hàng**, và chỉ ở production.\n\nBa câu để trả lời: bạn dùng công cụ nào và theo thứ tự nào; bạn thu hẹp ra sao mà **không** bật log DEBUG cho toàn bộ traffic; và bạn tái hiện ở staging bằng cách nào. Câu khó nhất: nếu khác biệt duy nhất của khách hàng đó là dữ liệu của họ, bạn lấy được dữ liệu đó để thử mà **không vi phạm quyền riêng tư** bằng cách nào?",
+    "tags": [
+      "go-loi",
+      "cong-cu",
+      "phuong-phap",
+      "hieu-nang"
+    ],
+    "order": 3,
+    "level": "trung-cap",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-05T11:00:00.000Z",
+    "updatedAt": "2026-01-05T11:00:00.000Z"
+  },
+  {
+    "id": "note-bug-kho-tai-hien",
+    "topicId": "topic-debug",
+    "title": "Bug khó tái hiện",
+    "slug": "bug-kho-tai-hien",
+    "summary": "Bug chỉ xảy ra ở production, một lần trong nghìn lần, hoặc biến mất khi bạn nhìn vào — bốn nguyên nhân và cách vây bắt.",
+    "content": "> **Sau bài này bạn sẽ:** nhận ra bốn nguyên nhân điển hình của bug không tái hiện được, và có chiến lược vây bắt thay vì chờ may mắn.\n\n## Ý tưởng chính\n\nBug tái hiện được là bug đã gần như xong. Bug **không** tái hiện được đòi một cách làm khác: thay vì gây ra nó, bạn **dựng bẫy** rồi chờ.\n\nVà điểm khởi đầu quan trọng: \"không tái hiện được\" không phải một tính chất huyền bí. Nó luôn có nghĩa là **có một biến bạn chưa kiểm soát** — và bốn nhóm biến dưới đây chiếm gần hết.\n\n## Mental model\n\nHãy nghĩ tới **tiếng kêu lạ trong xe, chỉ xuất hiện đôi khi**.\n\n> Bạn mang ra gara. Thợ chạy thử 20 phút, không nghe gì. \"Xe bình thường mà.\"\n>\n> Nhưng tiếng kêu có thật. Chỉ là nó cần **điều kiện**: trời lạnh, xe chạy trên 60 km/h, và đã đi được 20 phút.\n>\n> Người thợ giỏi không nói \"không tái hiện được\". Họ **gắn thiết bị ghi âm vào xe** và cho bạn lái về. Lần sau có tiếng kêu, họ có bản ghi kèm tốc độ, nhiệt độ, vòng tua.\n\nĐó là chiến lược của bài này: khi không gây ra được bug, hãy **tăng khả năng quan sát** rồi để bug tự đến.\n\n## Ví dụ nhỏ\n\n```text\nMáy dev              Production\n1 người dùng      →  1.000 đồng thời\ndữ liệu 100 dòng  →  10 triệu dòng\nCSDL localhost    →  qua mạng, đôi lúc chậm\n1 tiến trình      →  8 tiến trình\n```\n\n## Code chạy thế nào\n\n**Bốn nhóm nguyên nhân — kiểm theo thứ tự này:**\n\n```text\n① ĐỒNG THỜI          hai request chen vào nhau\n   Dấu hiệu: chỉ xảy ra khi có tải; hết khi thêm log (log làm chậm\n             và thay đổi thời điểm)\n   Kiểm:     chạy N thao tác song song rồi kiểm bất biến\n             ([[dong-bo-hoa-va-race-condition]])\n\n② TRẠNG THÁI TÍCH LUỸ  rò rỉ bộ nhớ, kết nối, fd, cache phình\n   Dấu hiệu: hỏng sau vài giờ; restart là hết\n   Kiểm:     đo RSS, số fd, độ dài hàng đợi theo thời gian\n\n③ DỮ LIỆU            một bản ghi có hình dạng đặc biệt\n   Dấu hiệu: chỉ hỏng với một số người dùng, luôn hỏng với họ\n   Kiểm:     tìm điểm chung của các bản ghi hỏng\n\n④ MÔI TRƯỜNG         múi giờ, locale, phiên bản, cấu hình, DNS\n   Dấu hiệu: hỏng ở production, không hỏng ở dev; hoặc hỏng\n             lúc nửa đêm / đầu tháng\n   Kiểm:     liệt kê MỌI khác biệt, bỏ dần từng cái\n```\n\n**Nhóm ③ đáng chú ý vì nó thường bị xếp nhầm:** \"chỉ 1% người dùng\" nghe như ngẫu nhiên, nhưng nếu **luôn** hỏng với đúng 1% đó thì nó hoàn toàn xác định — chỉ cần tìm ra điểm chung.\n\n```text\nPhân biệt nhanh:\n  Cùng người dùng, thử lại thì đôi khi được đôi khi không → ① hoặc ②\n  Cùng người dùng, LUÔN hỏng                              → ③\n```\n\n**Heisenbug — bug biến mất khi bạn nhìn vào:**\n\n```text\nThêm log ⇒ bug hết.  Đặt breakpoint ⇒ bug hết.\n\nNguyên nhân gần như luôn là ①: log và breakpoint thay đổi\nTHỜI ĐIỂM, và bug phụ thuộc thời điểm.\n\n⇒ Bản thân hiện tượng này là MỘT MANH MỐI mạnh, không phải trở ngại.\n  Nó gần như xác nhận đây là vấn đề đồng thời.\n```\n\n## Cú pháp\n\n**Chiến lược vây bắt — bốn bước:**\n\n```text\n① TĂNG KHẢ NĂNG QUAN SÁT trước, đừng cố tái hiện trước\n   Thêm log có cấu trúc quanh vùng nghi ngờ, kèm traceId\n   và mọi biến có thể liên quan.\n   ⇒ Lần sau bug xảy ra, bạn có bản ghi thay vì lời kể.\n\n② GHI LẠI ĐIỀU KIỆN đầy đủ mỗi lần bug xuất hiện\n   Thời gian, người dùng, dữ liệu, phiên bản, tải lúc đó.\n   ⇒ Sau 5–10 lần, ĐIỂM CHUNG lộ ra.\n   ⇒ Đây là bước thay thế cho việc tái hiện.\n\n③ KHUẾCH ĐẠI điều kiện nghi ngờ\n   Nghi đồng thời → chạy 1.000 request song song\n   Nghi tích luỹ → chạy tải liên tục vài giờ (soak test)\n   Nghi dữ liệu → tải dữ liệu production (đã che thông tin) về thử\n   Nghi thời gian → đặt đồng hồ hệ thống sang 23:59 ngày 31\n\n④ THU HẸP THEO THỜI GIAN\n   `git bisect` nếu biết mốc \"trước đó còn chạy\".\n```\n\nBước ③ là chỗ nhiều bug \"không tái hiện được\" đầu hàng: chúng không phải không tái hiện được — chúng chỉ cần **điều kiện đủ mạnh**.\n\n**Ba biến hay bị bỏ qua nhất:**\n\n```text\nMÚI GIỜ\n  Server UTC, người dùng UTC+7.\n  ⇒ Bug \"chỉ xảy ra sau 5 giờ chiều\" = bug đổi ngày.\n  ⇒ Kiểm: mọi phép tính ngày có nói rõ múi giờ chưa?\n\nTHỜI GIAN CỤ THỂ\n  Ngày 31 (tháng có 30 ngày), 29/2, đầu tháng, cuối năm,\n  giờ đổi sang giờ mùa hè.\n  ⇒ Bug \"mỗi tháng một lần\" gần như luôn thuộc nhóm này.\n\nDỮ LIỆU ĐẶC BIỆT\n  Chuỗi rỗng, tên có emoji, tên rất dài, số 0, giá trị null,\n  dấu nháy đơn trong tên, ký tự Unicode ghép\n  ([[unicode-va-encoding]]).\n```\n\nBa biến này chiếm một tỉ lệ đáng kể các bug \"kỳ lạ\", và cả ba đều **không xuất hiện** trong dữ liệu thử của bạn.\n\n**Bốn công cụ hợp với loại bug này:**\n\n```text\n□ Log có cấu trúc + traceId — nền tảng, không có thì mọi thứ khác vô nghĩa\n□ Feature flag để bật log chi tiết cho MỘT người dùng\n  ⇒ chi tiết cao mà không tốn hoá đơn log\n□ Ghi lại request (một tỉ lệ nhỏ) để phát lại sau\n□ Cảnh báo trên BẤT BIẾN, không chỉ trên lỗi\n  ⇒ \"số dư không được âm\", \"tổng đơn phải bằng tổng dòng\"\n  ⇒ Bug hỏng dữ liệu KHÔNG sinh ra lỗi nào; chỉ bất biến bắt được nó\n```\n\nĐiểm cuối là thứ đáng đầu tư nhất: nó chuyển một lớp bug từ \"phát hiện sau vài tuần khi đối soát\" sang \"cảnh báo trong vài phút\".\n\n## Tại sao cần nó\n\nVì phản xạ tự nhiên với loại bug này đều dẫn tới chỗ tệ hơn:\n\n```text\n\"Không tái hiện được\" → đóng ticket\n  ⇒ Nó quay lại. Và lần này khách hàng đã mất kiên nhẫn.\n\n\"Thêm try/catch cho chắc\"\n  ⇒ Bug vẫn còn, chỉ im lặng hơn. Bạn vừa xoá mất manh mối duy nhất.\n\n\"Restart mỗi đêm cho hết\"\n  ⇒ Che rò rỉ. Và rò rỉ vẫn lớn dần cho tới khi một đêm không đủ.\n```\n\n**Chấp nhận không tìm ra — có luật:**\n\n```text\nĐôi khi chi phí tìm lớn hơn chi phí chịu. Nhưng phải làm ba việc:\n\n  ① GIẢM THIỆT HẠI: retry, dự phòng, hoặc thông báo rõ cho người dùng\n  ② THÊM QUAN SÁT: lần sau xảy ra thì có dữ liệu\n  ③ GHI LẠI: một ticket có mô tả và các lần xuất hiện đã biết,\n     để người sau không bắt đầu từ số 0\n\nBỏ qua hoàn toàn thì lần sau ai đó lại điều tra từ đầu.\n```\n\n## So sánh\n\n| Dấu hiệu | Nguyên nhân khả dĩ | Kiểm bằng |\n|---|---|---|\n| Chỉ khi có tải | đồng thời | chạy song song |\n| Hết khi thêm log | đồng thời | — (bản thân là manh mối) |\n| Sau vài giờ | tích luỹ | đo RSS, fd theo thời gian |\n| Restart là hết | tích luỹ | như trên |\n| Một số người dùng, luôn hỏng | dữ liệu | tìm điểm chung |\n| Mỗi tháng một lần | thời gian/ngày tháng | đặt đồng hồ |\n| Chỉ ở production | môi trường | liệt kê khác biệt |\n\n## Dễ nhầm\n\n**1. Đóng ticket vì \"không tái hiện được\".** Nó sẽ quay lại.\n\n**2. Thêm `try/catch` để bug im lặng.** Xoá mất manh mối.\n\n**3. Restart định kỳ để che rò rỉ.**\n\n**4. Cố tái hiện trước khi tăng khả năng quan sát.** Ngược thứ tự.\n\n**5. Không ghi lại điều kiện mỗi lần xảy ra.** Không tìm ra điểm chung.\n\n**6. Coi \"hết khi thêm log\" là trở ngại.** Đó là manh mối mạnh.\n\n**7. Bỏ qua múi giờ.**\n\n**8. Thử với dữ liệu sạch.** Dữ liệu thật có emoji, chuỗi rỗng, giá trị null.\n\n**9. Chỉ cảnh báo trên lỗi.** Bug hỏng dữ liệu không sinh lỗi nào.\n\n**10. Xếp \"1% người dùng\" vào nhóm ngẫu nhiên** khi nó có thể hoàn toàn xác định.\n\n## Mẹo nhớ\n\n> **\"Không tái hiện được\" = có một BIẾN bạn chưa kiểm soát. Bốn nhóm: đồng thời, tích luỹ, dữ liệu, môi trường.**\n>\n> **Tăng QUAN SÁT trước, tái hiện sau. Ghi điều kiện mỗi lần xảy ra.**\n>\n> **Cảnh báo trên BẤT BIẾN — bug hỏng dữ liệu không sinh lỗi nào.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Bốn nhóm nguyên nhân, dấu hiệu nhận biết từng nhóm?\n2. Phân biệt nhóm \"đồng thời\" với nhóm \"dữ liệu\" bằng câu hỏi nào?\n3. Vì sao \"hết khi thêm log\" là manh mối chứ không phải trở ngại?\n4. Bốn bước vây bắt, bước nào đi trước việc tái hiện?\n5. Nếu quyết định không tìm nữa, ba việc phải làm?\n\n## Tự viết lại\n\nBug: *\"Đôi khi đơn hàng bị trừ tồn kho hai lần. Khoảng một lần mỗi ngày, không theo quy luật.\"*\n\nKhông nhìn lại, viết:\n\n```text\n① nhóm nguyên nhân bạn nghi nhất, vì sao\n② log và số liệu cần thêm\n③ cách khuếch đại để tái hiện\n④ một cảnh báo trên bất biến\n```\n\nTự kiểm: bất biến ở ④ của bạn có phát hiện được các trường hợp **đã xảy ra trong quá khứ** không, hay chỉ các trường hợp mới?\n\n## Thử sức\n\nBa tuần nay, khoảng 0,3% giao dịch thanh toán bị ghi nhận hai lần. Không tái hiện được ở staging. Không có log chi tiết ở luồng đó.\n\nBa câu để trả lời: bạn làm gì **trong ngày đầu tiên** — và vì sao đó không phải là \"cố tái hiện\"; bạn giảm thiệt hại cho người dùng thế nào **trong lúc chưa tìm ra**; và bạn dựng bẫy gì để lần sau có đủ dữ liệu. Câu khó nhất: 0,3% — nếu con số này **tăng theo lưu lượng**, điều đó chỉ ra nhóm nguyên nhân nào và loại bỏ nhóm nào?",
+    "tags": [
+      "go-loi",
+      "race-condition",
+      "phuong-phap",
+      "van-hanh"
+    ],
+    "order": 4,
+    "level": "nang-cao",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-05T12:00:00.000Z",
+    "updatedAt": "2026-01-05T12:00:00.000Z"
+  },
+  {
+    "id": "note-phong-ngua-va-hoc-tu-bug",
+    "topicId": "topic-debug",
+    "title": "Phòng ngừa và học từ bug",
+    "slug": "phong-ngua-va-hoc-tu-bug",
+    "summary": "Sửa một bug là xong một việc; sửa cả lớp bug là xong nhiều việc — cách biến từng bug thành một cải tiến hệ thống.",
+    "content": "> **Sau bài này bạn sẽ:** biết bốn mức sửa một bug, và chọn được mức đúng theo mức độ nghiêm trọng.\n\n## Ý tưởng chính\n\nSau khi tìm ra nguyên nhân, có bốn mức can thiệp — và mặc định của mọi người là dừng ở mức thấp nhất:\n\n**Sửa trường hợp này** → **Sửa cả lớp bug tương tự** → **Làm cho lớp bug đó không viết ra được** → **Sửa quy trình sinh ra nó**.\n\nMỗi mức đắt hơn mức trước và trả lại nhiều hơn.\n\n## Mental model\n\nHãy nghĩ tới **một chỗ trơn trong nhà xưởng**.\n\n> **Mức 1**: lau chỗ nước đó. Xong việc hôm nay.\n>\n> **Mức 2**: đi lau mọi chỗ nước khác trong xưởng.\n>\n> **Mức 3**: tìm ra cái ống rò và bịt lại — không còn nước để lau.\n>\n> **Mức 4**: hỏi vì sao ống rò ba tháng mà không ai báo, rồi đặt quy trình kiểm tra định kỳ.\n>\n> Lau sàn là việc phải làm ngay. Nhưng nếu bạn **chỉ** lau sàn, bạn sẽ lau nó mỗi tuần, mãi mãi.\n\n## Ví dụ nhỏ\n\n```text\nBug: crash vì `don.khachHang` là null.\n\nMức 1: thêm `?.` ở dòng đó\nMức 2: tìm mọi chỗ khác cũng giả định khách hàng luôn có\nMức 3: đổi kiểu thành `KhachHang | null` để trình biên dịch bắt\nMức 4: hỏi vì sao dữ liệu có đơn không khách hàng — có nên có không?\n```\n\n## Code chạy thế nào\n\n**Bốn mức, và mức nào chọn khi nào:**\n\n```text\nMỨC 1 — Sửa trường hợp này\n  Rẻ nhất, nhanh nhất. Luôn làm.\n  Nhưng nếu DỪNG ở đây, bug tương tự sẽ xuất hiện ở chỗ khác.\n\nMỨC 2 — Sửa cả lớp\n  \"Còn chỗ nào cũng có lỗi này?\" → grep, đọc, sửa hết.\n  Chi phí: một buổi. Trả lại: một lớp bug không tái xuất hiện.\n\nMỨC 3 — Làm cho nó KHÔNG VIẾT RA ĐƯỢC\n  Kiểu dữ liệu chặt hơn, quy tắc linter, ràng buộc CSDL, API khó dùng sai.\n  Chi phí: cao hơn. Trả lại: vĩnh viễn, và áp dụng cho người sau.\n\nMỨC 4 — Sửa quy trình\n  Vì sao bug này lọt qua review, test, và staging?\n  Chi phí: cao nhất. Chỉ làm cho bug NGHIÊM TRỌNG.\n```\n\n**Chọn mức theo mức độ, không theo cảm hứng:**\n\n```text\nBug nhỏ, ít ảnh hưởng            → mức 1, có thể mức 2\nBug ảnh hưởng người dùng         → mức 2, và cân nhắc mức 3\nBug làm mất dữ liệu hoặc mất tiền → mức 3 và mức 4, bắt buộc\nBug lặp lại lần thứ ba            → mức 3, không thương lượng\n```\n\nDòng cuối là một quy tắc đáng đặt ra thành thoả thuận trong đội: **cùng một loại bug xuất hiện lần thứ ba nghĩa là mức 1 và 2 không đủ**.\n\n**Mức 3 cụ thể — bốn cách làm cho bug không viết ra được:**\n\n```ts\n// ① KIỂU DỮ LIỆU: chuyển lỗi từ runtime sang biên dịch\ntype Don = { khachHang: KhachHang | null }   // trình biên dịch BẮT bạn xử lý\n\n// ② KIỂU PHÂN BIỆT: trạng thái không hợp lệ không biểu diễn được\ntype KetQua =\n  | { trangThai: 'dang-cho' }\n  | { trangThai: 'xong'; duLieu: Don }        // duLieu chỉ tồn tại khi xong\n  | { trangThai: 'loi'; loi: string }\n// ⇒ Không thể viết được `{ trangThai: 'dang-cho', duLieu: ... }`\n\n// ③ RÀNG BUỘC CSDL: lưới cuối, không ai vượt qua được\n// ALTER TABLE tai_khoan ADD CONSTRAINT so_du_khong_am CHECK (so_du >= 0)\n\n// ④ API KHÓ DÙNG SAI\n// ❌ chuyenTien(a, b, 100)        — a và b thứ tự nào?\n// ✅ chuyenTien({ tu: a, den: b, soTien: 100 })\n```\n\nCách ② mạnh nhất và ít được dùng nhất: nó không \"kiểm tra\" trạng thái sai — nó làm cho trạng thái sai **không tồn tại trong kiểu** ([[thu-hep-kieu-va-unknown]]).\n\n## Cú pháp\n\n**Mỗi bug nên để lại một test:**\n\n```ts\n// Test viết TỪ bug, không phải từ yêu cầu\nit('không crash khi đơn không có khách hàng (bug #1234)', () => {\n  expect(() => tinhTong({ khachHang: null, dong: [] })).not.toThrow()\n})\n```\n\n```text\nVì sao đáng làm dù bug đã sửa:\n  ① Chứng minh bạn đã sửa THẬT — không phải \"trông như đã hết\"\n  ② Bug không quay lại sau một lần refactor\n  ③ Test đó mô tả một ca biên THẬT, thứ bạn không nghĩ ra khi\n     viết test từ yêu cầu\n\nVà trình tự đúng: viết test cho bug TRƯỚC khi sửa.\nTest đỏ ⇒ bạn đã tái hiện đúng. Test xanh sau khi sửa ⇒ đã sửa đúng chỗ.\n```\n\n**Câu hỏi mức 4 — hỏi cho hệ thống, không cho người:**\n\n```text\n① Vì sao bug này lọt qua REVIEW?\n   → thiếu checklist? PR quá lớn để đọc kỹ? người review thiếu ngữ cảnh?\n\n② Vì sao TEST không bắt được?\n   → thiếu ca biên? thiếu test cho vai \"người lạ\"? test chỉ ca thuận?\n\n③ Vì sao STAGING không phát hiện?\n   → dữ liệu quá sạch? tải quá nhẹ? cấu hình khác production?\n\n④ Vì sao mất LÂU mới phát hiện ở production?\n   → thiếu cảnh báo? thiếu metric nghiệp vụ? log không đủ?\n\nCả bốn đều nhắm vào hệ thống. \"Ai đó cẩu thả\" không phải câu trả lời\ndùng được ([[su-co-va-hau-kiem]]).\n```\n\n**Tìm mẫu qua nhiều bug — việc nên làm mỗi quý:**\n\n```text\nĐọc lại 20–30 bug gần nhất và phân loại. Thường lộ ra:\n  □ 40% là null/undefined         → siết kiểu, bật strictNullChecks\n  □ 25% là ca biên chưa nghĩ tới  → thêm bước liệt kê ca biên khi review\n  □ 15% là race condition         → xem lại các chỗ đọc-sửa-ghi\n  □ 10% là cấu hình sai            → xác thực cấu hình lúc khởi động\n\nNhìn từng bug: mỗi cái là một sự cố riêng lẻ.\nNhìn 30 bug: lộ ra 3–4 nguyên nhân hệ thống.\n⇒ Sửa nguyên nhân hệ thống rẻ hơn nhiều so với sửa 30 bug tiếp theo.\n```\n\n## Tại sao cần nó\n\nVì áp lực luôn đẩy về mức 1, và đó là lựa chọn đúng **trong ngắn hạn**:\n\n```text\nSửa mức 1:  15 phút. Ticket đóng. Sếp hài lòng.\nSửa mức 3:  nửa ngày. Ticket vẫn đóng. Không ai thấy khác biệt.\n\nNhưng sáu tháng sau:\n  Chỉ mức 1  → bug tương tự xuất hiện ở 8 chỗ khác, mỗi cái 15 phút\n               cộng thời gian điều tra, cộng ảnh hưởng người dùng\n  Có mức 3   → 0 chỗ\n```\n\n**Cách nói về việc này với người quyết định:**\n\n```text\n❌ \"Cần thời gian để refactor cho sạch\"\n✅ \"Bug này đã xuất hiện lần thứ ba, mỗi lần tốn khoảng nửa ngày\n    điều tra cộng một sự cố nhỏ với người dùng. Một ngày để siết\n    kiểu dữ liệu sẽ chặn hẳn cả nhóm này.\"\n```\n\nNói bằng **số lần đã xảy ra và chi phí mỗi lần** thì đây là một phép tính, không phải một mong muốn ([[no-ky-thuat-va-refactor]]).\n\n## So sánh\n\n| Mức | Chi phí | Phạm vi bảo vệ | Khi nào |\n|---|---|---|---|\n| 1 — sửa ca này | 15 phút | một chỗ | luôn |\n| 2 — sửa cả lớp | vài giờ | mọi chỗ hiện có | bug ảnh hưởng người dùng |\n| 3 — không viết ra được | nửa ngày | vĩnh viễn, cả người sau | bug nghiêm trọng, hoặc lần thứ ba |\n| 4 — sửa quy trình | ngày | mọi lớp bug tương lai | mất dữ liệu, mất tiền |\n\n## Dễ nhầm\n\n**1. Luôn dừng ở mức 1.** Bug tương tự xuất hiện ở chỗ khác.\n\n**2. Không hỏi \"còn chỗ nào nữa\".**\n\n**3. Sửa xong không viết test.** Không chứng minh được đã sửa.\n\n**4. Viết test sau khi sửa.** Không biết test có thật sự bắt được bug.\n\n**5. Không hỏi vì sao review và test không bắt được.**\n\n**6. Hỏi mức 4 nhắm vào người.** Người ta sẽ giấu bug lần sau.\n\n**7. Nhảy lên mức 4 cho mọi bug nhỏ.** Quá đà, và làm mất uy tín của quy trình.\n\n**8. Không bao giờ đọc lại các bug cũ theo nhóm.** Bỏ mất nguyên nhân hệ thống.\n\n**9. Trình bày mức 3 như \"muốn refactor\".** Nói bằng số lần và chi phí.\n\n**10. Không có quy tắc cho bug lặp lại.** Nó sẽ lặp lần thứ tư.\n\n## Mẹo nhớ\n\n> **Bốn mức: sửa ca này → sửa cả lớp → làm cho không viết ra được → sửa quy trình.**\n>\n> **Bug lặp lần thứ ba ⇒ mức 3, không thương lượng.**\n>\n> **Viết test cho bug TRƯỚC khi sửa — test đỏ chứng minh bạn tái hiện đúng.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Bốn mức sửa bug, chi phí và phạm vi của mỗi mức?\n2. Chọn mức theo tiêu chí gì?\n3. Bốn cách làm cho một lớp bug không viết ra được?\n4. Vì sao viết test trước khi sửa?\n5. Bốn câu hỏi mức 4, và vì sao chúng nhắm vào hệ thống?\n\n## Tự viết lại\n\nBug: *\"Gửi email cho người dùng đã xoá tài khoản, gây lỗi.\"* Bạn vừa sửa bằng cách thêm một `if`.\n\nKhông nhìn lại, viết:\n\n```text\n① mức 2: còn chỗ nào cũng giả định người dùng luôn tồn tại\n② mức 3: làm cho lỗi này không viết ra được\n③ test cho bug này\n④ bốn câu hỏi mức 4 và câu trả lời của bạn\n```\n\nTự kiểm: giải pháp mức 3 của bạn có bảo vệ được **mã người khác viết sáu tháng sau** không, hay chỉ bảo vệ chỗ hiện tại?\n\n## Thử sức\n\nBa tháng qua, đội bạn có 6 sự cố production, và **tất cả** đều là `undefined`/`null` ở một chỗ không lường trước.\n\nBa câu để trả lời: đây là mức mấy, và bạn đề xuất gì cụ thể; bạn thuyết phục đội và sếp bằng lập luận nào; và bạn đo xem biện pháp có hiệu quả bằng chỉ số gì. Câu khó nhất: nếu bật `strictNullChecks` cho một codebase 100.000 dòng sinh ra 2.000 lỗi biên dịch, bạn triển khai theo cách nào để không đóng băng cả đội trong hai tuần?",
+    "tags": [
+      "go-loi",
+      "chat-luong",
+      "phuong-phap",
+      "tu-duy"
+    ],
+    "order": 5,
+    "level": "nang-cao",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-05T13:00:00.000Z",
+    "updatedAt": "2026-01-05T13:00:00.000Z"
+  },
+  {
     "id": "note-select-loc-va-sap-xep",
     "topicId": "topic-sql",
     "title": "SELECT, lọc và sắp xếp",
@@ -1874,8 +2198,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T22:00:00.000Z",
-    "updatedAt": "2026-01-04T22:00:00.000Z"
+    "createdAt": "2026-01-05T14:00:00.000Z",
+    "updatedAt": "2026-01-05T14:00:00.000Z"
   },
   {
     "id": "note-join-cac-loai",
@@ -1892,8 +2216,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": true,
-    "createdAt": "2026-01-04T23:00:00.000Z",
-    "updatedAt": "2026-01-04T23:00:00.000Z"
+    "createdAt": "2026-01-05T15:00:00.000Z",
+    "updatedAt": "2026-01-05T15:00:00.000Z"
   },
   {
     "id": "note-group-by-va-ham-tong-hop",
@@ -1911,8 +2235,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T00:00:00.000Z",
-    "updatedAt": "2026-01-05T00:00:00.000Z"
+    "createdAt": "2026-01-05T16:00:00.000Z",
+    "updatedAt": "2026-01-05T16:00:00.000Z"
   },
   {
     "id": "note-subquery-va-cte",
@@ -1930,8 +2254,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T01:00:00.000Z",
-    "updatedAt": "2026-01-05T01:00:00.000Z"
+    "createdAt": "2026-01-05T17:00:00.000Z",
+    "updatedAt": "2026-01-05T17:00:00.000Z"
   },
   {
     "id": "note-transaction-va-acid",
@@ -1950,8 +2274,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T02:00:00.000Z",
-    "updatedAt": "2026-01-05T02:00:00.000Z"
+    "createdAt": "2026-01-05T18:00:00.000Z",
+    "updatedAt": "2026-01-05T18:00:00.000Z"
   },
   {
     "id": "note-index-va-hieu-nang-truy-van",
@@ -1970,8 +2294,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T03:00:00.000Z",
-    "updatedAt": "2026-01-05T03:00:00.000Z"
+    "createdAt": "2026-01-05T19:00:00.000Z",
+    "updatedAt": "2026-01-05T19:00:00.000Z"
   },
   {
     "id": "note-thay-doi-cau-truc-va-migration",
@@ -1989,8 +2313,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T04:00:00.000Z",
-    "updatedAt": "2026-01-05T04:00:00.000Z"
+    "createdAt": "2026-01-05T20:00:00.000Z",
+    "updatedAt": "2026-01-05T20:00:00.000Z"
   },
   {
     "id": "note-tu-yeu-cau-toi-bang",
@@ -2008,8 +2332,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T05:00:00.000Z",
-    "updatedAt": "2026-01-05T05:00:00.000Z"
+    "createdAt": "2026-01-05T21:00:00.000Z",
+    "updatedAt": "2026-01-05T21:00:00.000Z"
   },
   {
     "id": "note-chuan-hoa-va-khi-nao-pha-vo",
@@ -2027,8 +2351,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T06:00:00.000Z",
-    "updatedAt": "2026-01-05T06:00:00.000Z"
+    "createdAt": "2026-01-05T22:00:00.000Z",
+    "updatedAt": "2026-01-05T22:00:00.000Z"
   },
   {
     "id": "note-rang-buoc-va-toan-ven-du-lieu",
@@ -2046,8 +2370,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T07:00:00.000Z",
-    "updatedAt": "2026-01-05T07:00:00.000Z"
+    "createdAt": "2026-01-05T23:00:00.000Z",
+    "updatedAt": "2026-01-05T23:00:00.000Z"
   },
   {
     "id": "note-chon-kieu-du-lieu",
@@ -2065,8 +2389,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T08:00:00.000Z",
-    "updatedAt": "2026-01-05T08:00:00.000Z"
+    "createdAt": "2026-01-06T00:00:00.000Z",
+    "updatedAt": "2026-01-06T00:00:00.000Z"
   },
   {
     "id": "note-xoa-mem-va-vong-doi-ban-ghi",
@@ -2085,8 +2409,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T09:00:00.000Z",
-    "updatedAt": "2026-01-05T09:00:00.000Z"
+    "createdAt": "2026-01-06T01:00:00.000Z",
+    "updatedAt": "2026-01-06T01:00:00.000Z"
   },
   {
     "id": "note-mo-hinh-hoa-cac-tinh-huong-thuc-te",
@@ -2104,8 +2428,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T10:00:00.000Z",
-    "updatedAt": "2026-01-05T10:00:00.000Z"
+    "createdAt": "2026-01-06T02:00:00.000Z",
+    "updatedAt": "2026-01-06T02:00:00.000Z"
   },
   {
     "id": "note-truy-cap-dong-thoi-va-khoa",
@@ -2124,8 +2448,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T11:00:00.000Z",
-    "updatedAt": "2026-01-05T11:00:00.000Z"
+    "createdAt": "2026-01-06T03:00:00.000Z",
+    "updatedAt": "2026-01-06T03:00:00.000Z"
   },
   {
     "id": "note-vi-sao-chon-postgresql",
@@ -2142,8 +2466,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T12:00:00.000Z",
-    "updatedAt": "2026-01-05T12:00:00.000Z"
+    "createdAt": "2026-01-06T04:00:00.000Z",
+    "updatedAt": "2026-01-06T04:00:00.000Z"
   },
   {
     "id": "note-index-trong-postgresql",
@@ -2161,8 +2485,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": true,
-    "createdAt": "2026-01-05T13:00:00.000Z",
-    "updatedAt": "2026-01-05T13:00:00.000Z"
+    "createdAt": "2026-01-06T05:00:00.000Z",
+    "updatedAt": "2026-01-06T05:00:00.000Z"
   },
   {
     "id": "note-doc-explain-analyze",
@@ -2180,8 +2504,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T14:00:00.000Z",
-    "updatedAt": "2026-01-05T14:00:00.000Z"
+    "createdAt": "2026-01-06T06:00:00.000Z",
+    "updatedAt": "2026-01-06T06:00:00.000Z"
   },
   {
     "id": "note-jsonb-va-tim-kiem-toan-van",
@@ -2199,8 +2523,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T15:00:00.000Z",
-    "updatedAt": "2026-01-05T15:00:00.000Z"
+    "createdAt": "2026-01-06T07:00:00.000Z",
+    "updatedAt": "2026-01-06T07:00:00.000Z"
   },
   {
     "id": "note-transaction-va-khoa-trong-postgres",
@@ -2219,8 +2543,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T16:00:00.000Z",
-    "updatedAt": "2026-01-05T16:00:00.000Z"
+    "createdAt": "2026-01-06T08:00:00.000Z",
+    "updatedAt": "2026-01-06T08:00:00.000Z"
   },
   {
     "id": "note-sao-luu-va-van-hanh-postgres",
@@ -2238,8 +2562,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T17:00:00.000Z",
-    "updatedAt": "2026-01-05T17:00:00.000Z"
+    "createdAt": "2026-01-06T09:00:00.000Z",
+    "updatedAt": "2026-01-06T09:00:00.000Z"
   },
   {
     "id": "note-nosql-va-mo-hinh-document",
@@ -2257,8 +2581,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T18:00:00.000Z",
-    "updatedAt": "2026-01-05T18:00:00.000Z"
+    "createdAt": "2026-01-06T10:00:00.000Z",
+    "updatedAt": "2026-01-06T10:00:00.000Z"
   },
   {
     "id": "note-document-collection-va-kieu-bson",
@@ -2276,8 +2600,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T19:00:00.000Z",
-    "updatedAt": "2026-01-05T19:00:00.000Z"
+    "createdAt": "2026-01-06T11:00:00.000Z",
+    "updatedAt": "2026-01-06T11:00:00.000Z"
   },
   {
     "id": "note-truy-van-va-cap-nhat",
@@ -2295,8 +2619,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T20:00:00.000Z",
-    "updatedAt": "2026-01-05T20:00:00.000Z"
+    "createdAt": "2026-01-06T12:00:00.000Z",
+    "updatedAt": "2026-01-06T12:00:00.000Z"
   },
   {
     "id": "note-thiet-ke-lang-nhau-hay-tham-chieu",
@@ -2314,8 +2638,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T21:00:00.000Z",
-    "updatedAt": "2026-01-05T21:00:00.000Z"
+    "createdAt": "2026-01-06T13:00:00.000Z",
+    "updatedAt": "2026-01-06T13:00:00.000Z"
   },
   {
     "id": "note-index-va-doc-explain",
@@ -2334,8 +2658,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T22:00:00.000Z",
-    "updatedAt": "2026-01-05T22:00:00.000Z"
+    "createdAt": "2026-01-06T14:00:00.000Z",
+    "updatedAt": "2026-01-06T14:00:00.000Z"
   },
   {
     "id": "note-aggregation-pipeline",
@@ -2353,8 +2677,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T23:00:00.000Z",
-    "updatedAt": "2026-01-05T23:00:00.000Z"
+    "createdAt": "2026-01-06T15:00:00.000Z",
+    "updatedAt": "2026-01-06T15:00:00.000Z"
   },
   {
     "id": "note-transaction-write-concern-va-van-hanh",
@@ -2373,8 +2697,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T00:00:00.000Z",
-    "updatedAt": "2026-01-06T00:00:00.000Z"
+    "createdAt": "2026-01-06T16:00:00.000Z",
+    "updatedAt": "2026-01-06T16:00:00.000Z"
   },
   {
     "id": "note-tong-quan-owasp-top-10",
@@ -2392,8 +2716,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T01:00:00.000Z",
-    "updatedAt": "2026-01-06T01:00:00.000Z"
+    "createdAt": "2026-01-06T17:00:00.000Z",
+    "updatedAt": "2026-01-06T17:00:00.000Z"
   },
   {
     "id": "note-broken-access-control",
@@ -2411,8 +2735,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T02:00:00.000Z",
-    "updatedAt": "2026-01-06T02:00:00.000Z"
+    "createdAt": "2026-01-06T18:00:00.000Z",
+    "updatedAt": "2026-01-06T18:00:00.000Z"
   },
   {
     "id": "note-sql-injection",
@@ -2430,8 +2754,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": true,
-    "createdAt": "2026-01-06T03:00:00.000Z",
-    "updatedAt": "2026-01-06T03:00:00.000Z"
+    "createdAt": "2026-01-06T19:00:00.000Z",
+    "updatedAt": "2026-01-06T19:00:00.000Z"
   },
   {
     "id": "note-xss-cross-site-scripting",
@@ -2449,8 +2773,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T04:00:00.000Z",
-    "updatedAt": "2026-01-06T04:00:00.000Z"
+    "createdAt": "2026-01-06T20:00:00.000Z",
+    "updatedAt": "2026-01-06T20:00:00.000Z"
   },
   {
     "id": "note-csrf-va-clickjacking",
@@ -2468,8 +2792,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T05:00:00.000Z",
-    "updatedAt": "2026-01-06T05:00:00.000Z"
+    "createdAt": "2026-01-06T21:00:00.000Z",
+    "updatedAt": "2026-01-06T21:00:00.000Z"
   },
   {
     "id": "note-luu-mat-khau-va-ma-hoa",
@@ -2488,8 +2812,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T06:00:00.000Z",
-    "updatedAt": "2026-01-06T06:00:00.000Z"
+    "createdAt": "2026-01-06T22:00:00.000Z",
+    "updatedAt": "2026-01-06T22:00:00.000Z"
   },
   {
     "id": "note-quan-ly-secret-va-cau-hinh",
@@ -2508,8 +2832,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T07:00:00.000Z",
-    "updatedAt": "2026-01-06T07:00:00.000Z"
+    "createdAt": "2026-01-06T23:00:00.000Z",
+    "updatedAt": "2026-01-06T23:00:00.000Z"
   },
   {
     "id": "note-thu-vien-log-va-ssrf",
@@ -2528,8 +2852,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T08:00:00.000Z",
-    "updatedAt": "2026-01-06T08:00:00.000Z"
+    "createdAt": "2026-01-07T00:00:00.000Z",
+    "updatedAt": "2026-01-07T00:00:00.000Z"
   },
   {
     "id": "note-xac-thuc-va-phan-quyen-khac-nhau",
@@ -2547,8 +2871,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T09:00:00.000Z",
-    "updatedAt": "2026-01-06T09:00:00.000Z"
+    "createdAt": "2026-01-07T01:00:00.000Z",
+    "updatedAt": "2026-01-07T01:00:00.000Z"
   },
   {
     "id": "note-phien-dang-nhap-va-cookie",
@@ -2566,8 +2890,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T10:00:00.000Z",
-    "updatedAt": "2026-01-06T10:00:00.000Z"
+    "createdAt": "2026-01-07T02:00:00.000Z",
+    "updatedAt": "2026-01-07T02:00:00.000Z"
   },
   {
     "id": "note-gioi-han-tan-suat-va-chong-lam-dung",
@@ -2585,8 +2909,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T11:00:00.000Z",
-    "updatedAt": "2026-01-06T11:00:00.000Z"
+    "createdAt": "2026-01-07T03:00:00.000Z",
+    "updatedAt": "2026-01-07T03:00:00.000Z"
   },
   {
     "id": "note-dat-lai-mat-khau-va-xac-minh-email",
@@ -2605,8 +2929,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T12:00:00.000Z",
-    "updatedAt": "2026-01-06T12:00:00.000Z"
+    "createdAt": "2026-01-07T04:00:00.000Z",
+    "updatedAt": "2026-01-07T04:00:00.000Z"
   },
   {
     "id": "note-oauth-va-dang-nhap-mang-xa-hoi",
@@ -2624,8 +2948,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T13:00:00.000Z",
-    "updatedAt": "2026-01-06T13:00:00.000Z"
+    "createdAt": "2026-01-07T05:00:00.000Z",
+    "updatedAt": "2026-01-07T05:00:00.000Z"
   },
   {
     "id": "note-kiem-thu-va-danh-gia-bao-mat",
@@ -2644,8 +2968,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T14:00:00.000Z",
-    "updatedAt": "2026-01-06T14:00:00.000Z"
+    "createdAt": "2026-01-07T06:00:00.000Z",
+    "updatedAt": "2026-01-07T06:00:00.000Z"
   },
   {
     "id": "note-phan-quyen-theo-ban-ghi",
@@ -2664,8 +2988,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T15:00:00.000Z",
-    "updatedAt": "2026-01-06T15:00:00.000Z"
+    "createdAt": "2026-01-07T07:00:00.000Z",
+    "updatedAt": "2026-01-07T07:00:00.000Z"
   },
   {
     "id": "note-he-thong-file-va-duong-dan",
@@ -2683,8 +3007,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T16:00:00.000Z",
-    "updatedAt": "2026-01-06T16:00:00.000Z"
+    "createdAt": "2026-01-07T08:00:00.000Z",
+    "updatedAt": "2026-01-07T08:00:00.000Z"
   },
   {
     "id": "note-quyen-va-nguoi-dung",
@@ -2702,8 +3026,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T17:00:00.000Z",
-    "updatedAt": "2026-01-06T17:00:00.000Z"
+    "createdAt": "2026-01-07T09:00:00.000Z",
+    "updatedAt": "2026-01-07T09:00:00.000Z"
   },
   {
     "id": "note-tien-trinh-va-dich-vu",
@@ -2721,8 +3045,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T18:00:00.000Z",
-    "updatedAt": "2026-01-06T18:00:00.000Z"
+    "createdAt": "2026-01-07T10:00:00.000Z",
+    "updatedAt": "2026-01-07T10:00:00.000Z"
   },
   {
     "id": "note-viet-script-bash",
@@ -2740,8 +3064,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T19:00:00.000Z",
-    "updatedAt": "2026-01-06T19:00:00.000Z"
+    "createdAt": "2026-01-07T11:00:00.000Z",
+    "updatedAt": "2026-01-07T11:00:00.000Z"
   },
   {
     "id": "note-go-loi-tren-may-chu",
@@ -2759,8 +3083,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T20:00:00.000Z",
-    "updatedAt": "2026-01-06T20:00:00.000Z"
+    "createdAt": "2026-01-07T12:00:00.000Z",
+    "updatedAt": "2026-01-07T12:00:00.000Z"
   },
   {
     "id": "note-container-va-image",
@@ -2778,8 +3102,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T21:00:00.000Z",
-    "updatedAt": "2026-01-06T21:00:00.000Z"
+    "createdAt": "2026-01-07T13:00:00.000Z",
+    "updatedAt": "2026-01-07T13:00:00.000Z"
   },
   {
     "id": "note-viet-dockerfile",
@@ -2796,8 +3120,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": true,
-    "createdAt": "2026-01-06T22:00:00.000Z",
-    "updatedAt": "2026-01-06T22:00:00.000Z"
+    "createdAt": "2026-01-07T14:00:00.000Z",
+    "updatedAt": "2026-01-07T14:00:00.000Z"
   },
   {
     "id": "note-volume-va-du-lieu",
@@ -2815,8 +3139,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T23:00:00.000Z",
-    "updatedAt": "2026-01-06T23:00:00.000Z"
+    "createdAt": "2026-01-07T15:00:00.000Z",
+    "updatedAt": "2026-01-07T15:00:00.000Z"
   },
   {
     "id": "note-mang-va-ket-noi",
@@ -2834,8 +3158,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T00:00:00.000Z",
-    "updatedAt": "2026-01-07T00:00:00.000Z"
+    "createdAt": "2026-01-07T16:00:00.000Z",
+    "updatedAt": "2026-01-07T16:00:00.000Z"
   },
   {
     "id": "note-docker-compose",
@@ -2853,8 +3177,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T01:00:00.000Z",
-    "updatedAt": "2026-01-07T01:00:00.000Z"
+    "createdAt": "2026-01-07T17:00:00.000Z",
+    "updatedAt": "2026-01-07T17:00:00.000Z"
   },
   {
     "id": "note-toi-uu-va-van-hanh-container",
@@ -2873,8 +3197,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T02:00:00.000Z",
-    "updatedAt": "2026-01-07T02:00:00.000Z"
+    "createdAt": "2026-01-07T18:00:00.000Z",
+    "updatedAt": "2026-01-07T18:00:00.000Z"
   },
   {
     "id": "note-cau-truc-mot-workflow",
@@ -2892,8 +3216,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T03:00:00.000Z",
-    "updatedAt": "2026-01-07T03:00:00.000Z"
+    "createdAt": "2026-01-07T19:00:00.000Z",
+    "updatedAt": "2026-01-07T19:00:00.000Z"
   },
   {
     "id": "note-cache-va-toc-do-ci",
@@ -2911,8 +3235,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T04:00:00.000Z",
-    "updatedAt": "2026-01-07T04:00:00.000Z"
+    "createdAt": "2026-01-07T20:00:00.000Z",
+    "updatedAt": "2026-01-07T20:00:00.000Z"
   },
   {
     "id": "note-secret-va-quyen-trong-ci",
@@ -2930,8 +3254,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T05:00:00.000Z",
-    "updatedAt": "2026-01-07T05:00:00.000Z"
+    "createdAt": "2026-01-07T21:00:00.000Z",
+    "updatedAt": "2026-01-07T21:00:00.000Z"
   },
   {
     "id": "note-kiem-thu-tu-dong-trong-ci",
@@ -2949,8 +3273,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T06:00:00.000Z",
-    "updatedAt": "2026-01-07T06:00:00.000Z"
+    "createdAt": "2026-01-07T22:00:00.000Z",
+    "updatedAt": "2026-01-07T22:00:00.000Z"
   },
   {
     "id": "note-trien-khai-tu-dong",
@@ -2968,8 +3292,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T07:00:00.000Z",
-    "updatedAt": "2026-01-07T07:00:00.000Z"
+    "createdAt": "2026-01-07T23:00:00.000Z",
+    "updatedAt": "2026-01-07T23:00:00.000Z"
   },
   {
     "id": "note-reverse-proxy-voi-nginx",
@@ -2987,8 +3311,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T08:00:00.000Z",
-    "updatedAt": "2026-01-07T08:00:00.000Z"
+    "createdAt": "2026-01-08T00:00:00.000Z",
+    "updatedAt": "2026-01-08T00:00:00.000Z"
   },
   {
     "id": "note-https-va-chung-chi",
@@ -3007,8 +3331,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T09:00:00.000Z",
-    "updatedAt": "2026-01-07T09:00:00.000Z"
+    "createdAt": "2026-01-08T01:00:00.000Z",
+    "updatedAt": "2026-01-08T01:00:00.000Z"
   },
   {
     "id": "note-bien-moi-truong-va-cau-hinh",
@@ -3026,8 +3350,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T10:00:00.000Z",
-    "updatedAt": "2026-01-07T10:00:00.000Z"
+    "createdAt": "2026-01-08T02:00:00.000Z",
+    "updatedAt": "2026-01-08T02:00:00.000Z"
   },
   {
     "id": "note-giam-sat-va-sao-luu",
@@ -3046,8 +3370,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T11:00:00.000Z",
-    "updatedAt": "2026-01-07T11:00:00.000Z"
+    "createdAt": "2026-01-08T03:00:00.000Z",
+    "updatedAt": "2026-01-08T03:00:00.000Z"
   },
   {
     "id": "note-uoc-luong-va-tim-diem-nghen",
@@ -3066,8 +3390,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T12:00:00.000Z",
-    "updatedAt": "2026-01-07T12:00:00.000Z"
+    "createdAt": "2026-01-08T04:00:00.000Z",
+    "updatedAt": "2026-01-08T04:00:00.000Z"
   },
   {
     "id": "note-mo-rong-va-can-bang-tai",
@@ -3086,8 +3410,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T13:00:00.000Z",
-    "updatedAt": "2026-01-07T13:00:00.000Z"
+    "createdAt": "2026-01-08T05:00:00.000Z",
+    "updatedAt": "2026-01-08T05:00:00.000Z"
   },
   {
     "id": "note-cache-nhieu-tang",
@@ -3106,8 +3430,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T14:00:00.000Z",
-    "updatedAt": "2026-01-07T14:00:00.000Z"
+    "createdAt": "2026-01-08T06:00:00.000Z",
+    "updatedAt": "2026-01-08T06:00:00.000Z"
   },
   {
     "id": "note-hang-doi-va-xu-ly-bat-dong-bo",
@@ -3126,8 +3450,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T15:00:00.000Z",
-    "updatedAt": "2026-01-07T15:00:00.000Z"
+    "createdAt": "2026-01-08T07:00:00.000Z",
+    "updatedAt": "2026-01-08T07:00:00.000Z"
   },
   {
     "id": "note-thiet-ke-cho-that-bai",
@@ -3146,8 +3470,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T16:00:00.000Z",
-    "updatedAt": "2026-01-07T16:00:00.000Z"
+    "createdAt": "2026-01-08T08:00:00.000Z",
+    "updatedAt": "2026-01-08T08:00:00.000Z"
   },
   {
     "id": "note-du-lieu-o-quy-mo",
@@ -3166,8 +3490,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T17:00:00.000Z",
-    "updatedAt": "2026-01-07T17:00:00.000Z"
+    "createdAt": "2026-01-08T09:00:00.000Z",
+    "updatedAt": "2026-01-08T09:00:00.000Z"
   },
   {
     "id": "note-ranh-gioi-service",
@@ -3186,8 +3510,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T18:00:00.000Z",
-    "updatedAt": "2026-01-07T18:00:00.000Z"
+    "createdAt": "2026-01-08T10:00:00.000Z",
+    "updatedAt": "2026-01-08T10:00:00.000Z"
   },
   {
     "id": "note-quan-sat-he-thong",
@@ -3207,8 +3531,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T19:00:00.000Z",
-    "updatedAt": "2026-01-07T19:00:00.000Z"
+    "createdAt": "2026-01-08T11:00:00.000Z",
+    "updatedAt": "2026-01-08T11:00:00.000Z"
   },
   {
     "id": "note-slo-va-error-budget",
@@ -3228,8 +3552,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T20:00:00.000Z",
-    "updatedAt": "2026-01-07T20:00:00.000Z"
+    "createdAt": "2026-01-08T12:00:00.000Z",
+    "updatedAt": "2026-01-08T12:00:00.000Z"
   },
   {
     "id": "note-su-co-va-hau-kiem",
@@ -3248,8 +3572,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T21:00:00.000Z",
-    "updatedAt": "2026-01-07T21:00:00.000Z"
+    "createdAt": "2026-01-08T13:00:00.000Z",
+    "updatedAt": "2026-01-08T13:00:00.000Z"
   },
   {
     "id": "note-trien-khai-an-toan",
@@ -3269,8 +3593,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T22:00:00.000Z",
-    "updatedAt": "2026-01-07T22:00:00.000Z"
+    "createdAt": "2026-01-08T14:00:00.000Z",
+    "updatedAt": "2026-01-08T14:00:00.000Z"
   },
   {
     "id": "note-hieu-nang-va-do-luong",
@@ -3290,8 +3614,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T23:00:00.000Z",
-    "updatedAt": "2026-01-07T23:00:00.000Z"
+    "createdAt": "2026-01-08T15:00:00.000Z",
+    "updatedAt": "2026-01-08T15:00:00.000Z"
   },
   {
     "id": "note-chi-phi-ha-tang",
@@ -3310,8 +3634,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T00:00:00.000Z",
-    "updatedAt": "2026-01-08T00:00:00.000Z"
+    "createdAt": "2026-01-08T16:00:00.000Z",
+    "updatedAt": "2026-01-08T16:00:00.000Z"
   },
   {
     "id": "note-ra-quyet-dinh-ky-thuat",
@@ -3330,8 +3654,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T01:00:00.000Z",
-    "updatedAt": "2026-01-08T01:00:00.000Z"
+    "createdAt": "2026-01-08T17:00:00.000Z",
+    "updatedAt": "2026-01-08T17:00:00.000Z"
   },
   {
     "id": "note-review-code-va-nang-nguoi",
@@ -3350,8 +3674,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T02:00:00.000Z",
-    "updatedAt": "2026-01-08T02:00:00.000Z"
+    "createdAt": "2026-01-08T18:00:00.000Z",
+    "updatedAt": "2026-01-08T18:00:00.000Z"
   },
   {
     "id": "note-no-ky-thuat-va-refactor",
@@ -3370,8 +3694,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T03:00:00.000Z",
-    "updatedAt": "2026-01-08T03:00:00.000Z"
+    "createdAt": "2026-01-08T19:00:00.000Z",
+    "updatedAt": "2026-01-08T19:00:00.000Z"
   },
   {
     "id": "note-uoc-luong-va-pham-vi",
@@ -3390,8 +3714,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T04:00:00.000Z",
-    "updatedAt": "2026-01-08T04:00:00.000Z"
+    "createdAt": "2026-01-08T20:00:00.000Z",
+    "updatedAt": "2026-01-08T20:00:00.000Z"
   },
   {
     "id": "note-giao-tiep-va-anh-huong",
@@ -3410,8 +3734,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T05:00:00.000Z",
-    "updatedAt": "2026-01-08T05:00:00.000Z"
+    "createdAt": "2026-01-08T21:00:00.000Z",
+    "updatedAt": "2026-01-08T21:00:00.000Z"
   },
   {
     "id": "note-uy-quyen-va-dan-dat-nhom",
@@ -3431,7 +3755,7 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-08T06:00:00.000Z",
-    "updatedAt": "2026-01-08T06:00:00.000Z"
+    "createdAt": "2026-01-08T22:00:00.000Z",
+    "updatedAt": "2026-01-08T22:00:00.000Z"
   }
 ]

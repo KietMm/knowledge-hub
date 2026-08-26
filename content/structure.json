@@ -111,6 +111,24 @@
           "name": "Kiểm thử",
           "slug": "kiem-thu",
           "description": "Test cái gì và đừng test cái gì, test double, và kim tự tháp kiểm thử."
+        },
+        {
+          "id": "topic-backend",
+          "name": "Kiến trúc Backend",
+          "slug": "kien-truc-backend",
+          "description": "Chia tầng, xử lý lỗi, cấu hình, job nền và cấu trúc một dự án backend sống lâu."
+        },
+        {
+          "id": "topic-api-adv",
+          "name": "Thiết kế API nâng cao",
+          "slug": "thiet-ke-api-nang-cao",
+          "description": "RPC, gRPC, GraphQL, WebSocket và SSE — chọn kiểu giao tiếp theo bài toán."
+        },
+        {
+          "id": "topic-debug",
+          "name": "Gỡ lỗi và chẩn đoán",
+          "slug": "go-loi-va-chan-doan",
+          "description": "Gỡ lỗi như một quy trình có giả thuyết, không phải đoán mò."
         }
       ]
     },

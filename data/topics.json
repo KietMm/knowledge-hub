@@ -112,6 +112,30 @@
     "order": 7
   },
   {
+    "id": "topic-backend",
+    "name": "Kiến trúc Backend",
+    "slug": "kien-truc-backend",
+    "description": "Chia tầng, xử lý lỗi, cấu hình, job nền và cấu trúc một dự án backend sống lâu.",
+    "categoryId": "cat-dev",
+    "order": 8
+  },
+  {
+    "id": "topic-api-adv",
+    "name": "Thiết kế API nâng cao",
+    "slug": "thiet-ke-api-nang-cao",
+    "description": "RPC, gRPC, GraphQL, WebSocket và SSE — chọn kiểu giao tiếp theo bài toán.",
+    "categoryId": "cat-dev",
+    "order": 9
+  },
+  {
+    "id": "topic-debug",
+    "name": "Gỡ lỗi và chẩn đoán",
+    "slug": "go-loi-va-chan-doan",
+    "description": "Gỡ lỗi như một quy trình có giả thuyết, không phải đoán mò.",
+    "categoryId": "cat-dev",
+    "order": 10
+  },
+  {
     "id": "topic-sql",
     "name": "SQL cơ bản",
     "slug": "sql-co-ban",
