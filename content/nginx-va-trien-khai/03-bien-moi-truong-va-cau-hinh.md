@@ -4,137 +4,212 @@ slug: bien-moi-truong-va-cau-hinh
 summary: Tách cấu hình khỏi mã nguồn, một artifact cho mọi môi trường, và kiểm tra cấu hình lúc khởi động.
 level: trung-cap
 tags: [deploy, cau-hinh, 12-factor]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** cấu hình ứng dụng theo cách chạy được ở mọi môi trường mà không phải build lại.
+> **Sau bài này bạn sẽ:** phân biệt được cái gì là cấu hình và cái gì là mã, và làm cho ứng dụng chết ngay khi thiếu cấu hình thay vì chết lúc 3 giờ sáng.
 
-## Nguyên tắc
+## Ý tưởng chính
 
-Từ 12-Factor App: **cấu hình là thứ khác nhau giữa các môi trường triển khai**. Mọi thứ giống nhau ở mọi môi trường thì thuộc về mã nguồn.
+Cấu hình là **thứ khác nhau giữa các môi trường**. Mã là thứ giống nhau.
 
-Hệ quả trực tiếp: **một artifact duy nhất** chạy được ở dev, staging và production, chỉ khác biến môi trường. Nếu phải build lại cho từng môi trường, thứ bạn kiểm tra ở staging không phải thứ chạy ở production.
+Từ định nghĩa đó suy ra một quy tắc kiểm tra: nếu bạn phải **build lại** để triển khai lên môi trường khác, thì bạn đang để cấu hình lẫn trong mã.
 
+## Mental model
+
+Hãy nghĩ tới **một thiết bị điện bán quốc tế**.
+
+> Cái máy sấy tóc là **một sản phẩm duy nhất**, sản xuất giống hệt nhau ở mọi lô hàng.
+>
+> Cái thay đổi theo nước là **ổ cắm và điện áp** — thứ nó nhận từ **môi trường bên ngoài** khi cắm vào.
+>
+> Không ai sản xuất một dây chuyền riêng cho mỗi quốc gia. Và cái phích cắm **không** nằm bên trong vỏ máy.
+
+`DATABASE_URL` là ổ cắm. Image Docker là cái máy sấy. Một artifact, cắm vào đâu chạy đó ([[trien-khai-tu-dong]]).
+
+## Ví dụ nhỏ
+
+```bash
+NODE_ENV=production
+DATABASE_URL=postgres://user:pass@db:5432/app
+REDIS_URL=redis://cache:6379
+JWT_SECRET=<chuỗi ngẫu nhiên dài>
 ```
-# Là cấu hình
-DATABASE_URL, API keys, URL dịch vụ ngoài, mức log, feature flag
 
-# KHÔNG phải cấu hình
-Định tuyến, quy tắc nghiệp vụ, schema — chúng thuộc về mã nguồn
-```
+## Code chạy thế nào
 
-## Kiểm tra lúc khởi động
+**Xác thực cấu hình **một lần** lúc khởi động — không rải rác khắp mã:**
 
 ```ts
-// src/lib/env.ts
+// config.ts — nơi DUY NHẤT đọc process.env
 import { z } from 'zod'
 
-const EnvSchema = z.object({
+const Schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']),
+  PORT: z.coerce.number().default(3000),
   DATABASE_URL: z.string().url(),
-  REDIS_URL: z.string().url().optional(),
-  SESSION_SECRET: z.string().min(32, 'SESSION_SECRET phải dài tối thiểu 32 ký tự'),
-  PORT: z.coerce.number().int().positive().default(3000),
+  JWT_SECRET: z.string().min(32),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 })
 
-const parsed = EnvSchema.safeParse(process.env)
-if (!parsed.success) {
-  console.error('Cấu hình môi trường không hợp lệ:')
-  for (const [truong, loi] of Object.entries(parsed.error.flatten().fieldErrors)) {
-    console.error(`  ${truong}: ${loi?.join(', ')}`)
-  }
-  process.exit(1)
+const kq = Schema.safeParse(process.env)
+if (!kq.success) {
+  console.error('Cấu hình sai:', z.treeifyError(kq.error))
+  process.exit(1)                          // ← CHẾT NGAY, không chạy tiếp
 }
-
-export const env = parsed.data
+export const config = kq.data
 ```
 
-Hai lợi ích: ứng dụng **hỏng ngay lúc khởi động** với thông báo rõ ràng thay vì hỏng lúc 2 giờ sáng khi ai đó chạm vào tính năng thanh toán; và `env.PORT` có kiểu `number`, không phải `string | undefined`.
+**Vì sao `process.exit(1)` là điều quan trọng nhất ở đây:**
 
-`z.coerce.number()` cần thiết vì biến môi trường **luôn là chuỗi** — `"3000"`, không phải `3000`.
+```text
+❌ Không xác thực:
+   process.env.JWT_SECRET là undefined
+   → Ứng dụng khởi động BÌNH THƯỜNG
+   → Chạy được vài giờ
+   → 3 giờ sáng, người dùng đầu tiên đăng nhập ⇒ sập
+   → Bạn dậy, đọc log, và stack trace chỉ vào một hàm ký JWT.
 
-## Ranh giới build-time và runtime
-
-Với Next.js, một số giá trị được **nhúng vào bundle lúc build**:
-
-```ts
-process.env.NEXT_PUBLIC_API_URL     // cố định lúc build, không đổi được sau
-process.env.DATABASE_URL            // đọc lúc chạy, đổi được bằng restart
+✅ Có xác thực:
+   Chết trong 200ms, thông báo: "JWT_SECRET: bắt buộc".
+   Lần deploy đó thất bại RÕ RÀNG, quay lui tự động, không ai bị ảnh hưởng.
 ```
 
-Hệ quả quan trọng: biến `NEXT_PUBLIC_*` phá vỡ nguyên tắc "một artifact cho mọi môi trường" — image build với URL của staging không dùng cho production được.
+Đây là nguyên tắc **fail fast**: chuyển một lỗi âm thầm ở thời điểm xấu thành một lỗi ồn ào ở thời điểm tốt.
 
-Cách xử lý: hạn chế `NEXT_PUBLIC_*` tới mức tối thiểu. Với giá trị cần khác nhau theo môi trường, hãy để Server Component đọc lúc chạy rồi truyền xuống như dữ liệu thường.
+Lợi ích thứ hai của `config.ts`: mọi nơi khác trong mã dùng `config.PORT` — **đã có kiểu, đã được kiểm** — thay vì `process.env.PORT` là `string | undefined` ở khắp nơi.
 
-## Thứ tự ưu tiên
+## Cú pháp
 
-```
-1. Biến môi trường thật (từ hệ thống/orchestrator)  ← cao nhất
-2. .env.production.local
-3. .env.local
-4. .env.production
-5. .env                                              ← thấp nhất
-```
+**Cấu hình biến đổi thế nào qua các môi trường:**
 
-Ở production, giá trị nên đến từ **hệ thống quản lý secret**, không từ file `.env` nằm trên đĩa cạnh mã nguồn.
-
-## Nơi đặt cấu hình theo cách triển khai
-
-| Cách triển khai | Nơi đặt |
-|---|---|
-| systemd | `EnvironmentFile=/etc/ung-dung/env` (quyền `600`) |
-| Docker | `--env-file`, hoặc secret của orchestrator |
-| Kubernetes | ConfigMap cho cấu hình, Secret cho khoá |
-| Nền tảng PaaS | Giao diện quản lý biến môi trường |
-
-Với Docker, đừng dùng `ENV` trong Dockerfile cho giá trị theo môi trường — nó cố định vào image.
-
-## Feature flag
-
-```ts
-const CO_TINH_NANG_MOI = env.FEATURE_TIM_KIEM_MOI === 'true'
+```text
+Máy dev:     file .env (KHÔNG commit) + .env.example (CÓ commit)
+CI:          secret của CI
+Container:   environment / env_file trong compose
+Cloud:       secret manager của nhà cung cấp
+Kubernetes:  ConfigMap (thường) + Secret (nhạy cảm)
 ```
 
-Feature flag tách **triển khai** khỏi **phát hành**: code lên production nhưng tắt, bật cho một nhóm nhỏ trước, và tắt ngay lập tức khi có vấn đề — không cần triển khai lại.
+`.env.example` là tài liệu duy nhất không lỗi thời được — vì thiếu một biến thì ứng dụng không chạy:
 
-Đổi lại: mỗi cờ là một nhánh code phải bảo trì và test. Xoá cờ ngay sau khi tính năng đã ổn định.
-
-## Cấu hình khác nhau theo môi trường
-
-```ts
-export const cauHinh = {
-  db: {
-    // Production nhiều kết nối hơn, timeout ngắn hơn
-    poolSize: env.NODE_ENV === 'production' ? 20 : 5,
-  },
-  log: {
-    // JSON cho máy đọc ở production; định dạng người đọc ở dev
-    format: env.NODE_ENV === 'production' ? 'json' : 'pretty',
-  },
-}
+```bash
+# .env.example — commit file này
+DATABASE_URL=postgres://user:pass@localhost:5432/app
+JWT_SECRET=doi-thanh-chuoi-ngau-nhien-32-ky-tu-tro-len
+PORT=3000
 ```
 
-Giữ những khác biệt này ở **một chỗ** thay vì rải `if (production)` khắp codebase.
+**Cái gì là cấu hình, cái gì không:**
 
-## Lỗi hay gặp
+```text
+✅ CẤU HÌNH (khác giữa các môi trường):
+   URL CSDL, khoá API, tên miền, cổng, mức log,
+   giới hạn tài nguyên, feature flag
 
-| Lỗi | Hậu quả | Sửa thế nào |
+❌ KHÔNG PHẢI cấu hình (giống nhau mọi nơi):
+   Định tuyến, schema, quy tắc nghiệp vụ, cấu trúc thư mục
+   → những thứ này thuộc về MÃ, và phải đi qua review.
+```
+
+Ranh giới này quan trọng: nhét quy tắc nghiệp vụ vào biến môi trường nghĩa là nó **không được review, không có test, không có lịch sử thay đổi**.
+
+**Với ứng dụng frontend, một cái bẫy:**
+
+```text
+Biến build-time (NEXT_PUBLIC_*, VITE_*) được NHÚNG VÀO BUNDLE lúc build.
+⇒ Ai cũng đọc được. KHÔNG BAO GIỜ để secret ở đó.
+⇒ Và đổi giá trị thì phải BUILD LẠI — nó không còn là "cấu hình runtime".
+```
+
+## Tại sao cần nó
+
+Vì cấu hình lẫn trong mã sinh ra một chuỗi hậu quả:
+
+```text
+Build riêng cho từng môi trường
+  ⇒ artifact staging ≠ artifact production
+  ⇒ "staging chạy tốt mà" không chứng minh được gì
+  ⇒ mỗi lần đổi một URL phải build lại và deploy lại
+```
+
+**Secret không nằm trong git — và nếu lỡ, phải xoay:**
+
+```text
+git commit .env
+  → xoá file ở commit sau KHÔNG đủ: nó còn trong LỊCH SỬ,
+    trong bản clone của mọi người, trong cache của GitHub.
+  ⇒ Coi như đã lộ. XOAY secret ngay.
+```
+
+Và điều làm việc xoay khả thi là **secret nằm ở một nơi duy nhất**: đổi một chỗ, deploy lại, xong. Nếu nó rải trong mã, trong CI, và trong đầu vài người, thì bạn không thật sự xoay được ([[quan-ly-secret-va-cau-hinh]]).
+
+**Ba thứ nên có ngay từ đầu:**
+
+```text
+□ config.ts xác thực bằng schema, exit(1) khi sai
+□ .env.example được commit và luôn đầy đủ
+□ .env trong .gitignore
+```
+
+## So sánh
+
+| | Trong mã | Biến môi trường |
 |---|---|---|
-| Build lại cho từng môi trường | Staging khác production | Một artifact + biến môi trường |
-| Không validate env | Hỏng lúc chạy, thông báo khó hiểu | Validate lúc khởi động |
-| Quên `coerce` cho số | `PORT` là chuỗi `"3000"` | `z.coerce.number()` |
-| `NEXT_PUBLIC_` cho giá trị theo môi trường | Image không dùng lại được | Đọc lúc chạy ở server |
-| File `.env` trên máy chủ production | Ai đọc được đĩa là có secret | Dùng secret manager |
+| Đổi giá trị | build lại | restart |
+| Một artifact mọi môi trường | ❌ | ✅ |
+| Chứa secret an toàn | ❌ | ✅ (nếu quản lý đúng) |
+| Được review, có test | ✅ | ❌ |
+| Dùng cho | quy tắc nghiệp vụ | URL, khoá, cổng |
 
-## Ghi nhớ
+## Dễ nhầm
 
-- Một artifact cho mọi môi trường; chỉ biến môi trường khác nhau.
-- Validate cấu hình lúc khởi động, hỏng sớm và rõ ràng.
-- Biến môi trường luôn là chuỗi.
-- Feature flag tách triển khai khỏi phát hành — nhưng nhớ dọn cờ cũ.
+**1. Không xác thực cấu hình lúc khởi động.** Lỗi lộ ra vào lúc tệ nhất.
 
-## Tự kiểm tra
+**2. Commit `.env`.** Secret vào lịch sử git vĩnh viễn.
 
-1. Vì sao build image riêng cho staging và production là sai?
-2. `NEXT_PUBLIC_API_URL` gây vấn đề gì với nguyên tắc một artifact?
-3. Ứng dụng khởi động được nhưng lỗi khi gửi email vì thiếu `SMTP_HOST` — sửa cách tiếp cận thế nào?
+**3. Không có `.env.example`.** Người mới không biết cần biến nào.
+
+**4. Build riêng cho mỗi môi trường.** Mất ý nghĩa của staging.
+
+**5. Để secret trong biến `NEXT_PUBLIC_*` / `VITE_*`.** Nhúng thẳng vào bundle.
+
+**6. Đọc `process.env` rải khắp mã.** Không kiểm được, không có kiểu.
+
+**7. Giá trị mặc định nguy hiểm:** `JWT_SECRET ?? 'dev-secret'` — production sẽ chạy với secret đó.
+
+**8. Nhét quy tắc nghiệp vụ vào biến môi trường.** Không review, không test.
+
+**9. Không xoay secret sau khi lộ.** Xoá file không xoá lịch sử.
+
+**10. Cấu hình chỉ tồn tại trong đầu một người.** Người đó nghỉ phép là hệ thống không deploy lại được.
+
+## Mẹo nhớ
+
+> **Cấu hình = thứ khác nhau giữa các môi trường. Mã = thứ giống nhau.**
+>
+> **Một artifact, nhiều môi trường — chỉ biến môi trường thay đổi.**
+>
+> **Xác thực lúc khởi động và `exit(1)`: chết to và rõ, đúng lúc.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Phân biệt cấu hình và mã bằng câu hỏi nào?
+2. Vì sao `exit(1)` khi cấu hình sai lại tốt hơn là chạy tiếp?
+3. Vì sao secret không được để trong biến `NEXT_PUBLIC_*`?
+4. Lỡ commit `.env` thì phải làm gì, và vì sao xoá file không đủ?
+5. Vì sao không nên đọc `process.env` rải rác khắp mã?
+
+## Tự viết lại
+
+Không nhìn lại, viết `config.ts` cho ứng dụng cần: URL CSDL, URL Redis, JWT secret ít nhất 32 ký tự, cổng (mặc định 3000), mức log (mặc định info), và một khoá API bên thứ ba chỉ bắt buộc ở production.
+
+Tự kiểm: điều gì xảy ra khi chạy ở production mà thiếu khoá API đó — và bạn thấy thông báo gì?
+
+## Thử sức
+
+Ứng dụng chạy production ba tuần thì phát hiện: **`JWT_SECRET` chưa bao giờ được đặt**, và mã có dòng `process.env.JWT_SECRET || 'dev-secret'`.
+
+Ba câu để trả lời: hậu quả bảo mật **cụ thể** là gì; bạn xử lý theo thứ tự nào ngay bây giờ; và thay đổi nào khiến lớp lỗi này **không thể xảy ra nữa**. Câu khó nhất: sau khi đổi `JWT_SECRET`, chuyện gì xảy ra với người dùng đang đăng nhập — và bạn xử lý ra sao?
