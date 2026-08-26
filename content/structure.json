@@ -241,6 +241,18 @@
           "name": "Hệ thống phân tán",
           "slug": "he-thong-phan-tan",
           "description": "Chịu lỗi, dữ liệu ở quy mô, và ranh giới service."
+        },
+        {
+          "id": "topic-cache-mq",
+          "name": "Cache và hàng đợi",
+          "slug": "cache-va-hang-doi",
+          "description": "Redis, Kafka, RabbitMQ — mô hình dữ liệu, đảm bảo giao hàng và cách vận hành."
+        },
+        {
+          "id": "topic-arch-pattern",
+          "name": "Kiến trúc phần mềm",
+          "slug": "kien-truc-phan-mem",
+          "description": "Layered, hexagonal, event-driven, CQRS — và khi nào chúng là quá đà."
         }
       ]
     },
