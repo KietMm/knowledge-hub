@@ -4,192 +4,256 @@ slug: thiet-ke-cho-that-bai
 summary: Timeout, retry, circuit breaker, bulkhead — và vì sao retry sai cách làm sự cố nặng hơn.
 level: trung-cap
 tags: [kien-truc, chiu-loi, timeout, circuit-breaker]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** đặt được timeout đúng chỗ, và hiểu vì sao retry là con dao hai lưỡi trong lúc sự cố.
+> **Sau bài này bạn sẽ:** biết bốn công cụ chịu lỗi và thứ tự áp dụng, và vì sao retry là con dao hai lưỡi.
 
-## Giả định sai làm hỏng mọi thứ
+## Ý tưởng chính
 
-Code viết như thể lời gọi mạng luôn thành công và luôn nhanh. Thực tế nó có **năm** kết cục, không phải hai:
+Trong một hệ thống phân tán, **mọi lời gọi mạng đều sẽ thất bại** — không phải "có thể", mà là sẽ, với tần suất nào đó.
 
-1. Thành công
-2. Thất bại nhanh, rõ ràng (`connection refused`)
-3. Thất bại chậm (timeout sau 30 giây)
-4. **Không bao giờ trả lời** (treo)
-5. Thành công nhưng response mất trên đường — xem [[idempotency-va-thu-lai]]
+Nên câu hỏi thiết kế không phải *"làm sao để không hỏng"* mà *"khi nó hỏng thì chuyện gì xảy ra"*.
 
-Kết cục 3 và 4 là nguy hiểm nhất, vì chúng **giữ tài nguyên của bạn**. Một service chậm gây thiệt hại lớn hơn một service chết hẳn: service chết trả lỗi ngay và bạn xử lý được, còn service chậm âm thầm ăn hết connection pool và thread của bạn.
+## Mental model
 
-## Timeout: không có mặc định nào an toàn
+Hãy nghĩ tới **cầu chì trong nhà**.
 
-```ts
-// ❌ fetch không có timeout mặc định. Request này có thể treo vô hạn,
-// giữ một slot trong pool cho tới khi tiến trình restart.
-const res = await fetch('https://api.doi-tac.com/gia')
+> Chập điện ở một ổ cắm. Cầu chì **tự ngắt mạch đó**. Cả nhà vẫn có điện.
+>
+> Không có cầu chì: chập một chỗ, dây nóng lên, và cháy cả hệ thống.
+>
+> Điều quan trọng: cầu chì **cố ý làm hỏng một phần nhỏ để cứu phần lớn**. Nó không sửa cái chập — nó ngăn cái chập lan ra.
 
-// ✅
-const res = await fetch('https://api.doi-tac.com/gia', {
-  signal: AbortSignal.timeout(2000),
-})
-```
+Circuit breaker là cầu chì. Bulkhead là vách ngăn khoang tàu — nước tràn vào một khoang không làm chìm tàu. Cả hai đều dựa trên cùng một ý: **giới hạn bán kính thiệt hại**.
 
-Timeout cần đặt ở **mọi ranh giới**, và mỗi tầng phải nhỏ hơn tầng gọi nó:
-
-```
-Người dùng (trình duyệt)     30 s
-  └─ Nginx proxy_read_timeout 10 s
-      └─ App (tổng)            8 s
-          ├─ Database          2 s      ← statement_timeout
-          ├─ Redis           200 ms
-          └─ API đối tác       3 s
-```
-
-**Ngân sách timeout phải giảm dần từ ngoài vào trong.** Nếu database timeout 30s trong khi app timeout 8s, thì app đã bỏ request đi mà truy vấn vẫn chạy — bạn trả tiền cho công việc không ai nhận kết quả, và connection vẫn bị giữ.
-
-```sql
--- Postgres: chặn ở tầng database, không tin vào tầng ứng dụng
-ALTER ROLE app SET statement_timeout = '2s';
-ALTER ROLE app SET idle_in_transaction_session_timeout = '10s';
-```
-
-Dòng thứ hai quan trọng không kém: một transaction mở mà không làm gì sẽ **giữ khoá** và chặn mọi thứ khác. Xem [[transaction-va-khoa-trong-postgres]].
-
-## Retry: con dao hai lưỡi
-
-Retry đúng cách cứu bạn khỏi lỗi chớp nhoáng. Retry sai cách **biến sự cố nhỏ thành sự cố lớn**.
-
-```
-Service B chậm vì tải cao
-  → A timeout, retry 3 lần
-    → Tải lên B tăng GẤP 3 đúng lúc B đang quá tải
-      → B sập hoàn toàn
-```
-
-Đây gọi là **retry storm**, và nó là cách phổ biến nhất mà một sự cố cục bộ lan ra toàn hệ thống. Bốn quy tắc:
-
-**1. Chỉ retry lỗi tạm thời.** `400`, `422`, `403` gửi lại y hệt vẫn sai — xem [[phuong-thuc-va-ma-trang-thai]].
-
-**2. Backoff có jitter.** Thiếu jitter thì mọi client retry cùng một thời điểm.
-
-**3. Đừng retry lồng nhau.** Ba tầng, mỗi tầng retry 3 lần = **27 lần** gọi tới tầng cuối. Chọn **một** tầng để retry — thường là tầng ngoài cùng biết được ý định của người dùng.
-
-**4. Có ngân sách retry.** Chặn trần theo tỉ lệ, không theo từng request:
+## Ví dụ nhỏ
 
 ```ts
-// Nếu hơn 10% lưu lượng đang là retry thì hệ thống đang có sự cố, và retry thêm
-// chỉ làm nặng hơn. Trần theo TỈ LỆ chặn được retry storm mà trần theo từng
-// request không chặn được.
-if (retryRate() > 0.1) throw loi
+const res = await fetch(url, { signal: AbortSignal.timeout(3000) })
 ```
 
-## Circuit breaker: dừng gõ cửa nhà đang cháy
+## Code chạy thế nào
 
-Khi một phụ thuộc đã rõ ràng chết, gọi tiếp là vô nghĩa: bạn tốn timeout, giữ tài nguyên, và làm nó khó hồi phục hơn.
+**Timeout — công cụ nền tảng, và thường bị quên:**
 
+```text
+KHÔNG có timeout:
+  Dịch vụ phụ treo (không lỗi, chỉ không trả lời)
+  ⇒ request của bạn chờ mãi
+  ⇒ worker bị giữ
+  ⇒ hết worker
+  ⇒ TOÀN BỘ dịch vụ của bạn chết, vì một dịch vụ phụ chậm.
 ```
-ĐÓNG (bình thường) ──lỗi vượt ngưỡng──> MỞ (fail nhanh, không gọi)
-      ↑                                        │
-      └──── thành công ──── NỬA MỞ <──── sau 30 giây, cho 1 request thử
+
+Đây là cơ chế lan truyền sự cố phổ biến nhất, và nó bắt đầu từ chỗ **không ai gây ra lỗi cả** — chỉ có một thứ chậm.
+
+```text
+Đặt timeout theo p99 của dịch vụ đó, cộng biên:
+  p99 = 200ms  →  timeout 500ms–1s
+
+Và timeout phải GIẢM DẦN theo tầng:
+  API gateway   5s
+    → service A 3s
+      → service B 1s
+  Nếu B timeout 10s trong khi gateway timeout 5s
+  ⇒ gateway bỏ cuộc trước, B vẫn làm việc vô ích.
 ```
+
+**Retry — và vì sao nó nguy hiểm:**
+
+```text
+Dịch vụ quá tải, trả lỗi.
+100 client cùng retry ngay lập tức, mỗi cái 3 lần
+⇒ 300 request thêm vào một dịch vụ VỐN ĐANG QUÁ TẢI
+⇒ nó chết hẳn
+⇒ retry tiếp
+⇒ không bao giờ hồi phục được.
+```
+
+Gọi là **retry storm**. Ba điều kiện để retry an toàn:
+
+```text
+① CHỈ retry lỗi TẠM THỜI
+   ✅ timeout, 503, lỗi kết nối
+   ❌ 400, 401, 404, 422 — retry cũng cùng kết quả, chỉ tốn thêm
+
+② Exponential backoff + JITTER
+   1s → 2s → 4s → 8s, cộng ngẫu nhiên
+   Jitter là bắt buộc: không có nó, mọi client retry ĐỒNG THỜI
+   ⇒ vẫn là cơn bão, chỉ chậm hơn một nhịp.
+
+③ Giới hạn số lần: 3 là đủ. Và tổng thời gian phải nằm trong timeout của tầng trên.
+```
+
+**Circuit breaker — biết khi nào ngừng thử:**
+
+```text
+ĐÓNG (bình thường)  → mọi request đi qua
+   ↓ tỉ lệ lỗi > 50% trong 10 giây
+MỞ                  → TỪ CHỐI NGAY, không gọi nữa
+   ↓ sau 30 giây
+NỬA MỞ              → cho vài request thử
+   ↓ thành công → ĐÓNG        ↓ thất bại → MỞ lại
+```
+
+Hai lợi ích, và cái thứ hai quan trọng hơn:
+
+```text
+① Bạn thất bại NHANH (10ms thay vì chờ hết 3 giây timeout)
+② Dịch vụ kia được NGHỈ để hồi phục
+   ⇒ không có breaker, nó bị nện liên tục và không bao giờ đứng dậy được.
+```
+
+## Cú pháp
+
+**Bulkhead — chia tài nguyên để lỗi không lan:**
+
+```text
+Không có bulkhead — một pool 100 kết nối dùng chung:
+  Dịch vụ khuyến nghị chậm ⇒ chiếm hết 100 kết nối
+  ⇒ luồng THANH TOÁN cũng không còn kết nối nào.
+  ⇒ Một tính năng phụ làm sập tính năng chính.
+
+Có bulkhead:
+  thanh toán: 50   |   tìm kiếm: 30   |   khuyến nghị: 20
+  ⇒ Khuyến nghị chết thì chỉ khuyến nghị chết.
+```
+
+**Suy giảm có kiểm soát — thứ người dùng thực sự cảm nhận:**
 
 ```ts
-class CircuitBreaker {
-  private loi = 0
-  private moDenKhi = 0
-
-  async goi<T>(fn: () => Promise<T>): Promise<T> {
-    if (Date.now() < this.moDenKhi) {
-      // Fail nhanh: quan trọng là KHÔNG tốn timeout, nhờ vậy tài nguyên của mình
-      // không bị giữ và mình còn phục vụ được các đường khác.
-      throw new MachHo('Phụ thuộc đang không khả dụng')
-    }
-    try {
-      const kq = await fn()
-      this.loi = 0
-      return kq
-    } catch (e) {
-      this.loi += 1
-      if (this.loi >= 5) this.moDenKhi = Date.now() + 30_000
-      throw e
-    }
+async function layGoiY(userId: string) {
+  try {
+    return await dichVuGoiY.lay(userId)
+  } catch {
+    return SAN_PHAM_PHO_BIEN            // ← dự phòng, không phải lỗi
   }
 }
 ```
 
-Lợi ích thật của circuit breaker không phải bảo vệ service kia — mà là **bảo vệ chính bạn**: fail nhanh giữ được connection pool và thread để phục vụ những chức năng không phụ thuộc vào nó.
+```text
+Trang sản phẩm không có gợi ý  →  vẫn bán được hàng.
+Trang sản phẩm báo lỗi 500     →  mất doanh thu.
 
-## Bulkhead: chia khoang như tàu thuỷ
-
-Tàu chia khoang để một khoang ngập không làm chìm cả tàu. Áp vào hệ thống: **chia tài nguyên theo phụ thuộc**.
-
-```ts
-// ❌ Pool 20 kết nối dùng chung. API đối tác treo → 20 request chiếm hết pool
-//    → những endpoint KHÔNG dùng API đó cũng chết theo.
-
-// ✅ Giới hạn riêng cho mỗi phụ thuộc
-const semDoiTac = new Semaphore(5)     // tối đa 5 request đồng thời tới đối tác
-const semBaoCao = new Semaphore(3)     // báo cáo nặng không được ăn hết pool
+Câu hỏi cho mỗi phụ thuộc: "Thiếu nó thì trang này còn dùng được không?"
+  Còn  ⇒ phải có dự phòng.
+  Không ⇒ nó là phụ thuộc thiết yếu, cần được đối xử khác.
 ```
 
-Đây là cách chặn **suy sụp lan truyền** (cascading failure): thiệt hại bị giữ trong khoang của nó.
+**Thứ tự áp dụng:**
 
-## Suy giảm có kiểm soát
-
-Không phải mọi phụ thuộc đều bắt buộc. Phân loại trước, rồi code theo:
-
-```ts
-async function trangSanPham(id: string) {
-  // BẮT BUỘC: không có thì không có trang
-  const sp = await db.products.findUnique({ where: { id } })
-  if (sp === null) notFound()
-
-  // TUỲ CHỌN: thiếu thì trang vẫn dùng được. Chú ý allSettled, không phải all —
-  // Promise.all thất bại một cái là mất cả trang.
-  const [goiY, danhGia] = await Promise.allSettled([
-    breakerGoiY.goi(() => layGoiY(id)),
-    breakerDanhGia.goi(() => layDanhGia(id)),
-  ])
-
-  return {
-    sanPham: sp,
-    goiY: goiY.status === 'fulfilled' ? goiY.value : [],
-    danhGia: danhGia.status === 'fulfilled' ? danhGia.value : null,
-  }
-}
+```text
+① Timeout          — luôn luôn, cho MỌI lời gọi mạng
+② Retry có backoff + jitter — cho lỗi tạm thời, cho thao tác idempotent
+③ Circuit breaker  — cho phụ thuộc bên ngoài quan trọng
+④ Bulkhead         — khi có nhiều luồng nghiệp vụ chung tài nguyên
+⑤ Dự phòng         — cho mọi thứ không thiết yếu
 ```
 
-Câu hỏi thiết kế cần trả lời cho từng phụ thuộc: *"cái này chết thì trang còn bán được hàng không?"* Còn → tuỳ chọn, và phải có đường đi khi nó chết.
+Đừng làm ngược: circuit breaker mà không có timeout thì gần như vô dụng, vì lỗi phổ biến nhất — treo — không bao giờ được tính là lỗi.
 
-## Thundering herd sau khi hồi phục
+## Tại sao cần nó
 
-Service hồi phục, 10.000 client đang chờ cùng lúc đổ vào → sập lại. Ba biện pháp:
+Vì **retry chỉ an toàn khi thao tác idempotent**:
 
-- **Jitter** trong backoff và trong thời gian nửa mở của breaker
-- **Nửa mở cho một request thử**, không mở cửa cho tất cả
-- **Khởi động chậm**: máy mới vào cụm nhận tải tăng dần, để cache và JIT kịp nóng
+```text
+POST /thanh-toan  → timeout
+Bạn retry.
+Nhưng lần đầu có thể ĐÃ THÀNH CÔNG — chỉ phản hồi bị mất.
+⇒ Trừ tiền hai lần.
+```
 
-## Lỗi hay gặp
+Cách xử lý: khoá idempotency do client sinh, server nhớ kết quả theo khoá đó ([[idempotency-va-thu-lai]]).
 
-| Lỗi | Hậu quả | Sửa thế nào |
+**Tính xác suất — vì sao nhiều phụ thuộc là vấn đề:**
+
+```text
+Mỗi dịch vụ uptime 99,9%.
+Trang gọi 10 dịch vụ, tất cả đều bắt buộc:
+  0,999¹⁰ ≈ 99%
+⇒ Từ "43 phút downtime/tháng" thành "7 GIỜ/tháng".
+
+⇒ Càng nhiều phụ thuộc bắt buộc, càng phải biến chúng thành KHÔNG bắt buộc.
+```
+
+Đây là lập luận mạnh nhất cho dự phòng: nó không chỉ cải thiện trải nghiệm, nó thay đổi hẳn con số uptime.
+
+**Kiểm chứng:** những cơ chế này chỉ đáng tin khi đã thử.
+
+```text
+□ Tắt một dịch vụ phụ ở staging — hệ thống suy giảm hay sập?
+□ Thêm độ trễ giả 5 giây — timeout có kích hoạt không?
+□ Circuit breaker có thật sự mở không, và mất bao lâu?
+```
+
+Không thử thì bạn chỉ có mã trông giống chịu lỗi ([[su-co-va-hau-kiem]]).
+
+## So sánh
+
+| Công cụ | Chống | Khi nào |
 |---|---|---|
-| Không đặt timeout | Request treo vĩnh viễn, ăn hết pool | Timeout ở mọi ranh giới |
-| Timeout trong lớn hơn ngoài | Trả tiền cho việc không ai nhận | Ngân sách giảm dần vào trong |
-| Retry lồng nhau nhiều tầng | 3×3×3 = 27 lần gọi | Chỉ retry ở một tầng |
-| Retry không jitter | Cả đàn dồn vào cùng lúc | Backoff + jitter |
-| Không có ngân sách retry | Retry storm làm sập service đang yếu | Trần theo tỉ lệ lưu lượng |
-| Pool dùng chung mọi phụ thuộc | Một phụ thuộc treo, cả app chết | Bulkhead |
-| `Promise.all` cho dữ liệu tuỳ chọn | Mất cả trang vì một widget | `allSettled` |
-| Không có `idle_in_transaction_timeout` | Transaction bỏ dở giữ khoá mãi | Đặt ở tầng database |
+| Timeout | treo vô hạn | **mọi lời gọi mạng** |
+| Retry | lỗi thoáng qua | lỗi tạm thời, thao tác idempotent |
+| Circuit breaker | nện dịch vụ đang chết | phụ thuộc bên ngoài |
+| Bulkhead | cạn tài nguyên dùng chung | nhiều luồng nghiệp vụ |
+| Dự phòng | mất tính năng phụ | thứ không thiết yếu |
 
-## Ghi nhớ
+## Dễ nhầm
 
-- Service **chậm** nguy hiểm hơn service **chết** — nó giữ tài nguyên của bạn.
-- Ngân sách timeout giảm dần từ ngoài vào trong.
-- Circuit breaker bảo vệ **bạn**, không phải bảo vệ phụ thuộc.
-- Phân loại phụ thuộc bắt buộc / tuỳ chọn trước khi viết code gọi chúng.
+**1. Không đặt timeout.** Cách lan truyền sự cố phổ biến nhất.
 
-## Tự kiểm tra
+**2. Retry mà không backoff và jitter.** Tạo retry storm.
 
-1. Vì sao một phụ thuộc chậm gây thiệt hại lớn hơn một phụ thuộc chết hẳn?
-2. Ba tầng mỗi tầng retry 3 lần thì tầng cuối nhận bao nhiêu lần gọi?
-3. Vì sao `Promise.allSettled` đúng hơn `Promise.all` cho phần gợi ý sản phẩm?
+**3. Retry lỗi vĩnh viễn.** 400/404 retry bao nhiêu cũng thế.
+
+**4. Retry thao tác không idempotent.** Trừ tiền hai lần.
+
+**5. Timeout tầng trong lớn hơn tầng ngoài.** Làm việc vô ích.
+
+**6. Không có circuit breaker cho phụ thuộc bên ngoài.** Nện dịch vụ đang chết.
+
+**7. Coi mọi phụ thuộc là bắt buộc.** Uptime nhân lên rất nhanh.
+
+**8. Không có bulkhead.** Tính năng phụ chiếm hết tài nguyên của tính năng chính.
+
+**9. Không bao giờ thử.** Mã trông giống chịu lỗi, chưa chắc là chịu lỗi.
+
+**10. Nuốt lỗi im lặng.** Có dự phòng thì tốt, nhưng vẫn phải ghi log và đếm.
+
+## Mẹo nhớ
+
+> **Mọi lời gọi mạng đều SẼ thất bại. Câu hỏi là "rồi sao".**
+>
+> **Retry phải có BACKOFF và JITTER — không thì nó là cơn bão.**
+>
+> **Circuit breaker cho dịch vụ đang chết được NGHỈ để hồi phục.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Vì sao thiếu timeout làm sập cả dịch vụ của bạn?
+2. Retry storm hình thành thế nào? Ba điều kiện để retry an toàn?
+3. Ba trạng thái của circuit breaker và điều kiện chuyển?
+4. Bulkhead giải quyết vấn đề gì?
+5. Vì sao 10 phụ thuộc 99,9% lại cho ra 99%?
+
+## Tự viết lại
+
+Trang chi tiết sản phẩm gọi: CSDL sản phẩm (bắt buộc), dịch vụ tồn kho (quan trọng), dịch vụ gợi ý (phụ), dịch vụ đánh giá (phụ). Không nhìn lại, thiết kế:
+
+```text
+① timeout cho từng cái
+② cái nào có dự phòng, dự phòng là gì
+③ cái nào cần circuit breaker
+④ trang hiển thị ra sao khi mỗi cái hỏng
+```
+
+Tự kiểm: nếu dịch vụ tồn kho hỏng, bạn hiện gì — và quyết định đó có rủi ro nghiệp vụ nào?
+
+## Thử sức
+
+Sự cố: dịch vụ gợi ý chậm (không lỗi, chỉ chậm) trong 20 phút. Toàn bộ website **không truy cập được** suốt thời gian đó.
+
+Ba câu để trả lời: mô tả **chuỗi lan truyền** từ "một dịch vụ chậm" tới "cả website chết"; ba thay đổi ngăn nó lặp lại, theo thứ tự ưu tiên; và bạn **kiểm chứng** bằng cách nào. Câu khó nhất: vì sao "chậm" nguy hiểm hơn "lỗi" trong tình huống này?

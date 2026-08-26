@@ -4,165 +4,230 @@ slug: du-lieu-o-quy-mo
 summary: Replication, sharding, CAP — và cái giá thật của nhất quán cuối cùng mà người ta ít nói tới.
 level: nang-cao
 tags: [kien-truc, replication, sharding, nhat-quan]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** biết thứ tự đúng để mở rộng tầng dữ liệu, và những bug mà read replica tạo ra ngay ngày đầu.
+> **Sau bài này bạn sẽ:** phát biểu được CAP một cách chính xác, và biết vì sao sharding là quyết định gần như không đảo được.
 
-## Thứ tự đúng, và nó dài hơn bạn tưởng
+## Ý tưởng chính
 
-Mọi bước sau đều đắt hơn bước trước **một bậc** về độ phức tạp. Đừng nhảy bậc:
+Dữ liệu vượt quá một máy có hai hướng đi, và chúng giải quyết hai vấn đề khác nhau:
 
-1. **Index và sửa truy vấn** — xem [[index-va-hieu-nang-truy-van]], [[doc-explain-analyze]]
-2. **Cache** — xem [[cache-nhieu-tang]]
-3. **Máy to hơn** — một Postgres trên 32 core / 128GB RAM đi rất xa
-4. **Read replica** — 90% tải thường là đọc
-5. **Tách theo miền nghiệp vụ** — log/analytics ra database riêng
-6. **Phân vùng (partition)** trong cùng một database
-7. **Sharding** — cuối cùng, và không có đường quay lại
+**Replication** — cùng một dữ liệu ở nhiều máy. Giải quyết: tải đọc, chịu lỗi.
+**Sharding** — dữ liệu **khác nhau** ở các máy. Giải quyết: tải ghi, dung lượng.
 
-Phần lớn hệ thống người ta tưởng cần sharding thật ra đang thiếu index ở bước 1. Một bảng 500 triệu dòng có index đúng vẫn trả lời trong vài ms.
+Nhầm hai cái này dẫn tới việc chọn sai công cụ cho vấn đề đang có.
 
-## Read replica: hai bug ngày đầu tiên
+## Mental model
 
-```
-Ghi ──> Primary ──replication──> Replica 1, 2, 3 <── Đọc
-                    (trễ 10ms–vài giây)
-```
+Hãy nghĩ tới **thư viện**.
 
-### Bug 1 — Read-after-write
+> **Replication** = mở nhiều chi nhánh, **mỗi chi nhánh có bản sao của cùng bộ sách**. Nhiều người đọc cùng lúc hơn. Nhưng khi có sách mới, phải chuyển tới mọi chi nhánh — và trong lúc chuyển, các chi nhánh **không giống nhau**.
+>
+> **Sharding** = chia bộ sách ra: chi nhánh A giữ vần A–M, chi nhánh B giữ N–Z. Chứa được nhiều sách hơn tổng sức chứa một toà nhà. Nhưng muốn tìm sách phải **biết nó ở chi nhánh nào** — và câu hỏi "liệt kê mọi sách về Toán" giờ phải hỏi cả hai nơi rồi gộp lại.
 
-```ts
-// Người dùng sửa tên rồi được chuyển sang trang cá nhân
-await db.primary.users.update({ where: { id }, data: { name: 'Kiệt' } })
-redirect(`/users/${id}`)      // trang này đọc từ replica
+Cái giá của sharding nằm gọn trong hai vế cuối, và nó không giảm đi theo thời gian.
 
-// Trang hiện tên CŨ. Người dùng bấm lưu lại. Vẫn cũ. Họ báo bug "không lưu được"
-// còn bạn mở database thấy dữ liệu đã đúng.
+## Ví dụ nhỏ
+
+```text
+Ghi  →  Primary  ──sao chép──→  Replica 1  (đọc)
+                 ──sao chép──→  Replica 2  (đọc)
 ```
 
-Ba cách sửa, chọn theo tình huống:
+## Code chạy thế nào
 
-```ts
-// 1. Đọc từ primary trong một khoảng ngắn sau khi ghi — đơn giản, hiệu quả nhất
-cookies().set('vua-ghi', '1', { maxAge: 5 })
-const db = cookies().get('vua-ghi') ? primary : replica
+**Replication và độ trễ sao chép:**
 
-// 2. Chờ replica bắt kịp LSN của lệnh ghi vừa rồi (Postgres)
-const { lsn } = await primary.query('SELECT pg_current_wal_lsn() AS lsn')
-await replica.query(`SELECT pg_wal_replay_wait('${lsn}')`)
+```text
+Đồng bộ:      primary đợi replica xác nhận rồi mới báo thành công
+              ⇒ không mất dữ liệu, nhưng GHI CHẬM HƠN
+              ⇒ và replica chết thì ghi bị chặn
 
-// 3. Trả về dữ liệu mình vừa ghi, không đọc lại — thường là cách rẻ nhất
-const user = await primary.users.update({ ..., select: { id: true, name: true } })
+Bất đồng bộ:  primary báo thành công ngay, sao chép sau
+              ⇒ ghi nhanh, nhưng primary chết đột ngột
+                ⇒ MẤT các giao dịch chưa kịp sao chép
+              ⇒ mặc định của hầu hết hệ thống
 ```
 
-Cách 3 đáng thử trước: nhiều trường hợp bạn **đã có** dữ liệu mới trong tay và việc đọc lại là dư thừa.
+Hệ quả trực tiếp và rất hay gặp:
 
-### Bug 2 — Monotonic read
+```text
+① Người dùng đổi tên → ghi vào primary
+② Chuyển trang, đọc từ replica
+③ Replica chậm 100ms ⇒ thấy TÊN CŨ
+⇒ "Tôi vừa sửa mà!"
 
-Hai request liên tiếp vào hai replica có độ trễ khác nhau → dữ liệu **đi lùi**. Người dùng thấy bình luận vừa đăng, F5, nó biến mất, F5 nữa nó lại có. Sửa bằng cách ghim một người dùng vào một replica trong phạm vi phiên (sticky theo hash `user.id`).
-
-Chỉ đưa lên replica những gì **chịu được dữ liệu cũ**: báo cáo, danh sách công khai, tìm kiếm. Mọi lệnh ghi và mọi lệnh đọc-để-quyết-định phải vào primary.
-
-## CAP: cách đọc đúng
-
-CAP nói: khi mạng bị chia (**P**), phải chọn giữa nhất quán (**C**) và khả dụng (**A**). Điểm hay bị hiểu sai: **P không phải lựa chọn** — mạng sẽ chia, đó là thực tế. Nên CAP thực chất là "khi chia thì chọn C hay A".
-
-Nhưng CAP chỉ nói về lúc *đang có sự cố mạng*. Đánh đổi bạn gặp **mỗi ngày** được **PACELC** mô tả tốt hơn: *khi chia (P) thì chọn A hay C; còn lúc bình thường (E - else) thì chọn độ trễ (L) hay nhất quán (C)*.
-
-Đó chính là read replica: bạn đang chọn **L thay vì C** ở mọi request bình thường, không phải chỉ khi có sự cố. Cái giá không nằm ở lúc hỏng — nó nằm ở mọi ngày.
-
-## Sharding: và những gì bạn mất
-
-Chia dữ liệu theo **shard key** sang nhiều database.
-
-```ts
-// Theo hash: phân bố đều, nhưng thêm shard = phải chuyển dữ liệu
-const shard = shards[hash(userId) % shards.length]
-
-// Theo dải: thêm shard dễ, nhưng dễ lệch tải (khách hàng lớn dồn vào một shard)
-const shard = userId < 'm' ? shardA : shardB
-
-// Theo bảng tra: linh hoạt nhất, và cho phép chuyển từng khách hàng lẻ
-const shard = await tra.get(tenantId)
+Cách xử lý: "đọc từ primary sau khi ghi" trong một khoảng ngắn
+(read-your-own-writes).
 ```
 
-Bảng tra là lựa chọn thực dụng nhất cho hệ thống nhiều khách hàng: chuyển một khách hàng lớn sang shard riêng chỉ là đổi một dòng trong bảng tra.
+**CAP — phát biểu cho đúng:**
 
-**Chọn shard key là quyết định khó đảo nhất của cả hệ thống.** Chọn sai thì đổi nghĩa là chuyển toàn bộ dữ liệu. Tiêu chí:
+```text
+KHÔNG phải "chọn 2 trong 3".
 
-- Phải xuất hiện trong **gần như mọi truy vấn** — không có nó thì phải hỏi tất cả shard
-- Phân bố đều — `country_code` cho hệ thống Việt Nam là một shard key tồi
-- Đủ mịn — shard theo `tenant_id` mà một tenant chiếm 60% dữ liệu thì vô nghĩa
+P (chịu phân mảnh mạng) là điều BẮT BUỘC — mạng sẽ đứt, bạn không chọn.
+Nên câu hỏi thật là: KHI mạng đứt, bạn hy sinh C hay A?
 
-Ba thứ bạn **mất** ngay khi shard:
+CP: từ chối phục vụ để giữ dữ liệu đúng
+    → CSDL tài chính, tồn kho.  Thà lỗi còn hơn sai.
 
-| Mất | Nghĩa là |
-|---|---|
-| `JOIN` xuyên shard | Phải gộp ở tầng ứng dụng |
-| Transaction ACID xuyên shard | Cần saga hoặc 2PC — cả hai đều phức tạp |
-| `COUNT`, `ORDER BY` toàn cục | Phải hỏi mọi shard rồi gộp |
-| `UNIQUE` toàn cục | Chỉ unique trong shard; email duy nhất cần bảng riêng |
-
-Dòng cuối là cái bẫy hay gặp: sau khi shard, ràng buộc `UNIQUE(email)` **không còn đảm bảo gì trên toàn hệ thống**.
-
-## Phân vùng: thứ nên thử trước sharding
-
-Partition chia một bảng lớn thành nhiều bảng con **trong cùng một database** — giữ được `JOIN`, transaction, và unique:
-
-```sql
-CREATE TABLE events (
-  id BIGSERIAL,
-  created_at TIMESTAMPTZ NOT NULL,
-  payload JSONB
-) PARTITION BY RANGE (created_at);
-
-CREATE TABLE events_2026_08 PARTITION OF events
-  FOR VALUES FROM ('2026-08-01') TO ('2026-09-01');
+AP: vẫn phục vụ, chấp nhận dữ liệu có thể lệch tạm thời
+    → mạng xã hội, giỏ hàng.  Thà cũ còn hơn không dùng được.
 ```
 
-Hai lợi ích lớn:
+Và khi mạng **không** đứt — tức là hầu hết thời gian — bạn vẫn có một lựa chọn khác: đánh đổi giữa **độ trễ** và **nhất quán**. Đó là phần mà CAP không nói tới nhưng lại ảnh hưởng tới hệ thống mỗi ngày.
 
-- Truy vấn có điều kiện thời gian chỉ đọc đúng phân vùng cần (**partition pruning**)
-- Xoá dữ liệu cũ là `DROP TABLE events_2026_01` — **tức thì**, thay vì một `DELETE` chạy hàng giờ và làm phình bảng
+**Nhất quán cuối cùng — cái giá thật:**
 
-Với bảng log/event, partition theo thời gian giải quyết được gần hết vấn đề mà không cần shard. Xem [[xoa-mem-va-vong-doi-ban-ghi]].
+```text
+Người ta nói: "cuối cùng thì các bản sao cũng giống nhau."
+Ít ai nói: MÃ ỨNG DỤNG phải xử lý giai đoạn ở giữa.
 
-## Nhất quán cuối cùng: cái giá ít được nói
+  Đọc xong giá cũ → tính tiền sai
+  Đếm hai lần từ hai replica → hai con số khác nhau
+  Hai người cùng đặt chỗ cuối cùng → cả hai thành công
 
-Không phải "dữ liệu cũ vài giây" — mà là **mọi logic nghiệp vụ đọc dữ liệu đó phải chịu được sự cũ đó**:
-
-```ts
-// Đọc từ replica trễ 2 giây. Người dùng vừa nạp tiền 2 giây trước.
-const soDu = await replica.wallets.findUnique({ where: { userId } })
-if (soDu.amount < giaTien) throw new KhongDuTien()   // ← SAI, họ vừa nạp
+⇒ Nhất quán cuối cùng không phải "chậm hơn một chút".
+  Nó là "ứng dụng của bạn phải xử lý xung đột".
 ```
 
-Bug này không sửa được bằng cách "chờ lâu hơn". Nó sửa bằng cách **phân loại lại**: số dư là dữ liệu để quyết định, nên nó không bao giờ được đọc từ replica.
+## Cú pháp
 
-Quy tắc rút ra: **dữ liệu để hiển thị thì cũ được; dữ liệu để quyết định thì không.** Cùng một bảng, hai đường đọc khác nhau — giống hệt kết luận ở [[cache-nhieu-tang]].
+**Sharding — chọn khoá là quyết định quan trọng nhất:**
 
-## Lỗi hay gặp
+```text
+Theo HASH của id      phân bố đều ✅
+                      truy vấn theo khoảng ❌ (phải hỏi mọi shard)
 
-| Lỗi | Hậu quả | Sửa thế nào |
+Theo KHOẢNG (ngày)    truy vấn theo khoảng ✅
+                      HOT SPOT: mọi ghi mới dồn vào shard cuối ❌
+
+Theo TENANT/khách hàng  cách ly tốt ✅, dễ hiểu ✅
+                      khách hàng lớn làm lệch tải ❌
+```
+
+**Sharding phá vỡ những thứ bạn đang dùng hằng ngày:**
+
+```text
+❌ JOIN giữa các shard        → phải gộp ở tầng ứng dụng
+❌ Transaction xuyên shard     → cần giao thức phân tán, rất phức tạp
+❌ AUTO_INCREMENT toàn cục     → cần UUID hoặc snowflake id
+❌ Truy vấn không chứa khoá shard → quét MỌI shard
+❌ Đổi khoá shard sau này      → phải chuyển toàn bộ dữ liệu
+```
+
+Dòng cuối là lý do gọi đây là quyết định **gần như không đảo được**: chọn sai khoá shard, cách sửa duy nhất là di chuyển toàn bộ dữ liệu trong lúc hệ thống đang chạy.
+
+**Trước khi shard, thử hết những thứ này:**
+
+```text
+① Index và tối ưu truy vấn      thường đủ, và rẻ nhất
+② Cache                          giảm tải đọc
+③ Replica đọc                    tải đọc chia được ngay
+④ Phân vùng trong CÙNG một CSDL  (Postgres partitioning)
+   → có được lợi ích về truy vấn theo khoảng mà KHÔNG mất JOIN
+⑤ Máy to hơn                     một máy hiện đại chứa hàng TB
+⑥ Tách bảng lớn nhất ra CSDL riêng
+──────────────────────────────
+⑦ Sharding                       chỉ khi 6 cách trên đã hết
+```
+
+## Tại sao cần nó
+
+Vì sharding thường được chọn quá sớm, và cái giá của nó không bao giờ giảm:
+
+```text
+Một Postgres hiện đại xử lý được:
+  hàng TB dữ liệu
+  hàng chục nghìn truy vấn/giây (có index tốt)
+
+Phần lớn hệ thống KHÔNG BAO GIỜ cần shard.
+```
+
+**Cách chọn theo mô hình đọc/ghi:**
+
+```text
+Đọc nhiều, ghi ít (thường gặp)  → replica đọc + cache. Không cần shard.
+Ghi nhiều                        → shard, hoặc CSDL chuyên cho ghi
+Dữ liệu quá lớn cho một máy      → shard hoặc phân tầng lưu trữ
+```
+
+**Và một câu hỏi thường bị bỏ qua: dữ liệu cũ có cần nằm cùng chỗ không?**
+
+```text
+Rất nhiều "vấn đề dung lượng" thực ra là vấn đề vòng đời:
+  90% dữ liệu là bản ghi cũ hơn một năm, gần như không ai đọc.
+  Chuyển chúng sang lưu trữ lạnh ⇒ bảng nóng nhỏ lại nhiều lần.
+  ⇒ Rẻ hơn sharding rất nhiều, và đảo được ([[xoa-mem-va-vong-doi-ban-ghi]]).
+```
+
+## So sánh
+
+| | Replication | Sharding |
 |---|---|---|
-| Shard trước khi thêm index | Phức tạp gấp mười, vấn đề gốc còn nguyên | Làm đủ 6 bước trước |
-| Đọc lại từ replica sau khi ghi | "Không lưu được" mà dữ liệu vẫn đúng | Đọc primary sau khi ghi, hoặc trả về bản vừa ghi |
-| Không ghim replica theo phiên | Dữ liệu đi lùi khi F5 | Sticky theo hash user |
-| Đọc dữ liệu quyết định từ replica | Trừ tiền/kho sai | Quyết định luôn đọc primary |
-| Shard key không có trong truy vấn | Mọi truy vấn phải hỏi tất cả shard | Chọn khoá có trong mọi truy vấn |
-| Tin `UNIQUE` sau khi shard | Trùng email trên toàn hệ thống | Bảng tra unique toàn cục |
-| `DELETE` dữ liệu cũ trên bảng lớn | Chạy hàng giờ, bảng phình | Partition + `DROP` |
-| Coi nhất quán cuối cùng là "chậm vài giây" | Bug nghiệp vụ, không phải bug hiệu năng | Phân loại hiển thị / quyết định |
+| Dữ liệu mỗi máy | **giống nhau** | **khác nhau** |
+| Giải quyết | tải đọc, chịu lỗi | tải ghi, dung lượng |
+| Độ phức tạp | thấp | **cao** |
+| JOIN, transaction | giữ nguyên | vỡ |
+| Đảo ngược được | ✅ | ❌ rất khó |
 
-## Ghi nhớ
+## Dễ nhầm
 
-- Sáu bước trước sharding — và phần lớn hệ thống dừng ở bước 1 hoặc 3.
-- Read replica tạo ra read-after-write và monotonic read ngay ngày đầu.
-- PACELC mô tả đúng hơn CAP: bạn đánh đổi độ trễ và nhất quán **mỗi ngày**, không chỉ khi hỏng.
-- Shard key là quyết định khó đảo nhất; shard làm mất `JOIN`, transaction và `UNIQUE` toàn cục.
+**1. Shard quá sớm.** Trả giá phức tạp cho vấn đề chưa có.
 
-## Tự kiểm tra
+**2. Chọn sai khoá shard.** Sửa nghĩa là chuyển toàn bộ dữ liệu.
 
-1. Người dùng sửa tên, trang sau vẫn hiện tên cũ. Ba cách sửa, và cách nào rẻ nhất?
-2. Vì sao `country_code` là shard key tồi cho hệ thống chỉ phục vụ Việt Nam?
-3. Sau khi shard, `UNIQUE(email)` còn đảm bảo gì?
+**3. Shard theo thời gian mà không nghĩ tới hot spot.** Mọi ghi dồn vào một shard.
+
+**4. Đọc từ replica ngay sau khi ghi.**
+
+**5. Coi nhất quán cuối cùng là "chậm hơn chút".** Nó là "phải xử lý xung đột".
+
+**6. Phát biểu CAP là "chọn 2 trong 3".** P là bắt buộc.
+
+**7. Quên chuyển đổi khi primary chết.** Replica không tự lên làm primary.
+
+**8. Không kiểm tra độ trễ sao chép.** Failover khi replica trễ = mất dữ liệu.
+
+**9. Nhầm replication với sao lưu.** Xoá nhầm một bảng ⇒ replica xoá theo ngay.
+
+**10. Bỏ qua phân vùng và vòng đời dữ liệu.** Hai cách rẻ hơn nhiều mà đảo được.
+
+## Mẹo nhớ
+
+> **Replication = cùng dữ liệu, nhiều máy. Sharding = khác dữ liệu, nhiều máy.**
+>
+> **CAP: P là bắt buộc; câu hỏi là KHI mạng đứt thì hy sinh C hay A.**
+>
+> **Replica KHÔNG phải sao lưu — nó sao chép cả lệnh xoá nhầm.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Replication và sharding khác nhau ở đâu, mỗi cái giải quyết vấn đề gì?
+2. Phát biểu CAP cho đúng.
+3. Cái giá thật của nhất quán cuối cùng?
+4. Sharding phá vỡ những gì?
+5. Sáu thứ nên thử trước khi shard?
+
+## Tự viết lại
+
+Hệ thống thương mại điện tử: 500 GB dữ liệu, 90% đọc, đỉnh 5.000 req/s, CSDL bắt đầu chậm. Không nhìn lại, viết kế hoạch:
+
+```text
+① điều tra gì trước
+② thứ tự các biện pháp
+③ tới bước nào mới cân nhắc shard
+④ nếu shard, chọn khoá gì và vì sao
+```
+
+Tự kiểm: với 500 GB và 90% đọc, bạn có thật sự tới bước ③ không?
+
+## Thử sức
+
+Sếp nói: *"Dữ liệu sắp quá lớn, chúng ta cần shard."* Hiện tại: 200 GB, 2.000 req/s, 95% đọc, và có vài truy vấn chậm.
+
+Ba câu để trả lời: bạn hỏi lại những gì trước khi đồng ý; bạn đề xuất làm gì **thay vì** shard, theo thứ tự; và bạn trình bày lập luận thế nào để nó thuyết phục chứ không phải phản đối. Câu khó nhất: nếu sau khi làm hết mọi cách rẻ hơn mà vẫn cần shard, quyết định nào bạn phải đưa ra **đầu tiên** — và vì sao nó khó sửa nhất?

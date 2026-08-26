@@ -4,184 +4,240 @@ slug: ranh-gioi-service
 summary: Monolith hay microservices là câu hỏi sai. Câu hỏi đúng là ranh giới nằm ở đâu và bạn mất gì khi cắt.
 level: nang-cao
 tags: [kien-truc, microservices, monolith, ranh-gioi]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** biết microservices giải quyết vấn đề gì (và không giải quyết vấn đề gì), và tìm được ranh giới đúng trước khi cắt.
+> **Sau bài này bạn sẽ:** biết cắt service theo tiêu chí gì, và những gì bạn **mất** ngay khi vẽ đường cắt đầu tiên.
 
-## Microservices giải quyết vấn đề tổ chức, không phải vấn đề kỹ thuật
+## Ý tưởng chính
 
-Đây là điều cần hiểu trước mọi thứ khác. Lợi ích thật của việc tách service:
+"Monolith hay microservices" là câu hỏi sai, vì nó hỏi về **số lượng tiến trình**.
 
-- **Triển khai độc lập** — 8 nhóm không phải xếp hàng chờ một pipeline
-- **Mở rộng độc lập** — service xử lý ảnh cần GPU, service auth không
-- **Cách ly lỗi** — nếu có bulkhead thật, xem [[thiet-ke-cho-that-bai]]
-- **Tự do công nghệ** — thường bị lạm dụng nhiều hơn được dùng đúng
+Câu hỏi đúng: **ranh giới nằm ở đâu**, và **có cần đặt ranh giới đó lên ranh giới mạng không**.
 
-Ba điều đầu là vấn đề **của tổ chức nhiều nhóm**. Với một nhóm 5 người, không có vấn đề nào trong đó tồn tại — nhưng bạn vẫn phải trả toàn bộ chi phí.
+Ranh giới rõ ràng trong một monolith tốt hơn nhiều so với ranh giới lộn xộn trải trên mười service.
 
-Cái bạn trả, và nó không nhỏ:
+## Mental model
 
-| Trong monolith | Sau khi tách |
-|---|---|
-| Gọi hàm, 0,001 ms, không bao giờ lỗi | Gọi mạng, 1–50 ms, **có thể lỗi hoặc treo** |
-| `JOIN` một câu | Gọi 2 service rồi gộp bằng tay |
-| Một transaction ACID | Saga, đền bù, trạng thái trung gian |
-| Đổi kiểu dữ liệu = refactor | Đổi kiểu = phá vỡ hợp đồng, cần versioning |
-| Stack trace một mạch | Cần distributed tracing mới lần được |
-| Chạy `pnpm dev` | Docker Compose 12 service, hoặc mock |
+Hãy nghĩ tới **tách một phòng ban ra thành công ty riêng**.
 
-Dòng "một transaction ACID" là dòng đắt nhất. Trong monolith, "trừ kho và tạo đơn cùng thành công hoặc cùng thất bại" là một `BEGIN/COMMIT`. Sau khi tách, nó thành một bài toán phân tán thật sự.
+> Hai đội trong cùng công ty: ngồi khác tầng, nhưng cần gì thì đi bộ sang hỏi. Nhanh, không thủ tục.
+>
+> Tách thành hai công ty: mọi trao đổi thành **hợp đồng**. Đổi một thứ nhỏ cũng phải thông báo trước, thương lượng, có phiên bản. Không ai được vào xem sổ sách của bên kia.
+>
+> Đôi khi tách là đúng — hai bên phát triển theo hai hướng khác nhau, quy mô khác nhau, nhịp khác nhau. Nhưng **không ai tách công ty chỉ để cho gọn**.
 
-## Bắt đầu bằng monolith có ranh giới rõ
+Ranh giới mạng chính là ranh giới pháp nhân đó. Nó có ích khi giải quyết một vấn đề **về con người và vận hành**, không phải vấn đề về mã.
 
-Con đường ít đau nhất: **monolith module hoá**. Ranh giới nằm trong code, chưa nằm trên mạng.
+## Ví dụ nhỏ
 
+```text
+❌ Cắt theo tầng kỹ thuật:  service-database, service-api, service-ui
+   → mọi tính năng phải sửa cả ba ⇒ vẫn phải deploy cùng nhau
+   → được cái phức tạp, không được cái độc lập.
+
+✅ Cắt theo miền nghiệp vụ: đặt-hàng, thanh-toán, kho, thông-báo
+   → một tính năng thường nằm gọn trong một service.
 ```
+
+## Code chạy thế nào
+
+**Tiêu chí cắt — theo thứ tự quan trọng:**
+
+```text
+① MIỀN NGHIỆP VỤ
+   Ranh giới nên trùng ranh giới của bài toán, không phải của tầng kỹ thuật.
+   Kiểm nhanh: một yêu cầu nghiệp vụ điển hình chạm mấy service?
+     1 ⇒ ranh giới tốt.  3+ ⇒ cắt sai chỗ.
+
+② DỮ LIỆU SỞ HỮU
+   Mỗi service sở hữu dữ liệu của mình, KHÔNG service nào đọc bảng của service khác.
+   Dùng chung CSDL = ranh giới giả: đổi schema là hỏng chỗ khác.
+
+③ NHỊP THAY ĐỔI
+   Phần đổi hằng ngày và phần đổi hằng năm không nên bị buộc chung.
+
+④ ĐỘI SỞ HỮU
+   Một service nên có một đội chịu trách nhiệm.
+   Hai đội cùng sửa một service ⇒ ranh giới sai chỗ.
+
+⑤ YÊU CẦU QUY MÔ KHÁC HẲN
+   Xử lý ảnh cần 20 máy, quản trị cần 1 ⇒ lý do chính đáng để tách.
+```
+
+Tiêu chí ② là tiêu chí phân biệt thật sự: nếu hai service đọc chung một bảng thì bạn có hai tiến trình, không có hai service.
+
+**Bạn mất gì ngay khi cắt:**
+
+```text
+❌ TRANSACTION
+   Trong monolith:  BEGIN; trừ kho; tạo đơn; COMMIT;
+   Qua service:     hai lời gọi mạng, cái thứ hai có thể thất bại
+                    ⇒ cần saga, bù trừ, hoặc chấp nhận không nhất quán.
+
+❌ GỌI HÀM RẺ
+   0,001ms  →  1–50ms, và có thể thất bại.
+
+❌ REFACTOR XUYÊN RANH GIỚI
+   Đổi tên một trường trong monolith: IDE làm được.
+   Qua API: đổi hợp đồng, giữ tương thích ngược, phối hợp deploy.
+
+❌ GỠ LỖI MỘT CHỖ
+   Stack trace một luồng → log rải trên nhiều dịch vụ.
+   Cần trace phân tán mới lần lại được ([[quan-sat-he-thong]]).
+```
+
+Không cái nào trong bốn cái đó lấy lại được. Đó là lý do phải chắc trước khi cắt.
+
+## Cú pháp
+
+**Monolith mô-đun — thường là câu trả lời đúng:**
+
+```text
 src/
-  modules/
-    orders/
-      index.ts        ← API công khai DUY NHẤT của module
-      service.ts
-      repo.ts         ← chỉ orders/* được import file này
-    inventory/
-      index.ts
-      service.ts
-      repo.ts
+  dat-hang/     ├── api.ts   service.ts   repo.ts   index.ts  ← chỉ index.ts
+  thanh-toan/   │                                                được import
+  kho/          │
+  thong-bao/    ┘
+
+Quy tắc: module chỉ gọi nhau qua index.ts, KHÔNG chạm vào ruột nhau,
+KHÔNG đọc bảng của nhau.
 ```
 
-```ts
-// ❌ Xuyên qua ranh giới, chạm thẳng vào ruột module khác
-import { inventoryRepo } from '@/modules/inventory/repo'
-
-// ✅ Chỉ qua cửa trước
-import { inventory } from '@/modules/inventory'
+```text
+Được: ranh giới rõ, đội độc lập về mã, transaction còn nguyên,
+      deploy đơn giản, gỡ lỗi dễ.
+Và:   nếu sau này cần tách, ranh giới ĐÃ CÓ SẴN — việc tách thành cơ học.
 ```
 
-Ép bằng máy, đừng ép bằng lời nhắc trong code review:
+Điều đáng chú ý: phần khó của microservices không phải "chạy nhiều tiến trình", mà là **tìm ra ranh giới đúng**. Monolith mô-đun cho phép bạn làm phần khó trước, với chi phí sai lầm thấp hơn nhiều.
 
-```json
-// eslint: chặn import xuyên vào bên trong module khác
-"no-restricted-imports": ["error", {
-  "patterns": [{ "group": ["@/modules/*/!(index)"], "message": "Chỉ import qua modules/<tên>" }]
-}]
+**Nếu tách — tách dần, đừng viết lại:**
+
+```text
+① Dựng ranh giới mô-đun trong monolith trước
+② Chọn MỘT mô-đun có ranh giới rõ nhất, ít phụ thuộc nhất
+③ Tách nó ra
+④ Chạy song song, đo, học
+⑤ Lặp lại
+
+KHÔNG: viết lại toàn bộ thành microservices trong một dự án lớn.
+       Đó là dự án nhiều tháng không giao được gì, và ranh giới
+       vẫn do đoán mà ra.
 ```
 
-Giá trị của bước này: nếu về sau cần tách thật, ranh giới **đã có sẵn** và việc tách là thay lời gọi hàm bằng lời gọi mạng. Nếu không cần tách, bạn vẫn được lợi về khả năng đọc hiểu mà không trả chi phí phân tán nào.
+**Giao tiếp giữa service:**
 
-## Ranh giới đúng nằm ở đâu
+```text
+Đồng bộ (HTTP/gRPC)
+  Dùng khi cần kết quả ngay.
+  Tạo phụ thuộc thời gian thực: A gọi B, B chết ⇒ A hỏng.
 
-Cắt theo **năng lực nghiệp vụ**, không theo tầng kỹ thuật:
-
-```
-❌ Theo tầng — mỗi tính năng phải sửa cả ba, luôn phải deploy đồng bộ
-   service-api / service-business-logic / service-database
-
-✅ Theo nghiệp vụ — mỗi cái sở hữu trọn vẹn một miền, deploy độc lập được
-   orders / inventory / payments / notifications
+Bất đồng bộ (sự kiện)
+  Dùng khi thông báo "đã xảy ra chuyện gì".
+  Bên nhận chết ⇒ xử lý sau ⇒ ít phụ thuộc hơn.
 ```
 
-Ba tín hiệu cho biết ranh giới **đúng**:
+Nguyên tắc: **truy vấn thì đồng bộ, thông báo thì bất đồng bộ** — và khi phân vân, chọn bất đồng bộ, vì nó giảm phụ thuộc ([[hang-doi-va-xu-ly-bat-dong-bo]]).
 
-- **Dữ liệu không dùng chung.** Mỗi service sở hữu bảng của nó. Hai service ghi cùng một bảng thì đó là **một** service bị chẻ đôi.
-- **Đổi nghiệp vụ chỉ chạm một service.** Nếu "thêm mã giảm giá" phải sửa 5 service, ranh giới sai.
-- **Từ vựng khác nhau.** "Đơn hàng" với kho là danh sách SKU và số lượng; với kế toán là số tiền và thuế. Hai mô hình khác nhau ở hai bên ranh giới là dấu hiệu ranh giới đúng.
+## Tại sao cần nó
 
-Tín hiệu ranh giới **sai**: hai service luôn deploy cùng nhau, hoặc gọi nhau liên tục trong một request.
+Vì microservices giải quyết **vấn đề tổ chức**, không phải vấn đề kỹ thuật:
 
-## Saga: khi transaction không còn
+```text
+Lý do CHÍNH ĐÁNG:
+  Nhiều đội giẫm chân nhau khi deploy
+  Các phần cần quy mô rất khác nhau
+  Cần cách ly lỗi thật sự
+  Cần dùng ngôn ngữ/công nghệ khác cho một phần
 
-Trong monolith:
-
-```ts
-await db.$transaction([truKho(), taoDon(), truTien()])   // cùng sống hoặc cùng chết
+Lý do KHÔNG chính đáng:
+  "Ai cũng làm vậy"
+  "Monolith là lỗi thời"
+  "Cho code sạch hơn"        ← module làm được, rẻ hơn nhiều
 ```
 
-Tách rồi thì không có `$transaction` nào bao được ba service. Mỗi bước phải có **bước đền bù**:
+**Chi phí phải trả trước khi có service thứ hai:**
 
-```
-Bước                        Đền bù nếu bước sau thất bại
-1. Giữ kho (reserve)        Nhả kho
-2. Tạo đơn (pending)        Đánh dấu đơn thất bại
-3. Trừ tiền                 Hoàn tiền
-4. Xác nhận kho             —
-```
-
-```ts
-async function datHang(input: DonInput) {
-  const daLam: (() => Promise<void>)[] = []
-  try {
-    const giu = await inventory.giuKho(input)
-    daLam.push(() => inventory.nhaKho(giu.id))
-
-    const don = await orders.tao({ ...input, status: 'pending' })
-    daLam.push(() => orders.danhDauThatBai(don.id))
-
-    await payments.tru(don)                    // không đẩy đền bù: đây là bước cuối
-    await inventory.xacNhan(giu.id)
-    return don
-  } catch (loi) {
-    // Đền bù theo thứ tự NGƯỢC. Và mỗi hàm đền bù phải idempotent — bản thân việc
-    // đền bù cũng có thể thất bại và bị chạy lại.
-    for (const hoanTac of daLam.reverse()) {
-      await hoanTac().catch((e) => logger.error({ e, msg: 'đền bù thất bại' }))
-    }
-    throw loi
-  }
-}
+```text
+□ Trace phân tán (không có thì không gỡ lỗi được)
+□ Thu gom log tập trung
+□ CI/CD cho nhiều dịch vụ
+□ Quản lý phiên bản API và tương thích ngược
+□ Xử lý lỗi phân tán ([[thiet-ke-cho-that-bai]])
+□ Môi trường dev chạy được nhiều service cùng lúc
 ```
 
-Hai điều saga **không** cho bạn, và phải thiết kế giao diện người dùng quanh chúng:
+Sáu dòng này là **thuế cố định**, không phụ thuộc bạn có 2 hay 20 service. Đội chưa trả nổi thuế này thì tách service sẽ làm mọi việc chậm lại, không nhanh lên.
 
-- **Không có isolation.** Có khoảng thời gian đơn hàng ở trạng thái `pending` và người khác thấy được.
-- **Không đảm bảo đền bù thành công.** "Hoàn tiền thất bại" là trạng thái phải có người xử lý — nên nó cần một hàng đợi và một báo động, xem [[hang-doi-va-xu-ly-bat-dong-bo]].
+**Con số để cân nhắc:** dưới 10 kỹ sư, monolith mô-đun gần như luôn là lựa chọn đúng. Ranh giới đội chưa đủ rõ để ranh giới service có nghĩa.
 
-## Đừng chia sẻ database
+## So sánh
 
-Cách phá vỡ microservices nhanh nhất:
-
-```
-service-orders ──┐
-service-billing ─┼──> cùng một database, cùng các bảng
-service-report ──┘
-```
-
-Bạn nhận đủ chi phí phân tán mà **không nhận được lợi ích nào**: đổi schema phá vỡ cả ba service, deploy vẫn phải đồng bộ, và không service nào thật sự sở hữu dữ liệu của nó. Đây là "distributed monolith" — dạng kiến trúc tệ nhất trong cả hai thế giới.
-
-Cần dữ liệu của service khác thì: gọi API của nó, hoặc nghe event của nó và giữ một bản đọc riêng (read model) trong database của mình.
-
-## Khi nào tách là đúng
-
-Có ít nhất một dấu hiệu thật:
-
-- Nhiều nhóm đang chặn nhau ở cùng một pipeline deploy
-- Một phần hệ thống có nhu cầu tài nguyên **rất khác** (xử lý video, ML)
-- Một phần cần độ tin cậy khác hẳn (thanh toán không được chết khi báo cáo chết)
-- Một phần đang được viết lại hoàn toàn (dùng **strangler fig**: dựng service mới bên cạnh, chuyển dần lưu lượng qua)
-
-Không có dấu hiệu nào ở trên thì monolith module hoá đang là câu trả lời đúng, và nói ra điều đó là một phần việc của tech lead — xem [[ra-quyet-dinh-ky-thuat]].
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
+| | Monolith mô-đun | Microservices |
 |---|---|---|
-| Tách vì "microservices hiện đại" | Trả hết chi phí, không có lợi ích | Cần lý do thật |
-| Nhiều service dùng chung database | Distributed monolith | Mỗi service sở hữu bảng của nó |
-| Cắt theo tầng kỹ thuật | Mọi tính năng phải sửa mọi service | Cắt theo nghiệp vụ |
-| Giả định vẫn có transaction | Dữ liệu không nhất quán khi lỗi | Saga + đền bù idempotent |
-| Đền bù không idempotent | Hoàn tiền hai lần | Chống trùng bằng `UNIQUE` |
-| Không có tracing | Không lần được request qua 6 service | Xem [[quan-sat-he-thong]] |
-| Hai service luôn deploy cùng nhau | Ranh giới sai | Gộp lại |
-| Tách khi nhóm còn 5 người | Vận hành nặng hơn phần việc thật | Monolith module hoá |
+| Ranh giới | mã | mạng |
+| Transaction | ✅ | ❌ saga |
+| Deploy | một lần | độc lập |
+| Gỡ lỗi | dễ | cần trace |
+| Đội độc lập | một phần | ✅ |
+| Chi phí vận hành | thấp | **cao** |
 
-## Ghi nhớ
+## Dễ nhầm
 
-- Microservices giải quyết vấn đề **tổ chức**; một nhóm nhỏ không có vấn đề đó.
-- Monolith module hoá cho bạn ranh giới mà không trả chi phí phân tán — ép bằng lint.
-- Dữ liệu dùng chung = một service bị chẻ đôi, không phải hai service.
-- Saga không có isolation và đền bù có thể thất bại; giao diện phải tính tới điều đó.
+**1. Cắt theo tầng kỹ thuật.** Mọi tính năng vẫn phải sửa mọi service.
 
-## Tự kiểm tra
+**2. Dùng chung CSDL.** Ranh giới giả.
 
-1. Ba lợi ích chính của microservices thuộc loại vấn đề nào?
-2. Hai service ghi cùng một bảng nói lên điều gì về ranh giới?
-3. Saga không cho bạn hai thứ gì mà transaction ACID có?
+**3. Tách trước khi có ranh giới rõ trong mã.** Đoán sai và trả giá đắt.
+
+**4. Viết lại toàn bộ trong một dự án lớn.** Nhiều tháng không giao được gì.
+
+**5. Không đầu tư quan sát trước.** Không gỡ lỗi được.
+
+**6. Gọi đồng bộ ở chỗ đáng lẽ là sự kiện.** Chuỗi phụ thuộc thời gian thực.
+
+**7. Chia quá nhỏ.** Mỗi tính năng chạm 5 service.
+
+**8. Tách vì mốt.** Trả chi phí, không nhận lợi ích.
+
+**9. Không quản lý phiên bản API.** Một thay đổi làm hỏng nhiều bên.
+
+**10. Quên rằng transaction đã mất.** Phát hiện lúc dữ liệu đã lệch.
+
+## Mẹo nhớ
+
+> **Câu hỏi là RANH GIỚI Ở ĐÂU, không phải bao nhiêu tiến trình.**
+>
+> **Cắt theo miền nghiệp vụ; mỗi service sở hữu dữ liệu của mình.**
+>
+> **Monolith mô-đun trước — ranh giới có sẵn thì tách sau là cơ học.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Năm tiêu chí cắt service, cái nào phân biệt thật sự?
+2. Bốn thứ bạn mất ngay khi cắt?
+3. Vì sao cắt theo tầng kỹ thuật là sai?
+4. Vì sao dùng chung CSDL làm ranh giới trở thành giả?
+5. Những chi phí nào phải trả **trước** khi có service thứ hai?
+
+## Tự viết lại
+
+Ứng dụng thương mại điện tử monolith: sản phẩm, giỏ hàng, đặt hàng, thanh toán, kho, thông báo, đánh giá. Không nhìn lại:
+
+```text
+① chia thành các mô-đun, nêu ranh giới
+② nếu buộc phải tách MỘT service, chọn cái nào, vì sao
+③ nó giao tiếp với phần còn lại thế nào
+④ bạn mất gì khi tách nó
+```
+
+Tự kiểm: lựa chọn ở ② của bạn có ít phụ thuộc hai chiều nhất không — hay bạn chọn cái "dễ hình dung nhất"?
+
+## Thử sức
+
+Đội 8 người, monolith 200.000 dòng, deploy mất 40 phút và hay xung đột. Có người đề xuất chuyển sang microservices.
+
+Ba câu để trả lời: bạn hỏi lại những gì để tìm **vấn đề thật**; bạn đề xuất gì thay thế và vì sao nó giải quyết đúng vấn đề đó; và nếu vẫn quyết định tách, bạn làm theo thứ tự nào. Câu khó nhất: trong "deploy 40 phút" và "hay xung đột", cái nào là lý do chính đáng để tách service — và cái nào có cách sửa rẻ hơn nhiều?
