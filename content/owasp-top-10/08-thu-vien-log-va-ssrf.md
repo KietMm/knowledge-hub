@@ -4,135 +4,233 @@ slug: thu-vien-log-va-ssrf
 summary: Ba nhóm rủi ro còn lại — phụ thuộc có CVE, không nhìn thấy tấn công, và server bị lừa gọi nội bộ.
 level: nang-cao
 tags: [owasp, dependency, logging, ssrf]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** dựng được quy trình cập nhật thư viện, biết ghi log gì và không ghi gì, và chặn được SSRF.
+> **Sau bài này bạn sẽ:** biết vì sao "không có log" cũng là lỗ hổng, và hiểu SSRF — kiểu tấn công dùng chính máy chủ của bạn làm công cụ.
 
-## A06 — Thư viện có lỗ hổng
+## Ý tưởng chính
 
-Phần lớn code trong ứng dụng của bạn không do bạn viết. Một dự án Node điển hình có hàng trăm package phụ thuộc gián tiếp.
+Ba nhóm rủi ro trong bài này ít được nói tới hơn XSS hay SQL injection, nhưng chúng gây ra những sự cố lớn nhất:
 
-```bash
-pnpm audit                     # lỗ hổng đã biết
-pnpm outdated                  # phiên bản đã cũ
-pnpm why ten-package           # vì sao package này có mặt
+```text
+A06  Thư viện có lỗ hổng   → bạn không viết code sai, nhưng bạn dùng code sai
+A09  Thiếu log và giám sát  → bị tấn công mà không biết, trong nhiều tháng
+A10  SSRF                   → máy chủ của bạn bị lừa gọi vào mạng nội bộ
 ```
 
-Quy trình tối thiểu nên có:
+## Mental model
 
-1. **Renovate hoặc Dependabot** tự mở PR nâng cấp. Gộp bản vá bảo mật tự động khi CI xanh.
-2. **Lockfile được commit** và CI cài bằng `--frozen-lockfile`.
-3. **CI chặn** khi có lỗ hổng mức cao.
-4. Rà soát định kỳ và **gỡ package không còn dùng** — cách giảm rủi ro rẻ nhất.
+Ba hình ảnh, mỗi cái một câu:
 
-Cẩn thận với chuỗi cung ứng: package bị chiếm quyền, tên gõ nhầm (`react-dom` vs `react-dorn`), và script `postinstall` chạy tuỳ ý lúc cài. Với môi trường nhạy cảm, cài bằng `--ignore-scripts`.
+> **A06** — bạn xây nhà rất chắc, nhưng dùng **ổ khoá của một hãng vừa bị công bố lỗi**. Nhà bạn không sai; ổ khoá sai.
+>
+> **A09** — nhà bạn **không có camera**. Trộm đã vào, đã đi, và bạn chỉ biết khi phát hiện mất đồ ba tháng sau.
+>
+> **A10** — kẻ tấn công **nhờ bạn đi lấy hộ một món đồ**. Bạn có chìa khoá vào kho nội bộ; hắn thì không. Hắn không cần đột nhập — hắn chỉ cần bạn đi hộ.
 
-## A09 — Logging và giám sát
+Hình ảnh thứ ba là chìa khoá để hiểu SSRF: **máy chủ của bạn ở trong mạng nội bộ, còn kẻ tấn công thì không.**
 
-Nhiều vụ xâm nhập tồn tại hàng tháng vì không ai nhìn thấy. Log không phải để debug — nó là **hệ thống phát hiện**.
-
-### Nên ghi
+## Ví dụ nhỏ
 
 ```ts
-ghiLog.info({
-  suKien: 'dang_nhap_that_bai',
-  email: chePhanGiua(email),        // che bớt, không ghi nguyên
-  ip: req.headers.get('x-forwarded-for'),
-  requestId,
-  thoiDiem: new Date().toISOString(),
+// Tính năng vô hại: cho người dùng nhập URL ảnh để tải về
+const res = await fetch(req.body.url)
+```
+
+```text
+Người dùng gửi:  http://169.254.169.254/latest/meta-data/iam/credentials
+⇒ Đây là địa chỉ metadata của AWS — chỉ truy cập được TỪ BÊN TRONG
+⇒ Máy chủ của bạn gọi hộ, và trả về khoá IAM cho kẻ tấn công
+```
+
+## Code chạy thế nào
+
+**SSRF — vì sao khó chặn:**
+
+```text
+Chặn bằng danh sách đen KHÔNG hiệu quả — có quá nhiều cách viết:
+
+  http://169.254.169.254        địa chỉ metadata
+  http://[::ffff:169.254.169.254]  IPv6 mapped
+  http://2852039166             dạng số nguyên
+  http://0251.0376.0251.0376    dạng bát phân
+  http://metadata.google.internal  tên miền nội bộ
+  http://ke-tan-cong.com        → DNS trả về 127.0.0.1  ← DNS rebinding
+```
+
+Dòng cuối đáng chú ý: kẻ tấn công điều khiển DNS của tên miền mình, nên hắn cho nó trả về IP công khai lúc bạn **kiểm tra**, rồi trả về IP nội bộ lúc bạn **thật sự gọi**.
+
+**Cách chặn đúng — danh sách trắng:**
+
+```ts
+const HOST_CHO_PHEP = new Set(['images.example.com', 'cdn.example.com'])
+
+function kiemTraUrl(raw: string) {
+  const u = new URL(raw)
+  if (!['http:', 'https:'].includes(u.protocol)) throw new Error('Giao thức không hợp lệ')
+  if (!HOST_CHO_PHEP.has(u.hostname)) throw new Error('Host không được phép')
+  return u
+}
+```
+
+Và bốn lớp bổ sung, vì danh sách trắng không phải lúc nào cũng khả thi:
+
+```text
+① Phân giải DNS TRƯỚC, kiểm IP, rồi gọi bằng chính IP đó  ← chống DNS rebinding
+② Chặn mọi dải IP nội bộ: 127.x, 10.x, 172.16-31.x, 192.168.x, 169.254.x, ::1
+③ KHÔNG đi theo redirect tự động — hoặc kiểm lại URL sau mỗi lần redirect
+④ Chạy tính năng gọi ra ngoài trong mạng RIÊNG, không có đường vào nội bộ
+```
+
+Lớp ④ là biện pháp mạnh nhất: nếu tiến trình đó **không có đường mạng** tới dịch vụ nội bộ, thì SSRF không lấy được gì.
+
+## Cú pháp
+
+**A06 — thư viện có lỗ hổng:**
+
+```bash
+pnpm audit                          # xem lỗ hổng đã biết
+pnpm audit --fix
+pnpm outdated
+```
+
+```yaml
+# CI — chặn merge nếu có lỗ hổng nghiêm trọng
+- run: pnpm audit --audit-level=high
+```
+
+Ba nguyên tắc thực dụng:
+
+```text
+① Nâng cấp ĐỀU ĐẶN, đừng dồn
+   Nâng mỗi tuần một chút thì dễ; dồn hai năm rồi nâng một lần thì rất đau.
+
+② Ít phụ thuộc hơn = ít rủi ro hơn
+   Trước khi cài thư viện: việc này tự viết mất bao lâu?
+   Một hàm 20 dòng thường tốt hơn một package kéo theo 40 package khác.
+
+③ Ghim phiên bản bằng lock file
+   Không có nó, mỗi lần cài lại có thể ra phiên bản khác — kể cả phiên bản đã bị chiếm.
+```
+
+Nguyên tắc ③ liên quan tới **tấn công chuỗi cung ứng**: kẻ tấn công chiếm được tài khoản npm của một thư viện phổ biến và phát hành bản độc hại. Lock file làm bạn không tự động nhận bản mới đó.
+
+## Tại sao cần nó
+
+Vì **A09 — thiếu log — là lý do các vụ xâm nhập kéo dài hàng tháng**:
+
+```text
+Thống kê ngành: thời gian trung bình từ lúc bị xâm nhập tới lúc PHÁT HIỆN
+tính bằng HÀNG TRĂM NGÀY.
+
+Không phải vì kẻ tấn công giỏi — mà vì không ai nhìn.
+```
+
+**Phải ghi log:**
+
+```text
+· Đăng nhập: thành công và THẤT BẠI (kèm IP, user agent)
+· Đổi mật khẩu, đổi email, đổi quyền
+· Truy cập bị từ chối (403) — dấu hiệu đang dò
+· Thao tác quản trị
+· Thanh toán, hoàn tiền
+· Lỗi 5xx
+```
+
+**KHÔNG được ghi:**
+
+```text
+· Mật khẩu (kể cả sai)
+· Token, khoá API
+· Số thẻ đầy đủ
+· Dữ liệu cá nhân nhạy cảm không cần thiết
+```
+
+**Log phải có cấu trúc** — để máy tìm được, không chỉ người đọc được:
+
+```ts
+logger.warn({
+  su_kien: 'dang_nhap_that_bai',
+  email_hash: bam(email),        // hash, không phải email gốc
+  ip: req.ip,
+  request_id: req.id,
+  luc: new Date().toISOString(),
 })
 ```
 
-Các sự kiện đáng ghi: đăng nhập thành công/thất bại, đổi mật khẩu, đổi quyền, truy cập bị từ chối, thao tác quản trị, thanh toán, xoá dữ liệu.
+`request_id` là trường quý nhất: nó nối một sự kiện với toàn bộ hành trình của request đó qua mọi dịch vụ ([[quan-sat-he-thong]]).
 
-### Không bao giờ ghi
+**Cảnh báo — log không có cảnh báo thì chỉ là dữ liệu:**
 
-Mật khẩu (kể cả sai), token phiên, số thẻ, header `Authorization`, dữ liệu cá nhân đầy đủ, nội dung request body của form nhạy cảm.
-
-```ts
-// Bẫy rất phổ biến
-console.log('request', { headers: req.headers })   // in luôn Authorization và Cookie
+```text
+· >10 lần đăng nhập thất bại từ một IP trong 1 phút
+· Đăng nhập thành công từ quốc gia lạ
+· Tỉ lệ lỗi 403 tăng đột biến
+· Tài khoản admin mới được tạo
+· Truy vấn cơ sở dữ liệu bất thường về khối lượng
 ```
 
-Nhiều thư viện log cho phép khai báo danh sách trường cần che — cấu hình nó ngay từ đầu.
+## So sánh
 
-### Log có cấu trúc và request id
-
-JSON thay vì chuỗi tự do: query được, gắn cảnh báo được. Mỗi request gắn một `requestId` truyền qua mọi tầng — nếu không, log của 50 request đồng thời trộn vào nhau và không lần được.
-
-### Cảnh báo
-
-Log mà không ai đọc thì vô dụng. Đặt cảnh báo cho: tỷ lệ đăng nhập thất bại tăng đột biến, lỗi 5xx vượt ngưỡng, thao tác quản trị ngoài giờ, truy cập bị từ chối lặp lại từ một IP.
-
-## A10 — SSRF
-
-Server-Side Request Forgery: ứng dụng nhận URL từ người dùng rồi tự gọi tới đó.
-
-```ts
-// LỖ HỔNG
-export async function POST(req: Request) {
-  const { url } = await req.json()
-  const res = await fetch(url)       // người dùng chỉ đâu, server gọi đó
-  return Response.json(await res.json())
-}
-```
-
-Người tấn công nhắm tới những nơi chỉ máy chủ với tới được:
-
-```
-http://localhost:6379              → Redis nội bộ
-http://169.254.169.254/latest/meta-data/   → thông tin xác thực của cloud
-file:///etc/passwd                 → file hệ thống
-http://10.0.0.5/admin              → dịch vụ trong mạng riêng
-```
-
-Địa chỉ `169.254.169.254` đặc biệt nguy hiểm: trên AWS/GCP nó trả về thông tin xác thực tạm thời của máy chủ.
-
-### Cách phòng
-
-```ts
-import { lookup } from 'node:dns/promises'
-import ipaddr from 'ipaddr.js'
-
-async function urlAnToan(raw: string): Promise<boolean> {
-  const url = new URL(raw)
-  if (!['http:', 'https:'].includes(url.protocol)) return false
-
-  // Phân giải DNS rồi kiểm tra IP thật — tên miền có thể trỏ vào 127.0.0.1
-  const { address } = await lookup(url.hostname)
-  const ip = ipaddr.parse(address)
-  return ip.range() === 'unicast'    // loại private, loopback, linkLocal
-}
-```
-
-Bốn lớp phòng thủ:
-
-1. **Danh sách trắng tên miền** khi có thể — luôn tốt hơn danh sách đen.
-2. **Kiểm tra IP sau khi phân giải DNS**, không chỉ kiểm tra chuỗi hostname.
-3. **Chặn chuyển hướng** (`redirect: 'manual'`) — nếu không, trang đích có thể redirect 302 về `127.0.0.1`.
-4. **Cô lập mạng**: dịch vụ gọi URL bên ngoài nên chạy trong subnet không tới được dịch vụ nội bộ.
-
-Lưu ý về TOCTOU: giữa lúc kiểm tra DNS và lúc `fetch` thật, bản ghi DNS có thể đổi (DNS rebinding). Phòng thủ chắc chắn nhất vẫn là cô lập ở tầng mạng.
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
+| Rủi ro | Bạn kiểm soát được gì | Công cụ |
 |---|---|---|
-| Không cập nhật dependency | CVE đã công khai tồn tại lâu | Renovate + CI chặn |
-| Log nguyên `req.headers` | Token vào file log | Danh sách che trường |
-| Log không có request id | Không lần được luồng | Gắn id xuyên suốt |
-| `fetch(urlNguoiDung)` | SSRF vào dịch vụ nội bộ | Danh sách trắng + kiểm tra IP |
-| Chỉ kiểm tra chuỗi hostname | DNS trỏ về 127.0.0.1 | Kiểm tra IP sau khi phân giải |
+| A06 Thư viện | Chọn ít phụ thuộc, nâng cấp đều | `audit`, Dependabot, lock file |
+| A09 Log | Ghi gì, cảnh báo gì | Log có cấu trúc, giám sát |
+| A10 SSRF | Danh sách trắng, cô lập mạng | Kiểm URL, mạng riêng |
 
-## Ghi nhớ
+Điểm chung của cả ba: chúng **không phải lỗi trong code bạn viết**. Đó là lý do chúng hay bị bỏ qua — người ta review code, thấy code sạch, và kết luận là an toàn.
 
-- Phụ thuộc là một phần bề mặt tấn công — tự động hoá việc cập nhật.
-- Log để phát hiện tấn công, không chỉ để debug; và đừng ghi secret.
-- SSRF cần kiểm tra **IP sau phân giải DNS**, không phải chuỗi URL.
-- Cô lập mạng là lớp phòng thủ đáng tin cậy nhất cho SSRF.
+## Dễ nhầm
 
-## Tự kiểm tra
+**1. Không bao giờ chạy `audit`.** Lỗ hổng đã công bố công khai, và bot quét biết bạn dùng phiên bản nào.
 
-1. Vì sao danh sách trắng tên miền tốt hơn danh sách đen khi chống SSRF?
-2. Ba loại sự kiện phải ghi log và ba loại dữ liệu không bao giờ được ghi?
-3. Tính năng "nhập ảnh từ URL" cần những kiểm soát nào?
+**2. Cài thư viện cho việc nhỏ.** Mỗi phụ thuộc là một cửa vào mới — cả về bảo mật lẫn bảo trì.
+
+**3. Nâng cấp dồn.** Hai năm không nâng thì lần nâng đầu tiên là một dự án riêng.
+
+**4. Không ghi log đăng nhập thất bại.** Bạn không thấy được cuộc dò mật khẩu đang diễn ra.
+
+**5. Ghi mật khẩu vào log.** Kể cả mật khẩu sai — vì người dùng hay gõ nhầm mật khẩu **của tài khoản khác**.
+
+**6. Log không có cấu trúc.** Chuỗi văn bản tự do thì không tìm kiếm và không cảnh báo tự động được.
+
+**7. Có log nhưng không ai xem.** Log không có cảnh báo chỉ là dữ liệu.
+
+**8. Chặn SSRF bằng danh sách đen.** Có quá nhiều cách viết cùng một địa chỉ.
+
+**9. Đi theo redirect tự động khi gọi URL người dùng cung cấp.** URL đầu tiên hợp lệ, redirect đưa tới `169.254.169.254`.
+
+## Mẹo nhớ
+
+> **Ổ khoá của hãng vừa bị lỗi · nhà không có camera · nhờ bạn đi lấy hộ.**
+>
+> **SSRF: máy chủ của bạn Ở TRONG mạng nội bộ, kẻ tấn công thì không.**
+>
+> **Log không có cảnh báo chỉ là dữ liệu.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Vì sao SSRF nguy hiểm — điều gì máy chủ của bạn làm được mà kẻ tấn công không?
+2. Vì sao chặn SSRF bằng danh sách đen không hiệu quả?
+3. DNS rebinding hoạt động thế nào?
+4. Bốn loại sự kiện **phải** ghi log, và ba thứ **không được** ghi?
+5. Vì sao lock file liên quan tới tấn công chuỗi cung ứng?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết hàm an toàn cho tính năng:
+
+```text
+"Người dùng dán URL một bài viết, hệ thống tải về và trích xuất tiêu đề + ảnh đại diện."
+```
+
+Tự kiểm: bạn kiểm URL ở **mấy** bước, và bạn xử lý redirect thế nào? Nếu không dùng được danh sách trắng (vì URL có thể là bất kỳ trang nào), bạn dựa vào lớp phòng thủ nào?
+
+## Thử sức
+
+Bạn phát hiện log có 40.000 request `403` từ 200 IP khác nhau trong 10 phút, tất cả đều nhắm vào các đường dẫn kiểu `/api/admin/*`.
+
+Ba câu để trả lời: chuyện gì đang xảy ra, bạn **phản ứng** thế nào trong 15 phút đầu, và — câu quan trọng nhất — làm sao biết được liệu có request nào đã **thành công** trước khi bạn phát hiện? Nếu log hiện tại không trả lời được câu đó, bạn thiếu gì?

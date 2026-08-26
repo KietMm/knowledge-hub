@@ -4,124 +4,231 @@ slug: luu-mat-khau-va-ma-hoa
 summary: Hash chậm có salt cho mật khẩu, mã hoá cho dữ liệu cần đọc lại — hai việc khác nhau hoàn toàn.
 level: trung-cap
 tags: [owasp, mat-khau, hashing, ma-hoa]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** chọn đúng thuật toán cho mật khẩu, và phân biệt được ba việc thường bị gộp làm một: hash, mã hoá, mã hoá base64.
+> **Sau bài này bạn sẽ:** phân biệt được hash, mã hoá và mã hoá một chiều, và biết vì sao mật khẩu cần hàm băm **chậm**.
 
-## Ba khái niệm khác nhau
+## Ý tưởng chính
 
-| | Mục đích | Đảo ngược được? | Dùng cho |
-|---|---|---|---|
-| **Encoding** (base64, hex) | Đổi định dạng | Có, ai cũng làm được | Truyền dữ liệu nhị phân |
-| **Hashing** | Dấu vân tay một chiều | Không | Mật khẩu, kiểm tra toàn vẹn |
-| **Encryption** | Giấu nội dung | Có, nếu có khoá | Dữ liệu cần đọc lại |
+Ba khái niệm hay bị dùng lẫn, và chọn nhầm cái nào cũng dẫn tới lỗ hổng:
 
-Base64 **không phải** bảo mật. Nó chỉ là cách viết lại dữ liệu.
+```text
+Băm (hash)     một chiều — không khôi phục lại được  → MẬT KHẨU
+Mã hoá         hai chiều — có khoá thì giải ra được   → dữ liệu cần ĐỌC LẠI
+Mã hoá base64  KHÔNG phải bảo mật — chỉ là cách biểu diễn
+```
 
-## Mật khẩu: hash chậm, có salt
+Câu hỏi để chọn: ***"tôi có cần đọc lại giá trị gốc không?"*** Không cần ⇒ băm. Cần ⇒ mã hoá.
 
-Không bao giờ lưu mật khẩu ở dạng đọc được. Cũng không dùng MD5/SHA-1/SHA-256 — chúng được thiết kế để **nhanh**, mà nhanh nghĩa là GPU thử được hàng tỷ mật khẩu mỗi giây.
+## Mental model
 
-Dùng thuật toán thiết kế riêng cho mật khẩu:
+Hãy nghĩ tới ba cách xử lý một tài liệu mật.
+
+> **Băm** là **đốt tài liệu và giữ lại đống tro có hình dạng đặc trưng**. Bạn không đọc lại được nội dung, nhưng nếu ai đưa bạn một tài liệu, bạn đốt nó và **so hai đống tro** để biết có phải cùng nội dung không.
+>
+> **Mã hoá** là **cất vào két có khoá**. Có khoá thì mở ra đọc được — nên bài toán chuyển thành: **giữ khoá ở đâu**.
+>
+> **Base64** là **viết ngược từ phải sang trái**. Nhìn lạ mắt, nhưng ai cũng đọc được.
+
+Với mật khẩu, bạn **không bao giờ** cần đọc lại — nên đốt là đúng. Hệ thống nào gửi lại mật khẩu cũ cho bạn qua email là hệ thống đang cất mật khẩu trong két, và đó là lỗi nghiêm trọng.
+
+## Ví dụ nhỏ
 
 ```ts
 import argon2 from 'argon2'
 
-// Khi đăng ký
-const hash = await argon2.hash(matKhau, { type: argon2.argon2id })
-
-// Khi đăng nhập
-const dung = await argon2.verify(hash, matKhauNhap)
+const hash = await argon2.hash(matKhau)          // lúc đăng ký
+const dung = await argon2.verify(hash, nhapVao)  // lúc đăng nhập
 ```
 
-| Thuật toán | Ghi chú |
-|---|---|
-| **Argon2id** | Lựa chọn tốt nhất hiện nay, chống cả GPU lẫn ASIC |
-| **bcrypt** | Vẫn ổn, phổ biến rộng; giới hạn 72 byte đầu vào |
-| **scrypt** | Tốt, có sẵn trong Node `crypto` |
-| PBKDF2 | Chấp nhận được khi bị ràng buộc bởi tiêu chuẩn |
-| SHA-256, MD5 | **Không bao giờ** cho mật khẩu |
+Không tự nối salt, không tự chọn tham số. Thư viện đã lo cả hai.
 
-Các thư viện này tự sinh **salt** ngẫu nhiên cho từng mật khẩu và nhúng vào chuỗi kết quả. Salt khiến hai người dùng cùng mật khẩu có hash khác nhau, và làm bảng tra sẵn (rainbow table) vô dụng.
+## Code chạy thế nào
 
-Chúng cũng nhúng luôn tham số chi phí, nên nâng chi phí về sau vẫn xác minh được hash cũ.
+**Vì sao mật khẩu cần hàm băm CHẬM** — đây là điểm phản trực giác:
 
-## Chống dò mật khẩu
+```text
+Kẻ tấn công lấy được bảng users. Hắn thử đoán mật khẩu bằng cách
+băm hàng loạt từ điển rồi so với hash trong bảng.
 
-Hash mạnh không cứu được nếu cho phép thử vô hạn:
+Với SHA-256 (hàm băm NHANH):
+  GPU hiện đại thử ~10 TỈ hash mỗi giây
+  ⇒ mọi mật khẩu 8 ký tự thường bị dò trong vài giờ
 
-- Giới hạn số lần thử theo **tài khoản** và theo **IP**.
-- Tăng dần độ trễ sau mỗi lần sai.
-- Bắt buộc 2FA cho tài khoản quan trọng.
-- Kiểm tra mật khẩu mới với danh sách đã rò rỉ (Have I Been Pwned có API k-anonymity).
+Với Argon2 (hàm băm CHẬM, tốn RAM):
+  cùng GPU thử được ~10 NGHÌN hash mỗi giây
+  ⇒ chậm hơn một triệu lần
+```
 
-Về chính sách mật khẩu, khuyến nghị hiện tại (NIST) đã đổi: **độ dài tối thiểu 8–12 ký tự, không bắt buộc ký tự đặc biệt, không bắt đổi định kỳ**. Các quy tắc phức tạp khiến người dùng chọn `Password1!` và dán lên màn hình. Bắt đổi định kỳ khiến họ đổi thành `Password2!`.
+Sự chậm ở đây là **tính năng, không phải khuyết điểm**. Người dùng chờ 200ms khi đăng nhập — không ai để ý. Kẻ tấn công chờ 200ms cho **mỗi lần đoán** — và điều đó biến vài giờ thành vài thế kỷ.
 
-## Thông báo lỗi không được tiết lộ
+**Salt** — chuỗi ngẫu nhiên khác nhau cho mỗi mật khẩu:
+
+```text
+Không có salt:
+  hai người dùng cùng mật khẩu "123456" → CÙNG một hash
+  ⇒ kẻ tấn công dò một lần, mở được nhiều tài khoản
+  ⇒ và bảng tra sẵn (rainbow table) dùng được
+
+Có salt:
+  cùng mật khẩu → hash KHÁC NHAU
+  ⇒ phải dò riêng từng tài khoản
+```
+
+Argon2 và bcrypt **tự sinh salt và nhúng vào chuỗi kết quả** — bạn không cần cột riêng, không cần tự xử lý.
+
+## Cú pháp
 
 ```ts
-// SAI: cho biết email nào có tài khoản
-if (nguoiDung === null) return { loi: 'Email không tồn tại' }
-if (!dung) return { loi: 'Sai mật khẩu' }
+// ✅ Nên dùng, theo thứ tự
+argon2id     // lựa chọn hiện đại nhất — tốn cả CPU lẫn RAM ⇒ GPU khó tăng tốc
+bcrypt       // cũ hơn nhưng vẫn tốt, có ở mọi ngôn ngữ (cost ≥ 12)
+scrypt
 
-// ĐÚNG
+// ❌ TUYỆT ĐỐI KHÔNG cho mật khẩu
+md5, sha1, sha256, sha512     // quá nhanh — thiết kế cho mục đích khác
+```
+
+Điểm cần hiểu: SHA-256 **không phải hàm băm yếu** — nó rất tốt cho việc kiểm tra toàn vẹn file. Nó chỉ **sai mục đích** ở đây, vì nó nhanh, mà mật khẩu cần chậm.
+
+**Chống dò mật khẩu** — hash chậm là lớp cuối, không phải lớp duy nhất:
+
+```text
+① Giới hạn tần suất theo IP và theo tài khoản
+② Tăng dần thời gian chờ sau mỗi lần sai (1s, 2s, 4s, 8s…)
+③ CAPTCHA sau vài lần thất bại
+④ Cảnh báo qua email khi đăng nhập từ thiết bị mới
+⑤ Xác thực hai yếu tố
+```
+
+Giới hạn theo **cả IP lẫn tài khoản** là chi tiết quan trọng: chỉ giới hạn theo IP thì kẻ tấn công dùng nhiều IP; chỉ giới hạn theo tài khoản thì hắn dò một mật khẩu phổ biến trên **hàng nghìn tài khoản** (credential stuffing).
+
+## Tại sao cần nó
+
+Vì **thông báo lỗi cũng là lỗ hổng**:
+
+```ts
+// ❌ Tiết lộ email nào đã đăng ký
+if (!user) return { loi: 'Email không tồn tại' }
+if (!dung) return { loi: 'Mật khẩu sai' }
+
+// ✅ Cùng một thông báo
 return { loi: 'Email hoặc mật khẩu không đúng' }
 ```
 
-Cũng cần để ý **thời gian phản hồi**: nếu email không tồn tại thì trả về ngay, còn email tồn tại thì mất 200ms để hash — chênh lệch đó cũng tiết lộ thông tin. Cách xử lý: luôn chạy một phép verify giả khi không tìm thấy người dùng.
+Và tinh vi hơn — **thời gian phản hồi cũng tiết lộ**:
 
-## Đặt lại mật khẩu
+```text
+Email không tồn tại  → trả về ngay          (5ms)
+Email tồn tại        → phải verify hash     (200ms)
 
-```ts
-const token = crypto.randomBytes(32).toString('hex')       // ngẫu nhiên mật mã học
-const hashToken = crypto.createHash('sha256').update(token).digest('hex')
-
-await db.tokenDatLai.create({
-  data: { hash: hashToken, nguoiDungId, hetHan: new Date(Date.now() + 30 * 60_000) },
-})
-// Gửi `token` thô qua email; DB chỉ lưu hash của nó
+⇒ Kẻ tấn công đo thời gian và biết email nào đã đăng ký.
 ```
 
-Bốn yêu cầu: token ngẫu nhiên đủ mạnh, chỉ lưu hash trong DB, hết hạn ngắn (15–60 phút), dùng một lần rồi xoá. Và sau khi đổi mật khẩu thành công, **huỷ mọi phiên đang mở**.
+Cách chặn: **luôn chạy verify**, kể cả khi không tìm thấy người dùng:
 
-## Mã hoá dữ liệu cần đọc lại
+```ts
+const user = await db.user.findByEmail(email)
+const hash = user?.matKhauHash ?? HASH_GIA      // hash của một chuỗi bất kỳ
+const dung = await argon2.verify(hash, nhapVao)
+if (!user || !dung) return { loi: 'Email hoặc mật khẩu không đúng' }
+```
 
-Với dữ liệu nhạy cảm phải khôi phục được (số CMND, khoá API của khách hàng), dùng mã hoá đối xứng có xác thực:
+**Đặt lại mật khẩu** — quy trình đúng:
+
+```text
+① Sinh token ngẫu nhiên ĐỦ DÀI (32 byte từ nguồn ngẫu nhiên mật mã)
+② LƯU HASH của token, không lưu token gốc   ← nếu CSDL rò rỉ, token vô dụng
+③ Hết hạn sau 15-60 phút
+④ Dùng MỘT LẦN — xoá ngay sau khi dùng
+⑤ Vô hiệu hoá mọi phiên đăng nhập cũ sau khi đổi
+⑥ Thông báo "nếu email tồn tại, chúng tôi đã gửi hướng dẫn" — dù có hay không
+```
+
+Bước ⑤ hay bị quên, và nó quan trọng: nếu ai đó đã chiếm được tài khoản, đổi mật khẩu mà không huỷ phiên cũ thì hắn **vẫn còn quyền truy cập**.
+
+**Mã hoá dữ liệu cần đọc lại:**
 
 ```ts
 import { randomBytes, createCipheriv, createDecipheriv } from 'node:crypto'
-
-function maHoa(vanBan: string, khoa: Buffer) {
-  const iv = randomBytes(12)                       // IV mới cho MỖI lần mã hoá
-  const cipher = createCipheriv('aes-256-gcm', khoa, iv)
-  const daMa = Buffer.concat([cipher.update(vanBan, 'utf8'), cipher.final()])
-  return { iv, daMa, tag: cipher.getAuthTag() }    // tag chống sửa đổi
-}
+// AES-256-GCM: mã hoá + xác thực toàn vẹn trong một bước
 ```
 
-Quy tắc: dùng **AEAD** (AES-GCM, ChaCha20-Poly1305) — chúng vừa giấu nội dung vừa phát hiện sửa đổi. Không tự thiết kế giao thức mã hoá; không tái sử dụng IV.
+Bài toán thật của mã hoã không phải thuật toán — mà là **quản lý khoá**:
 
-Khoá mã hoá phải nằm trong dịch vụ quản lý khoá (AWS KMS, Vault), không nằm trong mã nguồn hay cùng chỗ với dữ liệu — khoá cất cạnh két thì két không còn tác dụng.
+```text
+· Khoá KHÔNG nằm trong mã nguồn
+· Khoá KHÔNG nằm cùng chỗ với dữ liệu đã mã hoá
+· Dùng dịch vụ quản lý khoá (KMS, Vault) nếu có
+· Có kế hoạch XOAY khoá — và biết cách mã hoá lại dữ liệu cũ
+```
 
-## Lỗi hay gặp
+Xem thêm [[quan-ly-secret-va-cau-hinh]].
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| SHA-256 cho mật khẩu | Bẻ được hàng loạt bằng GPU | Argon2id / bcrypt |
-| Salt dùng chung | Rainbow table hoạt động lại | Salt riêng từng mật khẩu (thư viện tự lo) |
-| Thông báo "email không tồn tại" | Dò được danh sách tài khoản | Thông báo chung |
-| Lưu token đặt lại dạng thô | Rò DB là chiếm được tài khoản | Lưu hash |
-| Khoá mã hoá trong repo | Mã hoá vô nghĩa | KMS / Vault |
+## So sánh
 
-## Ghi nhớ
+| Dữ liệu | Cách xử lý |
+|---|---|
+| Mật khẩu | Băm chậm (argon2id/bcrypt) — **không bao giờ** mã hoá |
+| Token phiên, token reset | Băm (SHA-256 là đủ, vì token đã ngẫu nhiên và dài) |
+| Số thẻ, số CMND, dữ liệu y tế | Mã hoá (AES-256-GCM) + quản lý khoá |
+| Email, tên | Thường không mã hoá; bảo vệ bằng phân quyền |
+| Kiểm tra toàn vẹn file | SHA-256 |
 
-- Mật khẩu: hash chậm có salt (Argon2id), không bao giờ SHA/MD5.
-- Base64 là encoding, không phải bảo mật.
-- Thông báo đăng nhập không được phân biệt "sai email" với "sai mật khẩu".
-- Mã hoá dùng AEAD, khoá cất ở nơi khác dữ liệu.
+Dòng thứ hai đáng chú ý: **token phiên không cần hàm băm chậm**, vì nó đã là 32 byte ngẫu nhiên — không thể dò bằng từ điển. Hash chậm chỉ cần cho thứ mà con người tự nghĩ ra.
 
-## Tự kiểm tra
+## Dễ nhầm
 
-1. Vì sao thuật toán hash **nhanh** lại là điểm yếu với mật khẩu?
-2. Salt giải quyết vấn đề gì, và vì sao không cần lưu riêng?
-3. Luồng đặt lại mật khẩu cần những kiểm soát nào?
+**1. Dùng MD5/SHA cho mật khẩu.** Quá nhanh — dò được trong vài giờ.
+
+**2. Tự cài thuật toán băm hoặc tự nối salt.** Dùng thư viện.
+
+**3. Mã hoá mật khẩu thay vì băm.** Nếu bạn giải mã được thì kẻ tấn công lấy được khoá cũng giải được.
+
+**4. Thông báo lỗi phân biệt email và mật khẩu.** Tiết lộ email đã đăng ký.
+
+**5. Không chặn tấn công theo thời gian.** Luôn chạy verify.
+
+**6. Token đặt lại mật khẩu lưu nguyên văn.** CSDL rò rỉ ⇒ chiếm mọi tài khoản.
+
+**7. Không huỷ phiên cũ sau khi đổi mật khẩu.** Kẻ tấn công vẫn còn quyền.
+
+**8. Khoá mã hoá nằm cùng chỗ với dữ liệu.** Như để chìa khoá trong ổ.
+
+**9. Bắt đổi mật khẩu định kỳ 90 ngày.** Khuyến nghị hiện đại (NIST) đã **bỏ** yêu cầu này: nó khiến người dùng chọn mật khẩu yếu hơn và ghi ra giấy. Thay bằng: kiểm tra mật khẩu có nằm trong danh sách rò rỉ không, và bật xác thực hai yếu tố.
+
+## Mẹo nhớ
+
+> **Băm là đốt thành tro; mã hoá là cất vào két; base64 là viết ngược.**
+>
+> **Mật khẩu cần hàm băm CHẬM — chậm là tính năng.**
+>
+> **Cần đọc lại giá trị gốc không? Không ⇒ băm. Có ⇒ mã hoá, và bài toán thật là giữ khoá.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Ba khái niệm băm / mã hoá / base64 khác nhau ra sao?
+2. Vì sao mật khẩu cần hàm băm **chậm** — nêu con số?
+3. Salt giải quyết vấn đề gì?
+4. Tấn công theo thời gian hoạt động thế nào, và cách chặn?
+5. Sáu bước của quy trình đặt lại mật khẩu, và bước nào hay bị quên?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết mã giả cho hàm đăng nhập an toàn:
+
+```text
+Yêu cầu: không tiết lộ email đã đăng ký (kể cả qua thời gian phản hồi),
+chống dò mật khẩu, và ghi log đủ để điều tra sự cố.
+```
+
+Tự kiểm: bạn ghi gì vào log, và bạn có ghi mật khẩu nhập sai không? Vì sao?
+
+## Thử sức
+
+Bạn tiếp nhận một hệ thống cũ lưu mật khẩu bằng `md5(matKhau)` cho 200.000 người dùng.
+
+Bạn **không thể** băm lại vì không có mật khẩu gốc. Lập kế hoạch nâng cấp sang argon2 **mà không bắt tất cả người dùng đổi mật khẩu ngay lập tức**. Gợi ý: có một kỹ thuật cho phép nâng cấp **dần dần**, mỗi người một lần khi họ đăng nhập. Câu khó: trong lúc chuyển đổi, bạn xử lý những người **không bao giờ đăng nhập lại** thế nào?
