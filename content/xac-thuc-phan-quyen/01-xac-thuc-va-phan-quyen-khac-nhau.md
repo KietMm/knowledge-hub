@@ -4,134 +4,208 @@ slug: xac-thuc-va-phan-quyen-khac-nhau
 summary: Hai câu hỏi, hai cơ chế, hai chỗ kiểm tra — nhầm lẫn giữa chúng là gốc của nhiều lỗ hổng.
 level: co-ban
 tags: [auth, bao-mat, co-ban]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** thiết kế được luồng đăng nhập đầy đủ, và biết đặt mỗi loại kiểm tra ở đúng tầng.
+> **Sau bài này bạn sẽ:** biết đặt mỗi loại kiểm tra ở đúng chỗ, và chọn được mô hình phân quyền phù hợp với hệ của mình.
 
-## Hai khái niệm
+## Ý tưởng chính
 
-- **Authentication (AuthN)** — *Bạn là ai?* Xác minh danh tính bằng mật khẩu, mã OTP, khoá bảo mật.
-- **Authorization (AuthZ)** — *Bạn được làm gì?* Quyết định dựa trên vai trò, quyền sở hữu, chính sách.
+Hai từ nghe giống nhau, viết tắt giống nhau (authN/authZ), nhưng trả lời **hai câu hỏi hoàn toàn khác nhau**:
 
-Mã HTTP tương ứng cũng khác nhau:
-- `401 Unauthorized` — chưa xác thực (tên gọi này của chuẩn HTTP vốn đã gây nhầm lẫn).
-- `403 Forbidden` — đã xác thực nhưng không đủ quyền.
+```text
+Xác thực (Authentication)  →  "Anh là ai?"
+Phân quyền (Authorization) →  "Anh được làm gì với CÁI NÀY?"
+```
 
-## Ba yếu tố xác thực
+Nhầm lẫn giữa chúng là gốc của lỗ hổng phổ biến nhất trong OWASP Top 10 ([[broken-access-control]]).
 
-| Yếu tố | Là gì | Ví dụ |
-|---|---|---|
-| Biết | Điều bạn nhớ | Mật khẩu, mã PIN |
-| Có | Vật bạn giữ | Điện thoại, khoá USB |
-| Là | Đặc điểm cơ thể | Vân tay, khuôn mặt |
+## Mental model
 
-Xác thực hai yếu tố (2FA) là dùng **hai loại khác nhau**. Mật khẩu + câu hỏi bảo mật vẫn chỉ là một yếu tố ("biết"), nên không phải 2FA.
+Hãy nghĩ tới **sân bay**.
 
-Về độ mạnh: khoá bảo mật (WebAuthn/passkey) > ứng dụng TOTP > SMS. SMS bị tấn công SIM swap và không nên dùng cho tài khoản quan trọng, dù vẫn hơn không có gì.
+> **Xác thực** là quầy check-in: đối chiếu hộ chiếu với vé. Xong, bạn có thẻ lên máy bay. Việc này diễn ra **một lần**.
+>
+> **Phân quyền** là mọi cửa sau đó: cửa an ninh kiểm bạn có vé không, cửa phòng chờ hạng thương gia kiểm hạng vé, cửa lên máy bay kiểm đúng chuyến. Việc này diễn ra **liên tục**.
+>
+> Có thẻ lên máy bay **không** nghĩa là vào được phòng chờ hạng thương gia.
 
-## Luồng đăng nhập đầy đủ
+Câu cuối là toàn bộ bài học: *"đã đăng nhập"* không nghĩa là *"được phép làm việc này"*.
+
+## Ví dụ nhỏ
 
 ```ts
-export async function dangNhapAction(input: unknown) {
-  'use server'
-
-  const parsed = DangNhapSchema.safeParse(input)
-  if (!parsed.success) return { ok: false, loi: 'Dữ liệu không hợp lệ' }
-  const { email, matKhau } = parsed.data
-
-  // 1. Giới hạn tần suất TRƯỚC khi chạm vào CSDL
-  if (!(await choPhepThu(email, ip))) {
-    return { ok: false, loi: 'Thử lại sau ít phút' }
-  }
-
-  const nguoiDung = await db.nguoiDung.findUnique({ where: { email } })
-
-  // 2. Luôn chạy verify, kể cả khi không tìm thấy — để thời gian phản hồi
-  //    không tiết lộ email nào có tài khoản
-  const hash = nguoiDung?.matKhauHash ?? HASH_GIA
-  const dung = await argon2.verify(hash, matKhau)
-
-  if (nguoiDung === null || !dung) {
-    await ghiNhanThatBai(email, ip)
-    return { ok: false, loi: 'Email hoặc mật khẩu không đúng' }   // thông báo chung
-  }
-
-  // 3. Tạo phiên MỚI sau khi đăng nhập (chống session fixation)
-  const phien = await taoPhien(nguoiDung.id)
-  ;(await cookies()).set('phien', phien.token, {
-    httpOnly: true,
-    secure: true,
-    sameSite: 'lax',
-    maxAge: 60 * 60 * 24 * 7,
-    path: '/',
+app.get('/api/don/:id',
+  requireLogin,                    // ← xác thực: anh là ai?
+  async (req, res) => {
+    const don = await db.don.findOne({ id: req.params.id, khachId: req.user.id })
+    //                                                     ↑ phân quyền: đơn NÀY của anh chứ?
+    if (!don) return res.status(404).end()
+    res.json(don)
   })
-
-  await ghiLogDangNhap(nguoiDung.id, ip)
-  return { ok: true }
-}
 ```
 
-Năm điểm đáng chú ý trong đoạn trên: giới hạn tần suất, thời gian phản hồi không đổi, thông báo lỗi chung, tạo phiên mới, và ghi log.
+## Code chạy thế nào
 
-## Chỗ đặt mỗi loại kiểm tra
+**Luồng đăng nhập đầy đủ**, từng bước và lý do:
 
-| Tầng | Kiểm tra gì | Lưu ý |
-|---|---|---|
-| Middleware | Có cookie phiên không | Chỉ để chuyển hướng, **không phải bảo mật** |
-| Page / Layout | Đã đăng nhập chưa, vai trò gì | Quyết định hiển thị |
-| Server Action / API | Đăng nhập + quyền trên bản ghi | **Bắt buộc** — đây là ranh giới thật |
-| Cơ sở dữ liệu | Row Level Security | Chốt cuối cho hệ nhiều khách hàng |
+```text
+① Người dùng gửi email + mật khẩu qua HTTPS
+② Server tìm user theo email
+③ Verify mật khẩu bằng hàm băm chậm (argon2/bcrypt)
+   ⚠️ Luôn verify kể cả khi không tìm thấy user → chống tấn công theo thời gian
+④ Kiểm tra tài khoản: đã xác minh email? bị khoá? cần 2FA?
+⑤ Sinh phiên (session id ngẫu nhiên, hoặc JWT)
+⑥ Đặt cookie: HttpOnly, Secure, SameSite=Lax
+⑦ Ghi log: đăng nhập thành công (IP, thiết bị)
+⑧ Trả về — thông báo lỗi KHÔNG phân biệt "sai email" với "sai mật khẩu"
+```
 
-Điểm quan trọng: middleware chỉ thấy cookie, không truy cập được database ở edge runtime. Nó **không** xác minh được phiên còn hiệu lực hay người dùng còn quyền. Mọi kiểm tra thật phải lặp lại ở nơi truy cập dữ liệu.
+Bước ③ và ⑧ đều phục vụ một mục đích: **không tiết lộ email nào đã đăng ký** ([[luu-mat-khau-va-ma-hoa]]).
 
-## Mô hình phân quyền
+**Ba yếu tố xác thực** — dùng từ hai yếu tố trở lên gọi là xác thực đa yếu tố:
 
-**RBAC — theo vai trò.** Đơn giản, đủ cho phần lớn hệ thống:
+```text
+① Thứ bạn BIẾT     mật khẩu, mã PIN
+② Thứ bạn CÓ       điện thoại (TOTP), khoá phần cứng, email
+③ Thứ bạn LÀ       vân tay, khuôn mặt
+```
+
+Xếp theo độ mạnh của yếu tố thứ hai:
+
+```text
+Khoá phần cứng (WebAuthn/passkey)  ⭐⭐⭐ chống được cả lừa đảo (phishing)
+TOTP (Google Authenticator)         ⭐⭐  tốt, nhưng vẫn bị lừa nhập mã
+SMS                                 ⭐   yếu nhất — SIM swap, chặn tin nhắn
+```
+
+Điểm đáng nhớ: **chỉ khoá phần cứng chống được phishing**, vì nó gắn với tên miền — người dùng không thể "nhập nhầm" nó vào trang giả.
+
+## Cú pháp
+
+**Chỗ đặt mỗi loại kiểm tra** — đây là phần quan trọng nhất:
+
+```text
+Xác thực     → middleware ở tầng route là ĐỦ
+               "chưa đăng nhập ⇒ 401"
+
+Phân quyền   → phải ở NƠI CHẠM DỮ LIỆU
+               "đơn hàng NÀY có phải của anh không?"
+               ⇒ middleware KHÔNG đủ, vì nó không biết id nào thuộc về ai
+```
 
 ```ts
-type VaiTro = 'khach' | 'thanh-vien' | 'bien-tap' | 'quan-tri'
+// ❌ Chỉ có middleware
+app.get('/api/don/:id', requireLogin, (req, res) => db.don.findById(req.params.id))
 
-const QUYEN: Record<VaiTro, string[]> = {
-  khach: ['bai-viet:doc'],
-  'thanh-vien': ['bai-viet:doc', 'binh-luan:viet'],
-  'bien-tap': ['bai-viet:doc', 'bai-viet:viet', 'bai-viet:xoa'],
-  'quan-tri': ['*'],
-}
+// ✅ Điều kiện quyền nằm trong chính truy vấn
+const don = await db.don.findOne({ id, khachId: req.user.id })
 ```
 
-**ABAC — theo thuộc tính.** Cần khi quyền phụ thuộc quan hệ giữa người và tài nguyên:
+## Tại sao cần nó
+
+Vì **ba mô hình phân quyền** hợp với ba loại hệ thống khác nhau, và chọn sai thì hoặc quá cứng hoặc quá phức tạp:
+
+**① RBAC — theo vai trò** (đơn giản nhất, đủ cho phần lớn hệ):
 
 ```ts
-function coQuyenSua(phien: Phien, bai: BaiViet): boolean {
-  if (phien.vaiTro === 'quan-tri') return true
-  if (phien.vaiTro === 'bien-tap' && bai.trangThai !== 'da_xuat_ban') return true
-  return bai.tacGiaId === phien.userId          // chủ sở hữu
+const QUYEN = {
+  admin:     ['user:*', 'don:*', 'bao_cao:*'],
+  bien_tap:  ['bai_viet:doc', 'bai_viet:sua'],
+  doc_gia:   ['bai_viet:doc'],
 }
 ```
 
-Thực tế phần lớn hệ thống dùng lai: vai trò cho quyền chung, kiểm tra chủ sở hữu cho từng bản ghi.
+```text
+✅ Dễ hiểu, dễ quản lý
+❌ Không diễn đạt được "chỉ sửa bài CỦA MÌNH"
+```
 
-Dù chọn mô hình nào, hãy đặt logic quyền vào **một chỗ** — rải `if (vaiTro === 'admin')` khắp codebase là cách chắc chắn để có một chỗ bị quên.
+**② ABAC — theo thuộc tính** (linh hoạt, phức tạp hơn):
 
-## Lỗi hay gặp
+```ts
+function coQuyen(user, hanhDong, taiNguyen) {
+  if (user.vaiTro === 'admin') return true
+  if (hanhDong === 'sua' && taiNguyen.tacGiaId === user.id) return true
+  if (hanhDong === 'doc' && taiNguyen.congKhai) return true
+  return false
+}
+```
 
-| Lỗi | Hậu quả | Sửa thế nào |
+```text
+✅ Diễn đạt được quy tắc theo ngữ cảnh
+❌ Khó kiểm tra tổng thể "ai có quyền gì"
+```
+
+**③ ReBAC — theo quan hệ** (cho hệ chia sẻ phức tạp):
+
+```text
+"user A là editor của document D"
+"document D thuộc folder F, và ai là viewer của F cũng là viewer của D"
+⇒ mô hình của Google Docs, Notion — công cụ: OpenFGA, SpiceDB
+```
+
+Cách chọn: **bắt đầu bằng RBAC**; thêm kiểm tra quyền sở hữu theo bản ghi khi cần (đó là ABAC ở mức nhẹ); chỉ dùng ReBAC khi nghiệp vụ thật sự là chia sẻ nhiều cấp ([[phan-quyen-theo-ban-ghi]]).
+
+## So sánh
+
+| | Xác thực | Phân quyền |
 |---|---|---|
-| Chỉ kiểm tra ở middleware | Gọi thẳng API là qua mặt | Kiểm tra lại ở action/handler |
-| Không tạo phiên mới sau đăng nhập | Session fixation | Sinh token mới |
-| Thông báo "email không tồn tại" | Dò được tài khoản | Thông báo chung |
-| Coi mật khẩu + câu hỏi bí mật là 2FA | Vẫn một yếu tố | Dùng TOTP hoặc passkey |
-| Logic quyền rải khắp nơi | Một chỗ quên là lỗ hổng | Tập trung một module |
+| Câu hỏi | "Anh là ai?" | "Anh được làm gì với cái này?" |
+| Tần suất | Một lần (rồi giữ phiên) | **Mỗi lần** chạm dữ liệu |
+| Chỗ kiểm | Middleware là đủ | Tầng dữ liệu |
+| Mã HTTP | 401 | 403 (hoặc 404 để không lộ) |
+| Sai thì | Người lạ vào được | Người quen xem được thứ không thuộc về họ |
 
-## Ghi nhớ
+## Dễ nhầm
 
-- AuthN = bạn là ai; AuthZ = bạn được làm gì. `401` khác `403`.
-- 2FA phải là hai **loại** yếu tố khác nhau.
-- Middleware là trải nghiệm; kiểm tra thật nằm ở nơi truy cập dữ liệu.
-- Tập trung logic phân quyền vào một chỗ duy nhất.
+**1. Coi "đã đăng nhập" là "được phép".** Lỗi số một.
 
-## Tự kiểm tra
+**2. Kiểm quyền chỉ ở giao diện.** Ẩn nút không phải bảo mật.
 
-1. Người dùng đã đăng nhập cố xoá bài của người khác — trả `401` hay `403`?
-2. Vì sao phải sinh token phiên mới sau khi đăng nhập thành công?
-3. Khi nào RBAC không đủ và cần tới ABAC?
+**3. Trả 401 khi lẽ ra 403 (hoặc ngược lại).** `401` bảo client *"đăng nhập đi"*, và client sẽ chuyển hướng người dùng tới trang đăng nhập — dù họ **đã** đăng nhập rồi.
+
+**4. Vai trò lưu trong JWT mà không kiểm lại.** Đổi vai trò của người dùng thì token cũ **vẫn còn quyền cũ** cho tới khi hết hạn.
+
+**5. Dùng SMS làm yếu tố thứ hai cho tài khoản quan trọng.** SIM swap là tấn công có thật và không hiếm.
+
+**6. Không có đường thu hồi quyền ngay lập tức.** Sa thải một nhân viên lúc 5 giờ chiều — token của họ còn sống bao lâu?
+
+**7. Tự viết hệ thống xác thực từ đầu.** Có rất nhiều chi tiết dễ sai; dùng thư viện hoặc dịch vụ đã được kiểm chứng.
+
+## Mẹo nhớ
+
+> **Quầy check-in (xác thực) một lần; các cửa sau đó (phân quyền) kiểm liên tục.**
+>
+> **Thẻ lên máy bay ≠ vé vào phòng chờ hạng thương gia.**
+>
+> **Phân quyền phải nằm ở NƠI CHẠM DỮ LIỆU, không phải ở middleware.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Hai câu hỏi mà xác thực và phân quyền trả lời?
+2. Vì sao middleware đủ cho xác thực nhưng không đủ cho phân quyền?
+3. Ba yếu tố xác thực, và vì sao khoá phần cứng mạnh hơn TOTP?
+4. RBAC không diễn đạt được quy tắc nào, và bạn xử lý thế nào?
+5. Vì sao lưu vai trò trong JWT có rủi ro?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, thiết kế phân quyền cho một hệ quản lý tài liệu:
+
+```text
+- Admin: mọi thứ
+- Chủ sở hữu tài liệu: sửa, xoá, chia sẻ tài liệu của mình
+- Người được chia sẻ: chỉ đọc
+- Khách: chỉ đọc tài liệu công khai
+```
+
+Tự kiểm: bạn dùng RBAC thuần được không? Nếu không, chỗ nào cần thêm kiểm tra theo bản ghi?
+
+## Thử sức
+
+Một nhân viên bị sa thải lúc 17:00. Bạn xoá tài khoản của họ lúc 17:05.
+
+Lúc 17:30, log cho thấy tài khoản đó **vẫn gọi API thành công**. Giải thích vì sao (gợi ý: liên quan tới cách bạn lưu phiên), và thiết kế lại để việc thu hồi có hiệu lực **trong vòng một phút**. Câu khó: giải pháp của bạn đánh đổi gì về hiệu năng?

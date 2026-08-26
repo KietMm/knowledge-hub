@@ -4,169 +4,218 @@ slug: dat-lai-mat-khau-va-xac-minh-email
 summary: Luồng token dùng một lần, và bốn lỗi làm nó thành cửa hậu vào tài khoản.
 level: trung-cap
 tags: [bao-mat, mat-khau, token, email]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** cài được luồng đặt lại mật khẩu không biến thành lỗ hổng, và biết vì sao phản hồi phải giống nhau dù email có tồn tại hay không.
+> **Sau bài này bạn sẽ:** viết được luồng đặt lại mật khẩu an toàn, và nhận ra bốn lỗi biến nó thành cửa hậu.
 
-## Luồng đúng, từng bước
+## Ý tưởng chính
 
-```
-1. Người dùng nhập email, bấm "Quên mật khẩu"
-2. Server sinh token NGẪU NHIÊN MẬT MÃ, lưu BẢN HASH của nó + hạn dùng
-3. Gửi email chứa token BẢN GỐC trong đường link
-4. Người dùng bấm link → nhập mật khẩu mới
-5. Server hash token nhận được, tra trong DB, kiểm tra hạn và chưa dùng
-6. Đổi mật khẩu, ĐÁNH DẤU TOKEN ĐÃ DÙNG, HUỶ MỌI PHIÊN đang đăng nhập
-7. Gửi email thông báo "mật khẩu vừa bị đổi"
-```
+Luồng đặt lại mật khẩu là **cửa vào tài khoản không cần mật khẩu**. Đó chính xác là mục đích của nó — và cũng chính xác là lý do nó là mục tiêu tấn công hàng đầu.
 
-```sql
-CREATE TABLE password_reset_tokens (
-  token_hash  TEXT PRIMARY KEY,          -- hash, KHÔNG phải token gốc
-  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  expires_at  TIMESTAMPTZ NOT NULL,
-  used_at     TIMESTAMPTZ,               -- NULL = chưa dùng
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
+Mọi biện pháp bảo vệ mật khẩu của bạn đều vô nghĩa nếu luồng này có lỗ hổng: kẻ tấn công không cần đoán mật khẩu, hắn chỉ cần **đặt lại nó**.
+
+## Mental model
+
+Hãy nghĩ tới **chìa khoá dự phòng gửi ở lễ tân chung cư**.
+
+> Nó tồn tại vì bạn sẽ có lúc quên chìa. Hợp lý.
+>
+> Nhưng nó cũng có nghĩa: **ai lấy được chìa dự phòng thì vào được nhà bạn** — không cần phá khoá.
+>
+> Nên lễ tân phải: kiểm tra bạn đúng là chủ nhà, **chỉ đưa một lần**, thu lại ngay sau khi dùng, và huỷ chìa nếu để quá lâu không ai lấy.
+
+Bốn điều kiện đó chính là bốn thuộc tính của một token đặt lại mật khẩu an toàn.
+
+## Ví dụ nhỏ
 
 ```ts
-import { createHash, randomBytes } from 'node:crypto'
+// Sinh token
+const tokenGoc = crypto.randomBytes(32).toString('base64url')   // gửi cho người dùng
+const tokenHash = sha256(tokenGoc)                               // LƯU cái này
 
-export async function yeuCauDatLai(email: string): Promise<void> {
-  const user = await usersRepo.findByEmail(email)
-
-  // Không tồn tại thì im lặng thoát — KHÔNG báo lỗi ra ngoài (xem phần dưới)
-  if (user === null) return
-
-  // 32 byte ngẫu nhiên mật mã. Math.random() ở đây là lỗ hổng nghiêm trọng:
-  // nó đoán được, nên token của người khác đoán được.
-  const token = randomBytes(32).toString('base64url')
-  const tokenHash = createHash('sha256').update(token).digest('hex')
-
-  await db.passwordResetTokens.create({
-    data: {
-      tokenHash,
-      userId: user.id,
-      expiresAt: new Date(Date.now() + 15 * 60 * 1000),   // 15 phút
-    },
-  })
-
-  await guiEmail(email, `${BASE_URL}/dat-lai?token=${token}`)   // gửi bản GỐC
-}
-```
-
-## Bốn lỗi biến luồng này thành cửa hậu
-
-**1. Lưu token dạng thô.** Ai đọc được database — qua SQL injection, bản backup bị lộ, một nhân viên có quyền đọc — là đổi được mật khẩu **mọi tài khoản**. Token là chứng chỉ tương đương mật khẩu, nên lưu nó cùng cách lưu mật khẩu: chỉ giữ hash.
-
-Khác một điểm với mật khẩu: token dài 32 byte ngẫu nhiên nên `sha256` là đủ, không cần bcrypt. Bcrypt chậm có tác dụng chống dò mật khẩu người ta tự đặt (entropy thấp); token ngẫu nhiên 256 bit thì không có gì để dò.
-
-**2. Dùng `Math.random()`.** Nó không phải nguồn ngẫu nhiên mật mã — trạng thái bên trong suy ra được từ vài giá trị đã thấy. Luôn `crypto.randomBytes`.
-
-**3. Token không hết hạn hoặc dùng lại được.** Link nằm trong hộp thư mãi mãi; hộp thư bị chiếm sáu tháng sau là tài khoản mất. Hạn 15–60 phút, và `used_at` đảm bảo mỗi token đúng một lần.
-
-**4. Không huỷ phiên cũ.** Người tấn công đã đăng nhập được vào tài khoản; nạn nhân đổi mật khẩu để lấy lại quyền, nhưng phiên của kẻ tấn công **vẫn sống**. Đổi mật khẩu phải huỷ mọi phiên khác — xem [[phien-dang-nhap-va-cookie]].
-
-```ts
-export async function datLaiMatKhau(token: string, matKhauMoi: string): Promise<void> {
-  const tokenHash = createHash('sha256').update(token).digest('hex')
-
-  const ban = await db.passwordResetTokens.findUnique({ where: { tokenHash } })
-  if (ban === null || ban.usedAt !== null || ban.expiresAt < new Date()) {
-    throw new TokenKhongHopLe()      // một thông điệp chung cho cả ba trường hợp
-  }
-
-  await db.$transaction([
-    db.users.update({
-      where: { id: ban.userId },
-      data: { passwordHash: await bcrypt.hash(matKhauMoi, 12) },
-    }),
-    db.passwordResetTokens.update({
-      where: { tokenHash },
-      data: { usedAt: new Date() },
-    }),
-    // Huỷ mọi phiên: kẻ tấn công đang đăng nhập bị đá ra
-    db.sessions.deleteMany({ where: { userId: ban.userId } }),
-    // Huỷ luôn các token đặt lại khác chưa dùng
-    db.passwordResetTokens.deleteMany({
-      where: { userId: ban.userId, usedAt: null },
-    }),
-  ])
-
-  await guiEmail(user.email, 'Mật khẩu của bạn vừa được đổi')
-}
-```
-
-Cả bốn việc trong **một transaction**: hỏng giữa đường mà mật khẩu đã đổi còn token chưa đánh dấu dùng thì token vẫn dùng lại được.
-
-## Phản hồi phải giống nhau dù email có tồn tại hay không
-
-```ts
-// ❌ Biến form quên mật khẩu thành máy dò danh sách người dùng
-if (user === null) return Response.json({ error: 'Email không tồn tại' }, { status: 404 })
-
-// ✅ Cùng một câu trả lời cho mọi email
-return Response.json({ message: 'Nếu email tồn tại, chúng tôi đã gửi hướng dẫn.' })
-```
-
-Đây gọi là **user enumeration**. Kẻ tấn công thử 10.000 email và biết chính xác cái nào có tài khoản — danh sách đó dùng cho tấn công dò mật khẩu, cho lừa đảo nhắm đích, hoặc bán.
-
-Rò rỉ còn có thể đến từ **thời gian phản hồi**: email tồn tại thì server hash token và gửi mail (chậm), không tồn tại thì trả về ngay (nhanh). Chênh lệch đó đo được. Đẩy việc gửi mail sang hàng đợi để cả hai nhánh mất thời gian tương đương.
-
-## Rate limit là bắt buộc
-
-Không có nó, form này thành công cụ spam hộp thư người khác:
-
-```ts
-// Giới hạn theo CẢ email và IP: chỉ theo IP thì đổi IP là lách được,
-// chỉ theo email thì một IP vẫn dội được nhiều email khác nhau.
-await rateLimit(`reset:email:${email}`, { soLan: 3, trong: '1h' })
-await rateLimit(`reset:ip:${ip}`, { soLan: 10, trong: '1h' })
-```
-
-Xem [[gioi-han-tan-suat-va-chong-lam-dung]].
-
-## Xác minh email: cùng khuôn, khác một điểm
-
-Luồng giống hệt, chỉ khác:
-
-- Hạn dài hơn được (24–48 giờ) vì rủi ro thấp hơn
-- **Đổi email phải xác minh địa chỉ mới trước khi thay** — đổi thẳng rồi mới gửi xác minh thì gõ sai email là mất tài khoản vĩnh viễn:
-
-```ts
-// Lưu vào cột chờ, chỉ chuyển sang email chính khi đã xác minh
-await db.users.update({
-  where: { id },
-  data: { emailChoXacMinh: emailMoi },
+await db.resetToken.create({
+  userId: user.id,
+  tokenHash,
+  hetHan: new Date(Date.now() + 30 * 60_000),      // 30 phút
 })
 ```
 
-- Gửi thông báo về **địa chỉ cũ** khi có yêu cầu đổi email, để chủ tài khoản biết nếu không phải mình làm.
+## Code chạy thế nào
 
-## Lỗi hay gặp
+**Luồng đúng, từng bước:**
 
-| Lỗi | Hậu quả | Sửa thế nào |
+```text
+① Người dùng nhập email, bấm "Quên mật khẩu"
+② Server tìm user
+   → KHÔNG tiết lộ kết quả cho client
+③ Nếu có user: sinh token ngẫu nhiên 32 byte (nguồn ngẫu nhiên MẬT MÃ)
+④ LƯU HASH của token, kèm hạn 15-60 phút, kèm cờ "chưa dùng"
+⑤ Gửi email chứa link có token GỐC
+⑥ Trả về "Nếu email tồn tại, chúng tôi đã gửi hướng dẫn"  ← luôn luôn câu này
+   ...
+⑦ Người dùng bấm link, nhập mật khẩu mới
+⑧ Server: hash token nhận được, tra bảng
+⑨ Kiểm: tồn tại? chưa hết hạn? chưa dùng?
+⑩ Đổi mật khẩu (băm chậm)
+⑪ ĐÁNH DẤU token đã dùng — hoặc xoá luôn
+⑫ HUỶ MỌI PHIÊN ĐĂNG NHẬP hiện có
+⑬ Gửi email thông báo "mật khẩu của bạn vừa được đổi"
+```
+
+**Vì sao lưu hash chứ không lưu token gốc** (bước ④):
+
+```text
+Nếu cơ sở dữ liệu rò rỉ:
+  Lưu token gốc → kẻ tấn công có mọi token đang hoạt động
+                → đặt lại mật khẩu của mọi tài khoản đang chờ reset
+  Lưu hash      → token trong bảng vô dụng, không đảo ngược được
+```
+
+Đây là cùng nguyên tắc với mật khẩu ([[luu-mat-khau-va-ma-hoa]]): **thứ gì bạn chỉ cần so sánh thì lưu hash, đừng lưu bản gốc**. Và vì token đã là 32 byte ngẫu nhiên, SHA-256 là đủ — không cần hàm băm chậm.
+
+## Cú pháp
+
+**Bốn lỗi biến luồng này thành cửa hậu:**
+
+**① Token đoán được:**
+
+```ts
+const token = Math.random().toString(36)          // ❌ không phải ngẫu nhiên mật mã
+const token = `${userId}-${Date.now()}`           // ❌ đoán được hoàn toàn
+const token = crypto.randomBytes(32).toString('base64url')   // ✅
+```
+
+`Math.random()` không được thiết kế cho mục đích bảo mật — trạng thái của nó đoán được từ vài giá trị đầu ra.
+
+**② Token dùng được nhiều lần:**
+
+```text
+Người dùng đặt lại mật khẩu, xong.
+Ba tuần sau, ai đó xem lại email cũ trong hộp thư (hoặc trong lịch sử trình duyệt)
+⇒ dùng lại link đó ⇒ vào được tài khoản.
+```
+
+**③ Token không hết hạn:**
+
+```text
+Email nằm trong hộp thư mãi mãi. Token sống mãi mãi.
+⇒ Mất quyền truy cập email cũ = mất tài khoản, kể cả nhiều năm sau.
+```
+
+**④ Không huỷ phiên cũ sau khi đổi mật khẩu:**
+
+```text
+Kịch bản: kẻ tấn công đã chiếm tài khoản và đang đăng nhập.
+Người dùng phát hiện, đổi mật khẩu.
+⇒ Nếu không huỷ phiên, kẻ tấn công VẪN CÒN QUYỀN TRUY CẬP.
+⇒ Người dùng tưởng đã an toàn.
+```
+
+Lỗi ④ là lỗi nguy hiểm nhất vì nó tạo ra **cảm giác an toàn giả**.
+
+## Tại sao cần nó
+
+Vì **phản hồi phải giống nhau** dù email có tồn tại hay không:
+
+```ts
+// ❌ Tiết lộ email nào đã đăng ký
+if (!user) return { loi: 'Email không tồn tại' }
+
+// ✅
+return { thongBao: 'Nếu email tồn tại, chúng tôi đã gửi hướng dẫn' }
+```
+
+Và tinh vi hơn — **thời gian phản hồi**:
+
+```text
+Email không tồn tại  → trả về ngay              (5ms)
+Email tồn tại        → sinh token + gửi mail    (300ms)
+
+⇒ Kẻ tấn công đo thời gian và biết email nào đã đăng ký.
+```
+
+Cách chặn: **đẩy việc gửi mail sang hàng đợi**, trả về ngay trong cả hai trường hợp.
+
+```ts
+if (user) await hangDoi.them('gui-mail-reset', { userId: user.id })
+return { thongBao: 'Nếu email tồn tại, chúng tôi đã gửi hướng dẫn' }
+```
+
+**Rate limit là bắt buộc** ở luồng này:
+
+```text
+Theo email:  3 lần / giờ    → chống spam mail tới một người
+Theo IP:     10 lần / giờ   → chống dò email hàng loạt
+```
+
+Không có nó, kẻ tấn công dùng luồng này để **spam hộp thư của nạn nhân** — hoặc tệ hơn, để dò xem những email nào đã đăng ký ([[gioi-han-tan-suat-va-chong-lam-dung]]).
+
+## So sánh
+
+**Xác minh email — cùng khuôn, khác một điểm:**
+
+| | Đặt lại mật khẩu | Xác minh email |
 |---|---|---|
-| Lưu token dạng thô | Đọc được DB là chiếm mọi tài khoản | Lưu `sha256` hash |
-| `Math.random()` sinh token | Token đoán được | `crypto.randomBytes(32)` |
-| Token không hết hạn | Link cũ trong hộp thư vẫn dùng được | Hạn 15–60 phút |
-| Token dùng nhiều lần | Chuyển tiếp email là mất tài khoản | Cột `used_at` |
-| Không huỷ phiên sau khi đổi | Kẻ tấn công vẫn đăng nhập | `deleteMany` sessions |
-| Báo "email không tồn tại" | Lộ danh sách người dùng | Cùng một phản hồi |
-| Không rate limit | Spam hộp thư người khác | Giới hạn theo email **và** IP |
-| Đổi email trước khi xác minh | Gõ sai là mất tài khoản | Cột `email_cho_xac_minh` |
-| Token đặt lại đặt trong URL có `Referer` rời trang | Token lọt vào log bên thứ ba | `Referrer-Policy: no-referrer` |
+| Token ngẫu nhiên, lưu hash | ✅ | ✅ |
+| Dùng một lần | ✅ | ✅ |
+| Hết hạn | 15–60 phút | 24 giờ (dài hơn được) |
+| Huỷ phiên sau khi dùng | ✅ **bắt buộc** | ❌ không cần |
+| Tiết lộ email tồn tại | ❌ không được | Được (người dùng vừa nhập email đó) |
 
-## Ghi nhớ
+Điểm khác biệt về thời hạn có lý do: xác minh email không phải cửa vào tài khoản, nên rủi ro thấp hơn — và người dùng thường không mở email ngay.
 
-- Token là chứng chỉ tương đương mật khẩu: sinh bằng `randomBytes`, lưu bản hash.
-- Hết hạn ngắn và dùng đúng một lần.
-- Đổi mật khẩu phải huỷ mọi phiên — nếu không, kẻ tấn công vẫn ở trong.
-- Phản hồi giống nhau cho mọi email, kể cả về thời gian.
+## Dễ nhầm
 
-## Tự kiểm tra
+**1. Token sinh bằng `Math.random()`.** Đoán được.
 
-1. Vì sao lưu hash của token thay vì token gốc, và vì sao `sha256` là đủ ở đây?
-2. Không huỷ phiên sau khi đổi mật khẩu thì tấn công nào vẫn thành công?
-3. Form quên mật khẩu báo "email không tồn tại" gây ra rủi ro gì?
+**2. Lưu token gốc trong cơ sở dữ liệu.** Rò rỉ CSDL ⇒ chiếm mọi tài khoản đang chờ reset.
+
+**3. Token dùng được nhiều lần hoặc không hết hạn.** Email cũ thành chìa khoá vĩnh viễn.
+
+**4. Không huỷ phiên cũ.** Cảm giác an toàn giả.
+
+**5. Tiết lộ email tồn tại** — qua thông báo hoặc qua thời gian phản hồi.
+
+**6. Không rate limit.** Spam hộp thư nạn nhân, hoặc dò email hàng loạt.
+
+**7. Token trong URL bị ghi vào log.** Máy chủ, proxy, và **header `Referer`** khi trang reset có tài nguyên bên ngoài (font, ảnh, script phân tích) — trang đó nên đặt `Referrer-Policy: no-referrer`.
+
+**8. Không gửi email thông báo sau khi đổi.** Nếu ai đó đổi mật khẩu của bạn, bạn cần biết ngay.
+
+**9. Cho phép đổi email mà không xác minh cả địa chỉ cũ.** Kẻ chiếm tài khoản đổi email ⇒ chủ thật mất luôn đường khôi phục.
+
+## Mẹo nhớ
+
+> **Đây là cửa vào tài khoản KHÔNG cần mật khẩu — nên nó phải chặt hơn cả đăng nhập.**
+>
+> **Lưu HASH của token, không lưu token gốc.**
+>
+> **Đổi mật khẩu xong phải HUỶ MỌI PHIÊN — nếu không là an toàn giả.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Vì sao phải lưu hash của token thay vì token gốc?
+2. Bốn lỗi biến luồng này thành cửa hậu?
+3. Vì sao phải huỷ phiên cũ, và điều gì xảy ra nếu không?
+4. Tấn công theo thời gian ở luồng này hoạt động thế nào, và cách chặn?
+5. Xác minh email khác đặt lại mật khẩu ở những điểm nào?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết mã giả cho hai endpoint:
+
+```text
+POST /quen-mat-khau   (nhận email)
+POST /dat-lai         (nhận token + mật khẩu mới)
+```
+
+Tự kiểm: endpoint thứ nhất của bạn trả về gì khi email **không** tồn tại, và mất bao lâu so với khi email tồn tại?
+
+## Thử sức
+
+Người dùng báo: họ nhận được email *"mật khẩu của bạn vừa được đổi"* nhưng **họ không làm gì cả**.
+
+Ba câu để trả lời: chuyện gì có thể đã xảy ra (nêu **hai** kịch bản khác nhau); bạn **điều tra** bằng dữ liệu nào trong log; và bạn hướng dẫn người dùng làm gì **ngay lập tức**? Câu khó nhất: nếu kẻ tấn công đã đổi cả email khôi phục, người dùng còn đường nào lấy lại tài khoản?
