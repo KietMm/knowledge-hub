@@ -4,154 +4,228 @@ slug: ra-quyet-dinh-ky-thuat
 summary: Phân biệt quyết định đảo được với không đảo được, viết ADR, và thoát khỏi cuộc họp không có kết luận.
 level: co-ban
 tags: [dan-dat, adr, quyet-dinh, danh-doi]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** biết quyết định nào cần bàn kỹ và quyết định nào nên chốt trong 10 phút, và ghi lại lý do theo cách còn dùng được sau hai năm.
+> **Sau bài này bạn sẽ:** phân loại được quyết định theo mức đảo ngược, và viết ADR ghi lại **vì sao** chứ không chỉ **cái gì**.
 
-## Phân loại trước khi bàn
+## Ý tưởng chính
 
-Sai lầm phổ biến nhất là dành **cùng một lượng thời gian** cho mọi quyết định. Kết quả: bàn ba tuần về thư viện quản lý state, và chọn cấu trúc database trong một buổi chiều.
+Sai lầm phổ biến nhất không phải ra quyết định sai. Là **dùng sai mức công sức cho loại quyết định đó**:
 
-| | Đảo được | Không đảo được |
-|---|---|---|
-| **Ví dụ** | Thư viện UI, tên biến, định dạng log | Schema database, shard key, ranh giới service, ngôn ngữ chính |
-| **Cách quyết** | Một người chọn, làm, sửa nếu sai | Viết ra, hỏi ý kiến, thử nghiệm nhỏ trước |
-| **Thời gian** | Phút tới giờ | Ngày tới tuần |
-| **Chi phí đảo** | Thấp | Rất cao hoặc không đảo được |
+Bàn ba tuần về một thứ đổi lại trong một ngày. Và quyết định trong mười phút một thứ phải sống chung năm năm.
 
-Câu hỏi duy nhất cần trả lời trước: *"sáu tháng nữa nhận ra sai thì đổi mất bao lâu?"*
+## Mental model
 
-- Vài ngày → **quyết nhanh, đừng họp**. Chi phí bàn luận đã lớn hơn chi phí sai.
-- Vài tháng → viết ra, lấy ý kiến, cân nhắc.
+Hãy nghĩ tới **cửa một chiều và cửa hai chiều**.
 
-Điều này cũng nói lên một việc nên làm: **biến quyết định không đảo được thành đảo được** khi có thể. Bọc thư viện bên thứ ba sau một interface của mình thì việc đổi nó sau này từ "viết lại nửa hệ thống" thành "viết lại một adapter".
+> **Cửa hai chiều**: bước qua, thấy không ổn thì quay lại. Không cần đứng ngoài phân tích lâu — cách nhanh nhất để biết là bước vào.
+>
+> **Cửa một chiều**: qua rồi không quay lại được, hoặc quay lại rất đắt. Đứng lại, nghĩ kỹ, hỏi thêm người.
+>
+> Phần lớn cửa là hai chiều. Nhưng người ta thường đối xử với chúng như cửa một chiều — vì cẩn thận **trông** giống chuyên nghiệp.
 
-## Phân tích đánh đổi thật, không phải bảng ưu nhược điểm
+Ngược lại cũng đúng và tệ hơn: một cửa một chiều bị xử lý như cửa hai chiều thì hậu quả kéo dài nhiều năm.
 
-Bảng "ưu điểm / nhược điểm" là cái bẫy: nó liệt kê nhiều thứ nhưng không **cân** chúng, nên ai cũng đọc ra kết luận mình muốn.
+## Ví dụ nhỏ
 
-Cấu trúc dùng được:
+```text
+Cửa hai chiều (đảo được dễ):
+  Thư viện quản lý state, thư viện UI, định dạng log, công cụ CI
+  ⇒ quyết trong ngày, thử, sai thì đổi.
+
+Cửa một chiều (đắt để đảo):
+  CSDL chính, ngôn ngữ, mô hình dữ liệu, ranh giới service,
+  nền tảng cloud, định dạng API công khai
+  ⇒ dành thời gian, viết ADR, hỏi người có kinh nghiệm.
+```
+
+## Code chạy thế nào
+
+**Khung năm bước:**
+
+```text
+① VẤN ĐỀ THẬT LÀ GÌ
+   "Cần chuyển sang microservices" ← đó là GIẢI PHÁP, không phải vấn đề.
+   Hỏi ngược: "deploy hay xung đột" ← đây mới là vấn đề.
+   ⇒ Nhiều cuộc tranh luận biến mất ngay tại bước này.
+
+② LOẠI QUYẾT ĐỊNH  cửa một chiều hay hai chiều?
+   ⇒ Quyết định mức công sức bỏ ra cho các bước sau.
+
+③ 2–3 PHƯƠNG ÁN, kèm đánh đổi
+   Chỉ có một phương án nghĩa là bạn chưa cân nhắc, chỉ đang biện hộ.
+   LUÔN đưa "không làm gì" vào danh sách.
+
+④ TIÊU CHÍ, đặt TRƯỚC khi so sánh
+   Nếu đặt tiêu chí sau, bạn sẽ chọn tiêu chí phù hợp với đáp án đã thích.
+
+⑤ QUYẾT, GHI LẠI, ĐI TIẾP
+   Không quyết cũng là một quyết định — thường là quyết định tệ nhất,
+   vì bạn trả chi phí chờ đợi mà không nhận được gì.
+```
+
+**ADR — ghi lại VÌ SAO:**
 
 ```markdown
-## Ràng buộc (cái không thể thương lượng)
-- Phải chạy được trên hạ tầng hiện tại (không thêm nhà cung cấp)
-- Một người phải vận hành được
-- Dưới 300 $/tháng ở tải hiện tại
+# ADR-012: Dùng PostgreSQL làm CSDL chính
 
-## Phương án
-
-### A. Postgres full-text search
-Được: không thêm hệ thống; transaction cùng dữ liệu nghiệp vụ; ai cũng biết SQL
-Mất: không có tìm kiếm mờ tốt; khó mở rộng quá ~10 triệu bản ghi
-Rủi ro chính: nếu yêu cầu tìm kiếm phức tạp lên thì phải làm lại
-
-### B. Elasticsearch
-Được: tìm kiếm mạnh, gợi ý, xếp hạng
-Mất: một hệ thống nữa phải vận hành; đồng bộ dữ liệu là nguồn bug; ~400 $/tháng
-Rủi ro chính: không ai trong nhóm từng vận hành nó
-
-## Quyết định
-A. Ràng buộc "một người vận hành được" loại B ngay từ đầu, và
-2 triệu bản ghi còn cách xa giới hạn của A.
-
-## Điều kiện xem lại
-Khi vượt 8 triệu bản ghi, HOẶC khi có yêu cầu xếp hạng theo hành vi người dùng.
-```
-
-Hai phần làm nên giá trị: **ràng buộc viết trước phương án** (nó loại bỏ lựa chọn một cách khách quan thay vì theo sở thích), và **điều kiện xem lại** (biến quyết định thành một thứ có ngày hết hạn, thay vì một điều luật vĩnh viễn mà hai năm sau không ai dám sửa).
-
-## ADR: ghi lại vì sao, không ghi lại cái gì
-
-Code nói **cái gì** đang được làm. Không có gì nói **vì sao** — và đó là thứ mất đi khi người ra quyết định rời nhóm.
-
-```
-docs/adr/
-  0001-dung-json-file-lam-tang-luu-tru.md
-  0002-render-markdown-o-server.md
-  0003-noi-dung-viet-o-content-roi-bien-dich.md
-```
-
-```markdown
-# ADR 0003: Nội dung viết ở content/ rồi biên dịch
-
-- Trạng thái: chấp nhận
-- Ngày: 2026-08-18
+## Trạng thái
+Chấp nhận — 2026-08-21
 
 ## Bối cảnh
-Bài học là văn bản dài có nhiều khối code. Nhét vào chuỗi trong JSON thì diff
-không đọc được và gần như không sửa nổi bằng tay.
+Cần CSDL cho hệ thống đặt hàng. Dữ liệu quan hệ rõ, cần
+transaction. Đội quen SQL. Dự kiến < 500 GB trong 2 năm.
+
+## Phương án đã cân nhắc
+1. PostgreSQL — quen thuộc, JSONB linh hoạt, hệ sinh thái tốt
+2. MongoDB — schema linh hoạt, nhưng transaction đa văn bản phức tạp
+   hơn và mô hình dữ liệu của ta vốn quan hệ
+3. MySQL — tương đương, nhưng đội ít kinh nghiệm hơn
 
 ## Quyết định
-Viết markdown trong `content/`, một script biên dịch sang JSON.
+PostgreSQL.
 
 ## Hệ quả
-- Tốt: diff đọc được; thứ tự bài thấy ngay từ tên file; kiểm tra được lúc build
-- Xấu: thêm một bước build; sửa qua giao diện sẽ bị ghi đè khi chạy sync
-- Chấp nhận: nội dung dài hạn sửa trong `content/`, giao diện dùng cho ghi chú nhanh
-
-## Phương án đã loại
-- Gõ thẳng vào data/*.json — loại vì không sửa được bằng tay
-- Headless CMS — loại vì đây là app cá nhân chạy local, không cần dịch vụ ngoài
++ Transaction mạnh, JSONB cho phần bán cấu trúc
++ Đội làm được ngay
+− Mở rộng ghi ngang khó hơn; chấp nhận vì chưa cần trong 2 năm
+− Cần người biết vận hành Postgres
 ```
 
-Phần **"phương án đã loại"** thường bị bỏ và là phần có giá trị lâu nhất: nó chặn việc sáu tháng sau có người đề xuất lại đúng thứ đã bị loại, và cả nhóm bàn lại từ đầu.
+```text
+Giá trị thật của ADR nằm ở mục "Bối cảnh" và "Phương án đã cân nhắc".
 
-ADR **không sửa, chỉ thay thế**. Quyết định cũ sai thì viết ADR mới và đánh dấu cái cũ là `bị thay thế bởi ADR 0007`. Lịch sử suy nghĩ có giá trị riêng — nó cho người sau biết bạn đã cân nhắc gì.
+Sáu tháng sau, có người hỏi "sao không dùng X?"
+  Không có ADR: tranh luận lại từ đầu, với thông tin đã mất.
+  Có ADR:       "đã cân nhắc, lý do là ..., và giả định là ...
+                 giả định đó còn đúng không?"
+```
 
-## Chấm dứt cuộc họp không có kết luận
+Và điều đó dẫn tới cách dùng ADR đúng: nó không phải để bảo vệ quyết định cũ, mà để **kiểm tra xem giả định của quyết định cũ còn đúng không**.
 
-Ba tình huống và cách xử lý:
+## Cú pháp
 
-**Bàn vòng tròn vì thiếu dữ liệu.** Dừng lại, đặt câu hỏi: *"số liệu nào sẽ khiến chúng ta đồng ý?"* Rồi đi lấy số đó. Một spike hai ngày rẻ hơn ba tuần tranh luận.
+**Thoát khỏi cuộc họp không có kết luận:**
 
-**Bàn vòng tròn vì đó là quyết định đảo được.** Nói ra điều đó: *"cái này đổi mất một ngày. Tôi chọn A, nếu sai thì đổi."* Phần lớn tranh luận dài là về quyết định rẻ.
+```text
+① Đặt câu hỏi cụ thể trước cuộc họp
+   ❌ "Bàn về kiến trúc"
+   ✅ "Chọn CSDL cho hệ thống đặt hàng. Quyết định trong hôm nay."
 
-**Bàn vòng tròn vì bất đồng về ràng buộc, không phải về phương án.** Đây là trường hợp hay bị nhận sai. Hai người tranh về Postgres và Elasticsearch, nhưng thực chất họ đang bất đồng về "chúng ta có định làm tìm kiếm mờ hay không" — một câu hỏi sản phẩm. Lùi lại một bước và chốt ràng buộc trước.
+② Gửi tài liệu TRƯỚC — phương án và đánh đổi
 
-## Không đồng ý nhưng cam kết
+③ Nói rõ AI QUYẾT
+   Đồng thuận là mục tiêu tốt, nhưng không phải phương pháp:
+   nó biến thành "chờ tới khi người phản đối cuối cùng mệt".
 
-Không phải quyết định nào cũng có đồng thuận. Cách kết thúc lành mạnh:
+④ Hết giờ mà chưa quyết:
+   → "Cần thêm thông tin gì? Ai lấy? Bao giờ? Ta quyết vào lúc nào?"
+   → KHÔNG hẹn "họp lại tuần sau" mà không có ba câu trả lời trên.
+```
 
-> "Tôi vẫn nghĩ B tốt hơn vì lý do X. Nhưng chúng ta đã chốt A, và tôi sẽ làm A hết sức. Đây là dấu hiệu tôi sẽ theo dõi để biết tôi đúng: nếu độ trễ p99 vượt 500ms trong tháng tới thì đề nghị xem lại."
+**Bất đồng nhưng cam kết:**
 
-Ba phần: nêu rõ mình không đồng ý, cam kết thực hiện, và **nêu dấu hiệu cụ thể** để xem lại. Phần thứ ba biến bất đồng thành một giả thuyết kiểm chứng được, thay vào chỗ của "tôi đã nói rồi mà" sáu tháng sau.
+```text
+Bạn phản đối, nhưng quyết định đã được đưa ra.
+⇒ Nói rõ: "Tôi vẫn nghĩ X tốt hơn vì lý do này, nhưng tôi
+  cam kết làm theo Y và làm cho nó thành công."
 
-Điều tệ nhất là đồng ý ngoài miệng rồi làm nửa vời — nó khiến phương án A thất bại vì thực thi kém, và không ai học được gì về việc A hay B đúng.
+Không: âm thầm làm nửa vời rồi nói "tôi đã bảo rồi".
+Vế sau phá hoại nhiều hơn một quyết định sai.
+```
 
-## Người quyết là ai
+**Ghi lại giả định để biết khi nào xem lại:**
 
-Nói rõ trước khi bàn, để không mất thời gian:
+```text
+"Chọn Postgres vì dự kiến < 500 GB và < 1.000 req/s."
 
-- **Quyết định của một người** — người đó nghe ý kiến rồi tự chốt (phần lớn trường hợp)
-- **Đồng thuận** — chỉ dùng cho quyết định cả nhóm phải sống cùng lâu dài (quy ước code, quy trình review)
-- **Người có chuyên môn quyết** — về vấn đề mà một người rõ hơn hẳn số còn lại
+⇒ Đó là ĐIỀU KIỆN KÍCH HOẠT xem lại, viết ra rõ ràng.
+⇒ Chạm 400 GB ⇒ mở ADR ra, kiểm tra, không phải hoảng.
+```
 
-Cái tệ nhất là **giả đồng thuận**: nhìn như cả nhóm quyết nhưng thực ra người có tiếng nói lớn nhất quyết, còn người khác im lặng. Nó cho ra quyết định tệ và người ta không cam kết với nó.
+## Tại sao cần nó
 
-## Lỗi hay gặp
+Vì hai lỗi ngược nhau đều tốn kém:
 
-| Lỗi | Hậu quả | Sửa thế nào |
+```text
+QUÁ PHÂN TÍCH cửa hai chiều:
+  Ba tuần chọn thư viện form.
+  ⇒ Mất ba tuần, và câu trả lời "thử một cái, sai thì đổi"
+    vốn chỉ mất một ngày.
+
+QUÁ VỘI ở cửa một chiều:
+  Chọn CSDL trong một cuộc họp 30 phút.
+  ⇒ Sống chung nhiều năm, hoặc trả giá bằng một dự án di chuyển.
+```
+
+**Nguyên tắc nhận diện nhanh:** hỏi *"nếu sáu tháng nữa thấy sai, đổi lại tốn bao nhiêu?"*
+
+```text
+Vài ngày   → cửa hai chiều, quyết nhanh, đừng họp nhiều.
+Vài tháng  → cửa một chiều, viết ADR, hỏi thêm người.
+```
+
+**Và một điều dễ bỏ qua: quyết định cũng có chi phí thời gian.** Một tuần chờ quyết định là một tuần cả đội không làm được phần phụ thuộc vào nó. Với cửa hai chiều, **chi phí chờ thường lớn hơn chi phí chọn sai**.
+
+## So sánh
+
+| | Cửa hai chiều | Cửa một chiều |
 |---|---|---|
-| Bàn quyết định đảo được như không đảo được | Tuần bàn cho việc sửa mất một ngày | Phân loại trước |
-| Quyết định không đảo được làm vội | Trả giá nhiều năm | Viết ra, spike, lấy ý kiến |
-| Bảng ưu/nhược điểm | Ai cũng đọc ra kết luận mình muốn | Viết ràng buộc trước |
-| Không ghi lý do ở đâu | Hai năm sau không ai biết vì sao | ADR |
-| Bỏ phần "phương án đã loại" | Bàn lại từ đầu sáu tháng sau | Ghi cả cái đã loại |
-| ADR không có điều kiện xem lại | Thành điều luật vĩnh viễn | Ghi rõ khi nào xem lại |
-| Sửa ADR cũ | Mất lịch sử suy nghĩ | Viết ADR mới thay thế |
-| Không nói rõ ai quyết | Họp không kết luận | Nói trước khi bàn |
-| Giả đồng thuận | Quyết định tệ, không ai cam kết | Nói rõ đây là quyết định của một người |
-| Đồng ý ngoài miệng rồi làm nửa vời | Phương án thất bại vì thực thi, không ai học được gì | Không đồng ý nhưng cam kết |
+| Đảo lại | dễ, rẻ | khó, đắt |
+| Công sức | thấp — thử luôn | cao — phân tích |
+| Ai quyết | một người | có bàn bạc |
+| ADR | không cần | **cần** |
+| Ví dụ | thư viện, công cụ | CSDL, ngôn ngữ, ranh giới |
 
-## Ghi nhớ
+## Dễ nhầm
 
-- Câu hỏi đầu tiên: "sai thì đổi mất bao lâu?" — nó quyết định bao nhiêu công sức nên bỏ ra.
-- Ràng buộc viết **trước** phương án; nó loại lựa chọn khách quan.
-- ADR ghi **vì sao**, gồm cả phương án đã loại và điều kiện xem lại.
-- Bất đồng kết thúc bằng cam kết + một dấu hiệu cụ thể để xem lại.
+**1. Đối xử với cửa hai chiều như cửa một chiều.** Mất thời gian, chậm cả đội.
 
-## Tự kiểm tra
+**2. Đối xử với cửa một chiều như cửa hai chiều.** Trả giá nhiều năm.
 
-1. Câu hỏi nào quyết định lượng thời gian nên bỏ vào một quyết định?
-2. Vì sao "phương án đã loại" là phần có giá trị lâu nhất của ADR?
-3. Nhóm bàn vòng tròn về Postgres vs Elasticsearch. Ba nguyên nhân có thể, và cách xử lý mỗi cái?
+**3. Chỉ có một phương án.** Đó là biện hộ, không phải cân nhắc.
+
+**4. Quên "không làm gì".** Thường là phương án tốt nhất.
+
+**5. Đặt tiêu chí sau khi đã có đáp án ưa thích.**
+
+**6. Không ghi lại lý do.** Tranh luận lại từ đầu sau sáu tháng.
+
+**7. Không nói rõ ai quyết.** Họp mãi không kết luận.
+
+**8. Chờ đồng thuận tuyệt đối.** Người phản đối cuối cùng có quyền phủ quyết.
+
+**9. Bất đồng rồi làm nửa vời.** Phá hoại hơn một quyết định sai.
+
+**10. Không ghi giả định.** Không biết khi nào cần xem lại.
+
+## Mẹo nhớ
+
+> **Hỏi trước: "sáu tháng nữa đổi lại tốn bao nhiêu?"**
+>
+> **ADR ghi lại BỐI CẢNH và PHƯƠNG ÁN ĐÃ LOẠI — không chỉ kết luận.**
+>
+> **Bất đồng nhưng cam kết. Làm nửa vời tệ hơn quyết định sai.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Cửa một chiều khác cửa hai chiều thế nào, nhận biết bằng câu hỏi nào?
+2. Năm bước của khung ra quyết định?
+3. Phần nào của ADR có giá trị lâu dài nhất, vì sao?
+4. Vì sao phải ghi lại giả định?
+5. "Bất đồng nhưng cam kết" nghĩa là gì?
+
+## Tự viết lại
+
+Đội cần chọn giữa REST và GraphQL cho API mới. Không nhìn lại, viết ADR đầy đủ: bối cảnh, ba phương án (nhớ cả "giữ nguyên"), tiêu chí đặt trước, quyết định, hệ quả, và **giả định** kèm điều kiện xem lại.
+
+Tự kiểm: đây là cửa một chiều hay hai chiều — và câu trả lời đó có đổi cách bạn viết ADR không?
+
+## Thử sức
+
+Đội tranh luận ba tuần về việc chọn thư viện quản lý state, chưa quyết được. Mọi người bắt đầu bực bội.
+
+Ba câu để trả lời: bạn nhận ra vấn đề gì ở đây; bạn làm gì để kết thúc trong hôm nay; và bạn tránh lặp lại bằng cách nào. Câu khó nhất: nếu ba tuần đó thực ra là tranh luận về một thứ **khác** — ai được quyết định kiến trúc frontend — thì bạn xử lý ra sao?

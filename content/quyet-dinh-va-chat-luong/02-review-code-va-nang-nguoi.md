@@ -4,149 +4,218 @@ slug: review-code-va-nang-nguoi
 summary: Review là hành động dạy, không phải cửa kiểm soát. Cách góp ý, cách nhận góp ý, và chuẩn nào nên do máy giữ.
 level: co-ban
 tags: [dan-dat, code-review, phan-hoi, chat-luong]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** review theo cách làm người khác giỏi lên thay vì chỉ chặn lỗi, và biết cái gì tuyệt đối không nên đem ra review.
+> **Sau bài này bạn sẽ:** viết được nhận xét review giúp người khác giỏi lên, và biết chuẩn nào nên giao cho máy.
 
-## Máy giữ chuẩn, người giữ ý tưởng
+## Ý tưởng chính
 
-Nguyên tắc quan trọng nhất: **mọi thứ máy kiểm được thì đừng bao giờ nói trong review.**
+Review có ba mục đích, và chúng **không ngang hàng**:
 
-```
-Máy giữ:  định dạng (Prettier), quy ước (ESLint), kiểu (tsc),
-          test, coverage, kích thước bundle, lỗ hổng phụ thuộc
+**① Truyền kiến thức** — cả hai phía cùng học, và nhiều người biết về mã đó.
+**② Bắt lỗi** — quan trọng, nhưng công cụ tự động làm phần lớn.
+**③ Giữ nhất quán** — nên do máy làm, không nên do người tranh luận.
 
-Người giữ: bài toán này có đúng là bài toán cần giải không?
-           thiết kế này sáu tháng nữa còn sửa được không?
-           chỗ nào sẽ hỏng mà test chưa phủ?
-           người sau đọc có hiểu vì sao code làm thế này không?
-```
+Đội nào coi ① là chính thì review là chỗ mọi người giỏi lên. Đội nào coi ③ là chính thì review là chỗ mọi người sợ.
 
-Review nói về dấu phẩy là **lãng phí kép**: nó tốn thời gian của hai người, và nó đẩy phần thật sự quan trọng ra khỏi tầm chú ý. Nếu bạn thấy mình đang bình luận về khoảng trắng, việc cần làm là cấu hình Prettier, không phải viết bình luận.
+## Mental model
 
-## Phân tầng góp ý
+Hãy nghĩ tới **hai kiểu chấm bài**.
 
-Không phải mọi góp ý đều ngang nhau, và người nhận cần biết cái nào phải sửa:
+> **Kiểu một**: gạch đỏ mọi lỗi, ghi điểm, trả lại. Học sinh biết mình sai, không biết vì sao, và học được cách **giấu bài** cho tới khi thật chắc.
+>
+> **Kiểu hai**: khoanh chỗ chưa ổn và hỏi *"em nghĩ chuyện gì xảy ra nếu danh sách này rỗng?"* Học sinh tự tìm ra, và **nhớ**.
+>
+> Kiểu một nhanh hơn cho người chấm. Kiểu hai làm người học giỏi lên — và giảm số bài phải chấm về sau.
 
-```
-BẮT BUỘC: Truy vấn này không có kiểm tra quyền — người dùng A đọc được đơn của B.
-Ý KIẾN:   Mình sẽ tách hàm này thành hai, nhưng để nguyên cũng ổn.
-CÂU HỎI:  Chỗ này có xử lý trường hợp mảng rỗng không? Mình đọc chưa ra.
-KHEN:     Cái hàm gộp truy vấn này hay, mình sẽ dùng lại ở chỗ khác.
-```
+Điểm quan trọng: một nhận xét dạng câu hỏi cũng chỉ ra đúng lỗi đó, nhưng chuyển việc suy nghĩ sang đúng người cần suy nghĩ.
 
-Không phân tầng thì người nhận phải đoán, và họ thường đoán theo hướng tệ nhất: coi mọi bình luận là bắt buộc, sửa hết, và học được rằng review là thứ cần chịu đựng.
+## Ví dụ nhỏ
 
-**Phần KHEN không phải hình thức.** Nó dạy chính xác bằng lượng phần BẮT BUỘC dạy — nó nói cho người ta biết cái gì nên làm nhiều hơn. Review chỉ có phần xấu thì người ta chỉ học được cách tránh, không học được cách làm tốt.
-
-## Nói về code, và nói cả vì sao
-
-```
-❌ "Sai rồi."
-❌ "Bạn không nên dùng any ở đây."
-❌ "Đoạn này viết tệ."
-
-✅ "Chỗ này `any` làm mất kiểm tra kiểu ở toàn bộ nhánh dưới — nếu API đổi hình
-   dạng thì tsc sẽ không báo. Dùng `unknown` rồi hẹp lại bằng zod thì lỗi sẽ
-   hiện ra ở đúng ranh giới. Xem thêm ở [[thu-hep-kieu-va-unknown]]."
+```text
+❌ "Sai rồi, dùng map đi."
+✅ "Chỗ này dùng `map` sẽ gọn hơn vì không cần biến trung gian.
+    Bạn thấy sao?"
 ```
 
-Ba điểm khác biệt: nói về **code** chứ không nói về **người** ("chỗ này" thay vì "bạn"), nêu **hệ quả cụ thể** (không phải "tệ" mà "tsc sẽ không báo khi API đổi"), và đưa **đường đi tiếp**.
+## Code chạy thế nào
 
-Điểm thứ hai là quan trọng nhất. "Không nên dùng any" là một luật phải nhớ; "any làm mất kiểm tra kiểu ở nhánh dưới nên lỗi sẽ hiện ra ở chỗ khác" là một **mô hình** — người ta suy ra được từ đó cho những trường hợp bạn chưa nói tới.
+**Bốn mức nhận xét — nói rõ mức để người nhận biết phải làm gì:**
 
-## Review theo thứ tự đúng
+```text
+[chặn]     Phải sửa trước khi merge. Lỗi, lỗ hổng, mất dữ liệu.
+[nên]      Nên sửa, nhưng không chặn.
+[nit]      Vụn vặt, tuỳ bạn. (Nếu nhiều nit ⇒ đó là việc của linter.)
+[hỏi]      Tôi chưa hiểu, giải thích giúp.
 
-Đọc theo bốn tầng, và **đừng đi tầng dưới trước khi xong tầng trên**:
-
-1. **Bài toán** — có đúng vấn đề cần giải không? Có yêu cầu nào bị hiểu sai?
-2. **Thiết kế** — ranh giới, luồng dữ liệu, chỗ đặt logic
-3. **Tính đúng** — trường hợp biên, lỗi, đồng thời, bảo mật
-4. **Chi tiết** — tên, cấu trúc, chỗ nào cần comment
-
-Bình luận 30 chi tiết ở tầng 4 rồi mới phát hiện tầng 1 sai là cách chắc chắn nhất làm người khác mất động lực: họ vừa sửa 30 thứ xong thì được biết cả hướng làm đã sai.
-
-Nếu tầng 1 hoặc 2 có vấn đề, **nói ngay và chỉ nói cái đó**, đừng review tiếp.
-
-## Những chỗ đáng tìm nhất
-
-Kinh nghiệm cho thấy bug thật hay nằm ở:
-
-- **Chỗ không có test** — nhìn diff test trước, diff code sau. Chỗ nào code đổi mà test không đổi?
-- **Xử lý lỗi** — catch rỗng, lỗi bị nuốt, `catch` rồi `return null`
-- **Kiểm tra quyền** — endpoint mới có kiểm tra chủ sở hữu không? Xem [[phan-quyen-theo-ban-ghi]]
-- **Đồng thời** — có mẫu đọc-rồi-ghi không? Xem [[truy-cap-dong-thoi-va-khoa]]
-- **Trường hợp biên** — rỗng, một phần tử, `null`, số âm, chuỗi rất dài
-- **Cái bị xoá** — dòng bị xoá thường ít được xem hơn dòng được thêm, nhưng xoá một kiểm tra là cách tạo lỗ hổng
-
-## Kích thước PR quyết định chất lượng review
-
-```
-PR 50 dòng    → review kỹ, tìm ra vấn đề thật
-PR 500 dòng   → review qua, "LGTM"
-PR 2000 dòng  → không ai đọc thật
+Không gắn nhãn ⇒ người nhận không biết cái nào bắt buộc
+⇒ hoặc sửa hết (mất thời gian), hoặc bỏ qua cả cái quan trọng.
 ```
 
-PR lớn không nhận được review tốt hơn — nó nhận được review **tệ hơn**. Là tech lead, việc của bạn là làm PR nhỏ thành chuyện dễ:
+**Nhận xét tốt có ba phần:**
 
-- Tách refactor ra khỏi thay đổi hành vi (**hai PR riêng**, luôn luôn)
-- Merge phần hạ tầng trước, phần tính năng sau
-- Dùng feature flag để merge code chưa hoàn chỉnh — xem [[trien-khai-an-toan]]
+```text
+① CÁI GÌ    chỉ rõ chỗ và vấn đề
+② VÌ SAO    hậu quả cụ thể, không phải sở thích
+③ GỢI Ý     một hướng đi, không phải mệnh lệnh
 
-PR trộn "đổi tên 40 file" với "thêm logic tính thuế" thì phần logic sẽ không được ai đọc — nó chìm trong 400 dòng đổi tên.
+❌ "Đoạn này tệ."
+❌ "Không nên viết vậy."           ← không nói vì sao
+✅ "[chặn] Nếu `items` rỗng thì `items[0]` là undefined và dòng
+    dưới sẽ ném lỗi. Thêm kiểm tra ở đầu hàm được không?"
+```
 
-## Nhận góp ý
+Vế "vì sao" là phần làm nên khác biệt: nó biến một mệnh lệnh thành một điều người kia **học được và áp dụng lần sau**.
 
-Phía bên kia cũng là kỹ năng, và nó khó hơn:
+**Chuẩn nào nên giao cho máy:**
 
-- **Góp ý về code, không về bạn.** Nghe hiển nhiên, thực hành thì khó.
-- **Không hiểu thì hỏi**, đừng sửa cho xong. Sửa mà không hiểu là bỏ mất phần học.
-- **Không đồng ý thì nói ra**, có lý lẽ. Người review cũng có thể sai, và họ thường thiếu bối cảnh mà bạn có.
-- **Có bình luận nghĩa là có người đọc code của bạn.** Đó là điều tốt.
+```text
+Máy giữ:   định dạng (prettier), quy tắc lint, kiểu (typecheck),
+           độ phủ test, kích thước bundle
+Người giữ: tính đúng đắn, thiết kế, đặt tên, ranh giới, ca biên,
+           bảo mật, khả năng đọc
 
-Một dấu hiệu xấu cần để ý: người ta bắt đầu viết code "để dễ qua review" thay vì "để đúng". Lúc đó review đã thành cửa kiểm soát, không còn là hành động dạy.
+Tranh luận về dấu phẩy trong review là dấu hiệu THIẾU CÔNG CỤ,
+không phải thiếu tiêu chuẩn.
+```
 
-## Chuyện tuyệt đối không nên đem ra review
+Lý do sâu hơn: quy tắc do máy giữ thì không có ai phải nói và không có ai phải nghe. Nó loại bỏ hoàn toàn một loại ma sát giữa người với người.
 
-- **Phê bình cá nhân.** Riêng tư, trực tiếp, không bao giờ trong PR.
-- **Bất đồng lớn về kiến trúc.** PR quá muộn để bàn hướng đi. Bàn trước bằng ADR — xem [[ra-quyet-dinh-ky-thuat]]. Phát hiện ở PR thì gọi một cuộc nói chuyện, không viết 20 bình luận.
-- **Sở thích cá nhân trình bày như luật.** Nếu bạn thật sự muốn nó thành luật, đưa vào ESLint và bàn với cả nhóm.
+## Cú pháp
 
-## Vài con số nên theo dõi
+**Nhìn gì khi review — theo thứ tự:**
 
-| Chỉ số | Vì sao |
-|---|---|
-| Thời gian tới review đầu tiên | Chờ một ngày làm mất đà; nên trong vài giờ |
-| Kích thước PR | Trên 400 dòng thì chất lượng review giảm rõ |
-| Số vòng review | Trên 3 vòng thường nghĩa là bàn sai tầng |
-| Tỉ lệ người review | Nếu một người review 80% thì nhóm đang có một điểm nghẽn kiến thức |
+```text
+① ĐÚNG KHÔNG        logic, ca biên, xử lý lỗi
+② AN TOÀN KHÔNG     đầu vào, phân quyền, rò rỉ dữ liệu
+③ ĐỌC ĐƯỢC KHÔNG    sáu tháng sau người khác hiểu được không
+④ THIẾT KẾ          đúng chỗ chưa, có tạo phụ thuộc xấu không
+⑤ TEST              có test cho phần quan trọng và ca biên chưa
+⑥ VỤN VẶT           chỉ khi năm cái trên đã ổn
+```
 
-Chỉ số cuối đáng để ý: nếu chỉ bạn review được mọi thứ, đó không phải dấu hiệu bạn giỏi mà là dấu hiệu **bạn chưa uỷ quyền** — xem [[uy-quyen-va-dan-dat-nhom]].
+Lỗi thường gặp là bắt đầu từ ⑥ vì nó dễ thấy nhất — và hết năng lượng trước khi tới ①.
 
-## Lỗi hay gặp
+**PR nhỏ — yếu tố ảnh hưởng chất lượng review nhiều nhất:**
 
-| Lỗi | Hậu quả | Sửa thế nào |
+```text
+PR 50 dòng   → review kỹ, tìm ra lỗi thật
+PR 500 dòng  → "LGTM"
+PR 2000 dòng → không ai đọc thật
+
+⇒ Chất lượng review giảm rất nhanh theo kích thước.
+⇒ Tách PR là việc của người VIẾT, không phải người review.
+```
+
+Đây là lý do feature flag hữu ích ngoài mục đích phát hành: nó cho phép merge từng mảnh nhỏ trong khi tính năng chưa hoàn chỉnh ([[trien-khai-an-toan]]).
+
+**Nhận góp ý:**
+
+```text
+□ Góp ý về MÃ, không về bạn. Tách hai thứ đó ra là kỹ năng, và học được.
+□ Không hiểu ⇒ hỏi lại, đừng đoán ý.
+□ Không đồng ý ⇒ nói lý do, đừng im lặng sửa theo.
+□ Cùng một loại góp ý lặp lại ⇒ đó là một bài học, ghi lại.
+□ Cảm ơn góp ý bắt được lỗi thật — nó tiết kiệm cho bạn một sự cố.
+```
+
+**Người mới — review là công cụ đào tạo mạnh nhất:**
+
+```text
+□ Giải thích VÌ SAO nhiều hơn bình thường
+□ Chỉ ra cả cái ĐÚNG, không chỉ cái sai
+□ Với vấn đề lớn: nói chuyện trực tiếp thay vì để 20 nhận xét
+   → 20 nhận xét trên một PR đọc như một bản cáo trạng,
+     kể cả khi từng cái đều đúng và lịch sự.
+□ Một PR không nên là chỗ dạy mọi thứ — chọn 2–3 điểm quan trọng nhất
+```
+
+## Tại sao cần nó
+
+Vì review chậm phá hỏng nhịp làm việc:
+
+```text
+Review trong 4 giờ  → người viết còn nhớ ngữ cảnh, sửa ngay.
+Review sau 2 ngày   → phải nạp lại toàn bộ ngữ cảnh, và họ đã chuyển
+                       sang việc khác ⇒ chi phí chuyển ngữ cảnh hai lần.
+```
+
+Mốc thực tế: **review trong vòng nửa ngày làm việc**. Nếu không kịp, nói một câu — im lặng là thứ tệ nhất cho người đang chờ.
+
+**Và một điều ít được nói: review cũng là nơi phát hiện vấn đề tổ chức.**
+
+```text
+Cùng một loại lỗi xuất hiện ở nhiều PR
+  ⇒ không phải vấn đề của từng người
+  ⇒ thiếu một quy ước, một lớp trừu tượng, hoặc một quy tắc lint.
+
+Sửa ở đó rẻ hơn nhiều so với nhắc lại mỗi tuần.
+```
+
+## So sánh
+
+| | Review như cửa kiểm soát | Review như dạy học |
 |---|---|---|
-| Review định dạng, quy ước | Tốn thời gian, che phần quan trọng | Đưa vào Prettier/ESLint |
-| Không phân tầng góp ý | Người nhận coi mọi thứ là bắt buộc | Gắn nhãn BẮT BUỘC / Ý KIẾN / CÂU HỎI |
-| Chỉ nói cái xấu | Người ta chỉ học cách tránh | Nêu cả cái làm tốt |
-| Nói "sai rồi" không nói vì sao | Học được luật, không học được mô hình | Nêu hệ quả cụ thể |
-| Bình luận chi tiết trước khi xét thiết kế | Sửa 30 thứ rồi biết cả hướng sai | Review theo bốn tầng |
-| PR 2000 dòng | Không ai đọc thật, bug lọt | Tách nhỏ, tách refactor riêng |
-| Trộn refactor với đổi hành vi | Phần quan trọng chìm trong diff | Hai PR |
-| Bàn kiến trúc trong PR | Quá muộn, tốn công cả hai bên | ADR trước |
-| Sở thích cá nhân nói như luật | Người ta viết code để qua review | Vào lint, hoặc gắn nhãn Ý KIẾN |
-| Một người review mọi thứ | Điểm nghẽn kiến thức | Luân phiên, uỷ quyền |
+| Mục tiêu | bắt lỗi | truyền kiến thức |
+| Giọng | phán xét | hỏi và giải thích |
+| Người nhận | phòng thủ, giấu bài | học, hỏi thêm |
+| Lâu dài | cùng lỗi lặp lại | ít lỗi dần |
 
-## Ghi nhớ
+## Dễ nhầm
 
-- Máy giữ chuẩn, người giữ ý tưởng — bình luận về khoảng trắng là dấu hiệu thiếu cấu hình.
-- Phân tầng góp ý, và phần khen dạy được ngang phần bắt buộc.
-- Nêu **hệ quả**, không nêu luật — hệ quả cho người ta một mô hình suy luận được.
-- Review bốn tầng theo thứ tự; sai ở tầng 1 thì đừng bình luận tầng 4.
+**1. Tranh luận về định dạng.** Giao cho máy.
 
-## Tự kiểm tra
+**2. Không nói vì sao.** Người nhận sửa mà không học được gì.
 
-1. Bạn muốn bình luận về thứ tự import. Việc đúng cần làm là gì?
-2. Vì sao PR 2000 dòng nhận review tệ hơn PR 50 dòng, không phải tốt hơn?
-3. Vì sao "nêu hệ quả" dạy được nhiều hơn "nêu luật"?
+**3. Không phân mức nhận xét.** Không biết cái nào bắt buộc.
+
+**4. Review PR quá lớn.** "LGTM" mà chưa đọc.
+
+**5. Review chậm và im lặng.** Người viết mất ngữ cảnh.
+
+**6. Chỉ chỉ ra cái sai.** Người mới mất tự tin.
+
+**7. 20 nhận xét trên một PR của người mới.** Nói chuyện trực tiếp.
+
+**8. Bắt đầu từ chuyện vụn vặt.** Hết năng lượng trước khi xét tính đúng đắn.
+
+**9. Góp ý về người thay vì về mã.** Phá quan hệ và không sửa được gì.
+
+**10. Không nhận ra lỗi lặp lại là vấn đề hệ thống.** Nhắc mãi mà không hết.
+
+## Mẹo nhớ
+
+> **Review là hành động DẠY. Bắt lỗi là tác dụng phụ.**
+>
+> **Chuẩn máy giữ được thì đừng để người tranh luận.**
+>
+> **PR nhỏ ⇒ review thật. PR lớn ⇒ "LGTM".**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Ba mục đích của review, cái nào quan trọng nhất và vì sao?
+2. Bốn mức nhận xét, vì sao phải gắn nhãn?
+3. Ba phần của một nhận xét tốt?
+4. Chuẩn nào nên do máy giữ, chuẩn nào do người?
+5. Vì sao kích thước PR ảnh hưởng lớn tới chất lượng review?
+
+## Tự viết lại
+
+Bạn review một PR của người mới, thấy: một lỗi ca biên có thể gây crash, một chỗ đặt tên khó hiểu, ba chỗ sai định dạng, và một chỗ dùng thư viện lạ. Không nhìn lại, viết:
+
+```text
+① các nhận xét, có gắn mức
+② cái nào bạn KHÔNG viết vào PR, và xử lý ở đâu
+③ một câu ghi nhận cái họ làm tốt
+```
+
+Tự kiểm: bạn có viết nhận xét nào về định dạng không — nếu có, vì sao linter không bắt được nó?
+
+## Thử sức
+
+Đội bạn có PR trung bình 800 dòng, review mất 2–3 ngày, và nhận xét chủ yếu về định dạng.
+
+Ba câu để trả lời: ba vấn đề bạn nhận ra và cái nào sửa trước; các thay đổi cụ thể; và bạn đo cải thiện bằng gì. Câu khó nhất: nếu PR lớn vì tính năng lớn và "không tách được", bạn đề xuất kỹ thuật nào để tách — và nó đòi hỏi thay đổi gì khác trong cách làm việc?
