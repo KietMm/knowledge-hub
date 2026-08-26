@@ -4,136 +4,238 @@ slug: kiem-thu-tu-dong-trong-ci
 summary: Tháp kiểm thử, xử lý test chập chờn, và biến CI thành thứ đáng tin để chặn merge.
 level: trung-cap
 tags: [ci-cd, kiem-thu, test]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** thiết kế bộ test chạy nhanh mà vẫn đủ tin cậy, và xử lý đúng khi gặp test chập chờn.
+> **Sau bài này bạn sẽ:** biết vì sao một test chập chờn nguy hiểm hơn không có test, và xử lý nó thế nào.
 
-## Tháp kiểm thử
+## Ý tưởng chính
 
+Giá trị của CI nằm ở **độ tin cậy của tín hiệu**, không ở số lượng test.
+
+Suite xanh mà bạn tin ⇒ merge tự tin.
+Suite hay đỏ vô cớ ⇒ mọi người bấm "re-run" theo phản xạ ⇒ **màu đỏ không còn nghĩa gì**.
+
+Và ở trạng thái thứ hai, bạn đang trả tiền máy để duy trì một thứ trang trí.
+
+## Mental model
+
+Hãy nghĩ tới **chuông báo cháy trong toà nhà**.
+
+> Chuông reo mỗi lần ai đó nướng bánh mì, mỗi tuần vài lần. Ban đầu mọi người chạy ra. Sau một tháng, không ai nhúc nhích.
+>
+> Rồi có một đám cháy thật.
+>
+> Vấn đề không phải chuông kêu quá to. Vấn đề là nó **kêu khi không có cháy** — và điều đó đã dạy mọi người bỏ qua nó.
+
+Một test chập chờn dạy cả đội bỏ qua màu đỏ. Nó phá hoại **toàn bộ** suite, không chỉ chính nó.
+
+## Ví dụ nhỏ
+
+```yaml
+- run: pnpm test:unit          # nhanh, chạy trên mọi PR
+- run: pnpm test:integration   # có CSDL thật
+- run: pnpm test:e2e           # ít, chậm — chỉ luồng quan trọng nhất
 ```
-      /\      E2E — ít, chậm, giống người dùng nhất
-     /  \
-    /____\    Tích hợp — vừa phải, kiểm tra các phần ghép với nhau
-   /      \
-  /________\  Đơn vị — nhiều, nhanh, kiểm tra logic thuần
+
+## Code chạy thế nào
+
+**Tháp kiểm thử — vì sao có hình tháp:**
+
+```text
+        ╱ E2E ╲          ít, chậm (phút), giòn, giống người dùng nhất
+      ╱─────────╲
+    ╱ Integration ╲      vừa, có CSDL/HTTP thật
+  ╱─────────────────╲
+╱       Unit         ╲   nhiều, nhanh (ms), ổn định, phản hồi tức thì
 ```
 
-Tỷ lệ tham khảo: 70% đơn vị, 20% tích hợp, 10% E2E.
+```text
+Đảo ngược tháp (nhiều E2E, ít unit):
+  → CI 45 phút
+  → hỏng là phải đọc log trình duyệt để đoán chuyện gì xảy ra
+  → chập chờn liên tục (mạng, thời gian chờ, hoạt ảnh)
+```
 
-Lý do không phải "E2E tốt hơn nên viết nhiều": E2E chậm gấp hàng trăm lần, chập chờn hơn nhiều, và khi hỏng thì nó chỉ nói "có gì đó sai" chứ không chỉ ra chỗ nào.
+Lý do hình tháp không phải "unit test tốt hơn E2E". Nó là chuyện **chi phí chẩn đoán**: unit test hỏng chỉ vào đúng một hàm; E2E hỏng chỉ vào "một chỗ nào đó trong hệ thống" ([[e2e-va-kim-tu-thap-kiem-thu]]).
 
-Ngược lại, một bộ test toàn unit với mọi thứ đều mock có thể xanh hoàn toàn trong khi ứng dụng không chạy được — vì phần ghép nối chưa bao giờ được kiểm tra. Cả hai thái cực đều tệ.
+**Test chập chờn — bốn nguyên nhân và cách sửa:**
 
-## Ba tầng trong CI
+```text
+① THỜI GIAN
+   ❌ await sleep(1000); expect(...)
+   ✅ await waitFor(() => expect(...))       ← đợi ĐIỀU KIỆN, không đợi thời gian
+
+② THỨ TỰ / TRẠNG THÁI DÙNG CHUNG
+   Test A tạo user "an@vd.com", test B cũng vậy ⇒ hỏng khi chạy chung.
+   ✅ Mỗi test tự dựng dữ liệu riêng, dọn sau khi xong.
+      Kiểm nhanh: chạy suite theo thứ tự ngẫu nhiên.
+
+③ PHỤ THUỘC BÊN NGOÀI
+   Gọi API thật ⇒ mạng chậm là đỏ.
+   ✅ Giả lập ở tầng biên ([[test-double-stub-mock-fake]]).
+
+④ THỜI GIAN VÀ NGẪU NHIÊN
+   Test hỏng lúc nửa đêm, hoặc vào ngày 31.
+   ✅ Cố định đồng hồ và seed ngẫu nhiên.
+```
+
+**Vì sao `retry` không phải cách sửa:**
+
+```yaml
+- run: pnpm test --retry=3     # ⚠️ giấu vấn đề
+```
+
+```text
+Retry biến "hỏng 20% số lần" thành "hỏng 0.8% số lần".
+Nó KHÔNG sửa gì cả — nó chỉ làm bạn khó phát hiện hơn.
+Và nếu cái chập chờn đó là một race condition THẬT trong sản phẩm,
+bạn vừa che mất một bug production.
+```
+
+Cách xử lý đúng với một test chập chờn:
+
+```text
+① Cách ly ngay: đánh dấu skip, mở issue.  ← đừng để nó dạy đội bỏ qua màu đỏ
+② Sửa nguyên nhân trong thời hạn rõ ràng.
+③ Sửa xong mới bật lại.
+```
+
+Bước ① nghe như đầu hàng, nhưng nó đúng: một test bị skip **thành thật** về việc nó không bảo vệ gì; một test chập chờn thì **nói dối** cả hai chiều.
+
+## Cú pháp
+
+**Chạy test cần CSDL — dùng service container:**
 
 ```yaml
 jobs:
-  don-vi:
-    steps:
-      - run: pnpm test:unit --coverage
-
-  tich-hop:
+  test:
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:16
-        env: { POSTGRES_PASSWORD: postgres }
+        env: { POSTGRES_PASSWORD: test }
         options: >-
-          --health-cmd pg_isready --health-interval 10s --health-retries 5
+          --health-cmd pg_isready --health-interval 5s --health-retries 5
+        ports: ['5432:5432']
     steps:
-      - run: pnpm db:migrate
+      - uses: actions/checkout@v4
       - run: pnpm test:integration
-
-  e2e:
-    needs: [don-vi, tich-hop]        # chỉ chạy khi tầng dưới đã xanh
-    steps:
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm build && pnpm test:e2e
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: playwright-report
-          path: playwright-report/
+        env:
+          DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
 ```
 
-Tải báo cáo lên khi thất bại là chi tiết nhỏ nhưng tiết kiệm rất nhiều thời gian: bạn xem được ảnh chụp màn hình và trace thay vì phải chạy lại trên máy mình.
+`--health-cmd` là bắt buộc ở đây: không có nó, test bắt đầu trước khi Postgres sẵn sàng và bạn có một nguồn chập chờn mới ([[mang-va-ket-noi]]).
 
-## Test chập chờn
+**Chặn merge — biến CI thành hàng rào thật:**
 
-Test lúc xanh lúc đỏ mà code không đổi. Đây là thứ giết chết niềm tin vào CI nhanh nhất: khi người ta quen với việc "chạy lại là xanh", họ sẽ chạy lại cả những lần đỏ thật.
-
-**Nguyên nhân thường gặp:**
-
-| Nguyên nhân | Cách sửa |
-|---|---|
-| Chờ theo thời gian cố định | Chờ theo điều kiện (`waitFor`) |
-| Test phụ thuộc thứ tự chạy | Mỗi test tự dựng dữ liệu riêng |
-| Dùng chung dữ liệu | Dữ liệu riêng theo test, hoặc dọn sau mỗi test |
-| Múi giờ / thời gian thật | Cố định thời gian trong test |
-| Gọi dịch vụ mạng thật | Mock hoặc dùng máy chủ giả |
-
-```ts
-// Chập chờn: 100ms có thể không đủ trên máy CI chậm
-await sleep(100)
-expect(screen.getByText('Đã lưu')).toBeInTheDocument()
-
-// Ổn định: chờ tới khi điều kiện đúng, tối đa một khoảng
-await waitFor(() => expect(screen.getByText('Đã lưu')).toBeInTheDocument())
+```text
+Cài đặt nhánh `main`:
+  □ Require status checks: lint, test, typecheck
+  □ Require branches up to date before merging
+  □ Require pull request review
 ```
 
-**Cách xử lý đúng khi phát hiện test chập chờn:** đánh dấu `skip` kèm issue, sửa trong vòng vài ngày. Đừng thêm `retry` — retry che vấn đề và có ngày che luôn một bug thật.
+Không bật những cái này thì CI chỉ là gợi ý. Bật rồi thì màu đỏ **thực sự** chặn được.
 
-## Độ phủ
+**Về độ phủ:** dùng nó như một tín hiệu, không phải một cái cổng.
 
-```yaml
-- run: pnpm test --coverage
-- uses: codecov/codecov-action@v4
+```text
+Đặt ngưỡng cứng "phải đạt 80%" thường dẫn tới:
+  → viết test cho getter/setter để nâng số
+  → 80% phủ, và các nhánh quan trọng vẫn không được test
+
+Hữu ích hơn: cảnh báo khi độ phủ GIẢM ở phần mã vừa thay đổi.
 ```
 
-Độ phủ hữu ích khi đọc như một **bản đồ**: phần nào của code chưa có test nào chạm tới? Nó vô dụng khi biến thành chỉ tiêu — người ta sẽ viết test gọi hàm mà không assert gì để đạt số.
+## Tại sao cần nó
 
-Ngưỡng hợp lý: đặt mức không được **giảm** so với hiện tại, thay vì một con số tuyệt đối.
+Vì thời điểm phát hiện lỗi quyết định chi phí sửa nó:
 
-## Chặn merge
-
-Trên GitHub, cấu hình branch protection cho `main`:
-
-- Yêu cầu các job kiểm tra phải xanh.
-- Yêu cầu nhánh cập nhật với `main` trước khi merge.
-- Yêu cầu ít nhất một người duyệt.
-
-Đây là điểm biến CI từ "thông tin tham khảo" thành "hàng rào thật".
-
-## Kiểm tra chất lượng khác
-
-```yaml
-- run: pnpm lint
-- run: pnpm typecheck
-- run: pnpm format:check
-- run: npx knip                 # tìm export và dependency không dùng
-- run: npx size-limit            # chặn bundle phình to
+```text
+Lúc viết code   ⇒ vài phút, ngữ cảnh còn nguyên trong đầu
+Trong CI        ⇒ vài chục phút, còn nhớ mình vừa làm gì
+Ở production    ⇒ hàng giờ, cộng người dùng bị ảnh hưởng,
+                  cộng áp lực sửa nhanh ⇒ sửa ẩu ⇒ lỗi tiếp
 ```
 
-`size-limit` đáng thêm cho ứng dụng web: nó biến "bundle to dần theo thời gian" thành một lỗi CI cụ thể ở đúng PR gây ra.
+CI là hàng rào cuối cùng còn **rẻ**.
 
-## Lỗi hay gặp
+**Chia theo tốc độ, không chạy tất cả mọi lúc:**
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Quá nhiều E2E | CI chậm, chập chờn | Đẩy xuống tầng unit/tích hợp |
-| Thêm `retry` cho test chập chờn | Che bug thật | Sửa nguyên nhân gốc |
-| `sleep` cố định | Hỏng trên máy CI chậm | Chờ theo điều kiện |
-| Test dùng chung dữ liệu | Phụ thuộc thứ tự chạy | Dữ liệu riêng mỗi test |
-| Độ phủ thành chỉ tiêu | Test rỗng để đạt số | Dùng làm bản đồ, không phải KPI |
+```text
+Trên mỗi PR:  lint, typecheck, unit, integration     (< 10 phút)
+Trên main:    thêm E2E đầy đủ, quét bảo mật
+Ban đêm:      test hiệu năng, ma trận đầy đủ, kiểm phụ thuộc
+```
 
-## Ghi nhớ
+Và một mẹo nhỏ có tác động lớn: khi test đỏ, **thông báo lỗi phải đủ để chẩn đoán mà không cần chạy lại cục bộ**. In ra giá trị thực nhận được, không chỉ "expected true to be false".
 
-- Nhiều unit, ít E2E — nhưng đừng mock tới mức không còn kiểm tra gì thật.
-- Test chập chờn phải sửa, không được retry.
-- Tải báo cáo lên khi test thất bại.
-- CI chỉ có giá trị khi nó chặn được merge.
+## So sánh
 
-## Tự kiểm tra
+| | Unit | Integration | E2E |
+|---|---|---|---|
+| Tốc độ | ms | giây | phút |
+| Số lượng | nhiều | vừa | ít |
+| Ổn định | cao | vừa | thấp |
+| Chỉ ra nguyên nhân | chính xác | khá | mơ hồ |
+| Chạy khi | mọi PR | mọi PR | trên `main` |
 
-1. Vì sao 70% unit / 10% E2E chứ không ngược lại?
-2. Nêu ba nguyên nhân test chập chờn và cách sửa từng cái.
-3. Vì sao thêm `retry` cho test chập chờn là quyết định tệ?
+## Dễ nhầm
+
+**1. Để test chập chờn tồn tại.** Nó dạy cả đội bỏ qua màu đỏ.
+
+**2. Dùng `retry` như cách sửa.** Giấu vấn đề, có thể giấu cả bug thật.
+
+**3. Tháp ngược — quá nhiều E2E.** CI chậm và giòn.
+
+**4. `sleep()` trong test.** Chờ điều kiện, đừng chờ thời gian.
+
+**5. Test phụ thuộc thứ tự.** Chạy ngẫu nhiên để phát hiện.
+
+**6. Gọi API thật trong test.** Giả lập ở biên.
+
+**7. Không bật required checks.** CI chỉ là gợi ý.
+
+**8. Ngưỡng độ phủ cứng.** Sinh ra test vô nghĩa.
+
+**9. Không có healthcheck cho service container.** Nguồn chập chờn.
+
+**10. Thông báo lỗi không đủ chẩn đoán.** Mỗi lần đỏ là một lần phải dựng lại tại chỗ.
+
+## Mẹo nhớ
+
+> **Một test chập chờn phá hoại CẢ suite — nó dạy đội bỏ qua màu đỏ.**
+>
+> **Retry không sửa gì; nó chỉ làm bạn khó thấy hơn.**
+>
+> **Chờ ĐIỀU KIỆN, đừng chờ THỜI GIAN.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Vì sao test chập chờn nguy hiểm hơn không có test?
+2. Bốn nguyên nhân gây chập chờn, và cách sửa từng cái?
+3. Vì sao tháp có hình tháp — lý do thật là gì?
+4. Vì sao `retry` không phải cách sửa?
+5. Khi phát hiện một test chập chờn, ba bước xử lý?
+
+## Tự viết lại
+
+Không nhìn lại, viết workflow chạy test cho ứng dụng cần Postgres và Redis:
+
+```text
+① Service container có healthcheck
+② unit và integration chạy trên PR
+③ E2E chỉ chạy trên main
+④ Kết quả test hiện được trên PR
+```
+
+Tự kiểm: nếu Postgres mất 8 giây mới sẵn sàng, workflow của bạn có bị đỏ không?
+
+## Thử sức
+
+Suite 500 test. Khoảng **5% lần chạy đỏ vô cớ**, và đội đã có thói quen bấm "Re-run failed jobs".
+
+Ba câu để trả lời: vì sao tình trạng này **tệ hơn** việc không có test; kế hoạch **cụ thể** để lấy lại niềm tin, theo thứ tự; và bạn ngăn nó tái diễn bằng cách nào. Câu khó nhất: bạn **tìm** ra những test chập chờn nào trong 500 cái đó bằng cách gì, khi mỗi lần chạy chúng hỏng ở chỗ khác nhau?

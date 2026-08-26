@@ -4,180 +4,244 @@ slug: cau-truc-mot-workflow
 summary: Event, job, step, runner — bốn khái niệm đủ để đọc và viết mọi workflow.
 level: co-ban
 tags: [ci-cd, github-actions, co-ban]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** viết được workflow chạy test trên mỗi pull request, và đọc hiểu file YAML của người khác.
+> **Sau bài này bạn sẽ:** đọc được bất kỳ workflow nào và nói ra nó chạy khi nào, chạy ở đâu, và cái gì chạy song song.
 
-## Bốn khái niệm
+## Ý tưởng chính
+
+Một workflow chỉ có bốn khái niệm:
+
+**Event** kích hoạt → **Job** chạy trên một **Runner** (máy ảo sạch) → mỗi job gồm nhiều **Step** chạy tuần tự.
+
+Điều then chốt nằm ở ranh giới giữa hai cấp: **các job chạy song song và trên máy khác nhau**; các step trong cùng một job chạy tuần tự và **chia sẻ đĩa**.
+
+## Mental model
+
+Hãy nghĩ tới **dây chuyền trong bếp nhà hàng**.
+
+> **Event** = đơn hàng vào bếp.
+>
+> **Job** = một trạm bếp: trạm nướng, trạm salad, trạm tráng miệng. Chúng làm **cùng lúc**, mỗi trạm có bàn riêng, dao riêng, và **không thấy bàn của nhau**.
+>
+> **Step** = các thao tác trong một trạm: rửa → thái → xào. Theo thứ tự, trên **cùng một cái bàn**.
+>
+> **Runner** = cái bếp — và mỗi job được cấp **một cái bếp mới toanh, sạch trơn**.
+
+Hình ảnh "bếp mới toanh" giải thích hầu hết ngạc nhiên của người mới: file job A tạo ra thì job B không thấy, và mọi thứ cài đặt đều biến mất sau khi job kết thúc.
+
+## Ví dụ nhỏ
 
 ```yaml
 name: CI
-on: [push, pull_request]        # 1. EVENT — khi nào chạy
-
-jobs:
-  kiem-tra:                     # 2. JOB — chạy song song với job khác
-    runs-on: ubuntu-latest      # 3. RUNNER — máy ảo thực thi
-    steps:                      # 4. STEP — tuần tự trong một job
-      - uses: actions/checkout@v4
-      - run: echo "xin chào"
-```
-
-Job chạy **song song** mặc định và mỗi job có máy ảo **riêng** — chúng không chia sẻ file system. Step trong cùng job chạy tuần tự trên cùng máy.
-
-## Workflow đầy đủ
-
-```yaml
-name: CI
-
 on:
+  pull_request:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
 
-# Push liên tiếp lên cùng nhánh: huỷ lần chạy cũ, chỉ giữ lần mới nhất
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-jobs:
-  kiem-tra:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10          # chặn job treo tiêu tốn phút chạy
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with: { version: 9 }
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm            # cache dependency theo lockfile
-
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm lint
-      - run: pnpm test
-      - run: pnpm build
-```
-
-Hai dòng đáng chú ý: `concurrency` tiết kiệm rất nhiều phút chạy khi người ta push liên tục, và `timeout-minutes` chặn job treo chạy tới giới hạn mặc định 6 tiếng.
-
-## Thứ tự các bước kiểm tra
-
-Đặt bước **nhanh và hay hỏng nhất trước**: typecheck (10 giây) trước test (2 phút) trước build (3 phút). Phản hồi lỗi tới sớm hơn, và tiết kiệm tài nguyên.
-
-## Điều kiện chạy
-
-```yaml
-- name: Chỉ triển khai từ main
-  if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-  run: ./deploy.sh
-
-- name: Chạy cả khi bước trước thất bại
-  if: always()
-  run: ./upload-bao-cao.sh
-
-- name: Chỉ chạy khi có lỗi
-  if: failure()
-  run: ./thong-bao-loi.sh
-```
-
-`if: always()` cần cho các bước thu thập kết quả — không có nó, báo cáo test không được tải lên đúng khi test thất bại, tức đúng lúc bạn cần nó nhất.
-
-## Phụ thuộc giữa job
-
-```yaml
 jobs:
   test:
     runs-on: ubuntu-latest
-    steps: [...]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'pnpm' }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+```
 
+## Code chạy thế nào
+
+**Từ lúc push tới lúc có dấu tick xanh:**
+
+```text
+① Bạn push / mở PR
+② GitHub tìm mọi file trong .github/workflows/
+③ Workflow nào có `on:` khớp event ⇒ được kích hoạt
+④ Với mỗi job: cấp một MÁY ẢO SẠCH
+   → không có mã nguồn (nên bước đầu luôn là checkout)
+   → không có phụ thuộc đã cài
+   → không có gì từ lần chạy trước
+⑤ Các step chạy TUẦN TỰ trên máy đó
+⑥ Step nào thất bại ⇒ job dừng (trừ khi có `if: always()`)
+⑦ Máy ảo BỊ HUỶ — mọi thứ trên đó biến mất
+```
+
+Bước ④ và ⑦ là điều duy nhất cần nhớ về runner: **sạch khi bắt đầu, mất khi kết thúc**. Đó cũng là điều làm CI đáng tin — không có "trạng thái tích tụ" như trên máy dev.
+
+**Job song song với job phụ thuộc:**
+
+```yaml
+jobs:
+  lint:  { runs-on: ubuntu-latest, steps: [...] }
+  test:  { runs-on: ubuntu-latest, steps: [...] }   # ← lint và test CHẠY CÙNG LÚC
   build:
-    needs: test                  # chỉ chạy khi test xanh
-    runs-on: ubuntu-latest
-    steps: [...]
-
-  deploy:
-    needs: [test, build]
-    if: github.ref == 'refs/heads/main'
-    environment: production      # có thể yêu cầu người duyệt
+    needs: [lint, test]                              # ← đợi CẢ HAI xong
     runs-on: ubuntu-latest
     steps: [...]
 ```
 
-`environment: production` cho phép cấu hình yêu cầu phê duyệt thủ công và giới hạn secret chỉ dùng được ở môi trường đó.
+```text
+Không có `needs`:      lint ─┐
+                       test ─┴→ (cùng lúc)   tổng ≈ max(lint, test)
 
-## Ma trận
-
-```yaml
-strategy:
-  fail-fast: false               # một tổ hợp hỏng không huỷ các tổ hợp khác
-  matrix:
-    node: [20, 22]
-    os: [ubuntu-latest, windows-latest]
-runs-on: ${{ matrix.os }}
+Có `needs: [lint,test]`:  lint ─┐
+                          test ─┴→ build     tổng ≈ max(lint,test) + build
 ```
 
-Bốn tổ hợp chạy song song. `fail-fast: false` quan trọng khi debug: bạn muốn biết **những** tổ hợp nào hỏng, không chỉ cái đầu tiên.
-
-## Dịch vụ phụ trợ cho test
-
-```yaml
-services:
-  postgres:
-    image: postgres:16
-    env: { POSTGRES_PASSWORD: postgres }
-    ports: ['5432:5432']
-    options: >-
-      --health-cmd pg_isready --health-interval 10s --health-retries 5
-
-steps:
-  - run: pnpm test:integration
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
-```
-
-Tuỳ chọn `--health-cmd` bắt buộc: không có nó, test bắt đầu trước khi Postgres sẵn sàng và thất bại ngẫu nhiên.
-
-## Artifact — truyền file giữa các job
+Vì hai job ở hai máy khác nhau, `build` **không thấy** gì `test` để lại. Muốn chuyển file giữa job thì phải qua artifact:
 
 ```yaml
 - uses: actions/upload-artifact@v4
-  if: always()
-  with:
-    name: bao-cao-test
-    path: coverage/
-    retention-days: 7
-
-# Ở job khác
+  with: { name: dist, path: dist/ }
+# ở job sau
 - uses: actions/download-artifact@v4
-  with: { name: bao-cao-test }
+  with: { name: dist }
 ```
 
-Vì mỗi job có máy riêng, đây là cách duy nhất chuyển file giữa chúng.
+## Cú pháp
 
-## Lỗi hay gặp
+**Event hay dùng:**
 
-| Lỗi | Hậu quả | Sửa thế nào |
+```yaml
+on:
+  pull_request:                     # mỗi PR và mỗi lần push thêm vào PR
+    branches: [main]
+  push:
+    branches: [main]
+    paths: ['src/**', 'package.json']   # chỉ chạy khi các file này đổi
+  schedule:
+    - cron: '0 2 * * *'             # 2h sáng UTC hằng ngày
+  workflow_dispatch:                # nút bấm tay trên giao diện
+```
+
+`workflow_dispatch` đáng thêm vào gần như mọi workflow: nó cho phép chạy lại bằng tay mà không cần push commit rỗng.
+
+**Ma trận — chạy cùng job trên nhiều cấu hình:**
+
+```yaml
+strategy:
+  fail-fast: false          # một cấu hình hỏng, các cấu hình khác VẪN chạy
+  matrix:
+    node: ['20', '22']
+    os: [ubuntu-latest, windows-latest]
+runs-on: ${{ matrix.os }}   # ⇒ 4 job song song
+```
+
+`fail-fast: false` gần như luôn là lựa chọn đúng khi debug: bạn muốn biết **cả bốn** cấu hình hỏng hay chỉ một.
+
+**`run` với `uses`:**
+
+```yaml
+- run: pnpm test                 # chạy lệnh shell
+- uses: actions/checkout@v4      # dùng action có sẵn — LUÔN ghim phiên bản
+```
+
+Ghim `@v4` chứ không `@main`: `@main` nghĩa là mã của người khác thay đổi dưới chân bạn, và đó vừa là rủi ro tái lập vừa là rủi ro bảo mật ([[secret-va-quyen-trong-ci]]).
+
+**Điều kiện và biến:**
+
+```yaml
+- run: ./deploy.sh
+  if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+  env:
+    API_KEY: ${{ secrets.API_KEY }}    # secret KHÔNG viết thẳng
+```
+
+## Tại sao cần nó
+
+Vì CI đổi câu hỏi *"code này có chạy không?"* từ chuyện **cá nhân** thành chuyện **tự động**:
+
+```text
+Không CI:  người review đọc code, đoán.
+           Ai nhớ thì chạy test trên máy mình — với môi trường của mình.
+           Lỗi lộ ra ở production.
+
+Có CI:     mỗi PR tự chạy lint + test + build trên môi trường SẠCH và GIỐNG NHAU.
+           Đỏ thì không merge được.
+```
+
+Vế "môi trường sạch và giống nhau" mới là phần giá trị nhất — nó loại bỏ cả một lớp lỗi "chạy được trên máy tôi".
+
+**Hai thứ nên thêm ngay từ workflow đầu tiên:**
+
+```yaml
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true      # push lần 2 ⇒ huỷ lần chạy cũ, khỏi tốn máy
+
+permissions:
+  contents: read                # token chỉ đọc, trừ khi cần hơn
+```
+
+Và cuối cùng: **CI chỉ có giá trị khi nó đáng tin**. Một suite test chập chờn khiến cả đội quen tay bấm "re-run" ⇒ tín hiệu đỏ mất hết ý nghĩa ([[kiem-thu-tu-dong-trong-ci]]).
+
+## So sánh
+
+| | Step | Job |
 |---|---|---|
-| Không có `concurrency` | Nhiều lần chạy thừa cho cùng nhánh | Thêm nhóm + cancel |
-| Không `timeout-minutes` | Job treo chạy 6 tiếng | Đặt giới hạn |
-| Bước chậm đặt trước | Biết lỗi muộn | Nhanh trước, chậm sau |
-| Thiếu `if: always()` cho báo cáo | Không có kết quả khi test hỏng | Thêm `always()` |
-| Service không có healthcheck | Test hỏng ngẫu nhiên | `--health-cmd` |
+| Chạy | tuần tự | **song song** (trừ khi `needs`) |
+| Máy | cùng một runner | mỗi job một runner riêng |
+| Chia sẻ file | ✅ cùng đĩa | ❌ phải qua artifact |
+| Chia sẻ biến | qua `$GITHUB_ENV` | qua `outputs` |
 
-## Ghi nhớ
+## Dễ nhầm
 
-- Job song song, máy riêng; step tuần tự, cùng máy.
-- `concurrency` + `timeout-minutes` nên có ở mọi workflow.
-- Bước nhanh và hay hỏng đặt trước.
-- Artifact là cách truyền file giữa các job.
+**1. Tưởng job chia sẻ file với nhau.** Máy khác nhau — dùng artifact.
 
-## Tự kiểm tra
+**2. Quên `actions/checkout`.** Runner sạch, không có mã nguồn.
 
-1. Vì sao job không chia sẻ file với nhau? Truyền file thế nào?
-2. `fail-fast: false` giúp gì khi dùng ma trận?
-3. Sắp xếp typecheck, test, build, lint theo thứ tự tối ưu và giải thích.
+**3. Dùng `@main` cho action.** Không tái lập được, và là rủi ro bảo mật.
+
+**4. Viết secret thẳng vào file.** Dùng `${{ secrets.* }}`.
+
+**5. Không có `concurrency`.** Mỗi lần push tích thêm một lần chạy vô ích.
+
+**6. Không bật cache.** CI chậm gấp nhiều lần ([[cache-va-toc-do-ci]]).
+
+**7. Để `fail-fast: true` khi debug ma trận.** Chỉ thấy được một lỗi.
+
+**8. Chạy mọi job trên mọi push.** Dùng `paths:` để lọc.
+
+**9. Quên `permissions`.** Token mặc định rộng hơn cần thiết.
+
+**10. Đặt điều kiện deploy sai** ⇒ deploy từ nhánh phụ. Luôn kiểm cả `github.ref` **và** `github.event_name`.
+
+## Mẹo nhớ
+
+> **Event → Job (song song, máy riêng) → Step (tuần tự, cùng máy).**
+>
+> **Runner luôn SẠCH: bước đầu tiên là checkout.**
+>
+> **File giữa hai job phải đi qua artifact.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Bốn khái niệm của một workflow, quan hệ giữa chúng?
+2. Job và step khác nhau ở hai điểm nào?
+3. Vì sao bước đầu tiên luôn là `actions/checkout`?
+4. Làm sao chuyển file từ job này sang job khác?
+5. `concurrency` với `cancel-in-progress` giải quyết gì?
+
+## Tự viết lại
+
+Không nhìn lại, viết một workflow:
+
+```text
+① Chạy trên mọi PR vào main
+② lint và test chạy SONG SONG
+③ build chỉ chạy sau khi cả hai xanh
+④ deploy chỉ chạy khi push vào main
+⑤ huỷ lần chạy cũ khi có push mới
+```
+
+Tự kiểm: bước ④ của bạn có chạy nhầm khi ai đó mở PR **từ** main sang nhánh khác không?
+
+## Thử sức
+
+CI của đội bạn mất **18 phút** mỗi PR, và mọi người bắt đầu merge trước khi nó chạy xong.
+
+Ba câu để trả lời: hai thay đổi về **cấu trúc job** giúp giảm thời gian chờ nhiều nhất; bạn **đo** thời gian từng job bằng cách nào; và bạn làm gì để việc "merge trước khi CI xong" trở nên **không thể**. Câu khó nhất: nếu chia nhỏ job làm tổng thời gian máy chạy **tăng lên** trong khi thời gian chờ giảm — đó là đánh đổi tốt hay xấu, và tuỳ vào điều gì?
