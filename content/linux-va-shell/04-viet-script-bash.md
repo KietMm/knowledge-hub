@@ -4,170 +4,209 @@ slug: viet-script-bash
 summary: Bốn dòng đầu mọi script nên có, cách xử lý biến và lỗi, và khi nào nên chuyển sang ngôn ngữ khác.
 level: trung-cap
 tags: [linux, bash, script]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** viết script không âm thầm chạy tiếp khi có lỗi, và biết vì sao phải bọc mọi biến trong dấu nháy kép.
+> **Sau bài này bạn sẽ:** viết được script không âm thầm chạy tiếp sau khi hỏng, và biết lúc nào nên bỏ bash.
 
-## Bốn dòng mở đầu
+## Ý tưởng chính
+
+Mặc định của bash là **chạy tiếp dù có lỗi**. Lệnh thứ ba thất bại? Lệnh thứ tư vẫn chạy. Biến gõ sai tên? Bash coi nó là chuỗi rỗng.
+
+Hai mặc định đó hợp lý cho gõ tay ở terminal, và **nguy hiểm** cho script. Bài này chủ yếu là về cách tắt chúng đi.
+
+## Mental model
+
+Hãy nghĩ tới **công thức nấu ăn có người phụ bếp máy móc**.
+
+> Công thức: "① đun nước ② luộc mì ③ chắt nước ④ trộn sốt".
+>
+> Bước ② thất bại vì hết mì. Người phụ bếp **vẫn làm bước ③ và ④** — chắt cái nồi rỗng, rồi trộn sốt vào không khí. Cuối cùng dọn ra và báo "xong".
+>
+> `set -e` là câu dặn: **"bước nào hỏng thì dừng lại và gọi tôi."**
+
+Và mệnh đề `rm -rf "$THU_MUC/"` với `$THU_MUC` gõ sai tên chính là "chắt cái nồi rỗng" — chỉ khác là nó xoá `/`.
+
+## Ví dụ nhỏ
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-IFS=$'\n\t'
+
+THU_MUC="${1:?Thiếu tham số: thư mục cần sao lưu}"
+echo "Sao lưu $THU_MUC"
 ```
 
-| Cờ | Tác dụng |
-|---|---|
-| `-e` | Dừng ngay khi một lệnh trả về mã lỗi |
-| `-u` | Báo lỗi khi dùng biến chưa được đặt |
-| `-o pipefail` | Đường ống lỗi nếu **bất kỳ** khâu nào lỗi |
-| `IFS=$'\n\t'` | Không tách chuỗi theo dấu cách — tên file có khoảng trắng không vỡ |
+## Code chạy thế nào
 
-Không có `set -e`, script gặp lỗi ở bước 3 vẫn chạy tiếp tới bước 10 — và bước 10 có thể là `rm -rf`.
+**Bốn dòng đầu, từng cái chặn một loại tai nạn:**
 
-Không có `pipefail`, `sai_lenh | tee log` vẫn được coi là thành công vì `tee` chạy tốt.
+```text
+#!/usr/bin/env bash    tìm bash trong PATH, không cứng ở /bin/bash
+                       (trên macOS /bin/bash là bản 3.2 rất cũ)
 
-`#!/usr/bin/env bash` thay vì `#!/bin/bash`: tìm bash trong PATH, chạy được cả trên macOS nơi bash mới nằm chỗ khác.
+set -e     Lệnh nào trả về khác 0 ⇒ DỪNG NGAY.
+           Không có nó: script hỏng ở giữa vẫn báo "thành công".
 
-## Luôn bọc biến trong nháy kép
+set -u     Dùng biến CHƯA ĐẶT ⇒ dừng.
+           Không có nó: `rm -rf "$THUMUC/"` với biến gõ sai
+           trở thành `rm -rf "/"`.
 
-```bash
-FILE="bao cao.txt"
-
-rm $FILE       # SAI: thành `rm bao` và `rm cao.txt`
-rm "$FILE"     # ĐÚNG
-
-# Thư mục có thể rỗng -> "$DIR"/ thành "/" -> thảm hoạ
-[[ -n "$DIR" ]] || { echo "DIR chưa đặt"; exit 1; }
-rm -rf "${DIR:?DIR chưa đặt}/cache"
+set -o pipefail
+           Trong `a | b`, mã lỗi mặc định là của b.
+           `curl url | tar -x` — curl chết mà tar chạy được
+           ⇒ script tưởng thành công. pipefail sửa điều đó.
 ```
 
-Cú pháp `${DIR:?thông báo}` dừng script kèm thông báo nếu biến rỗng — chốt an toàn đáng dùng cho mọi lệnh phá huỷ.
+Ba dòng này viết gọn: `set -euo pipefail`.
 
-## Biến và giá trị mặc định
+**Vì sao dấu ngoặc kép quanh biến không phải chuyện thẩm mỹ:**
 
 ```bash
-TEN="${1:-mac-dinh}"              # tham số 1, hoặc giá trị mặc định
-MOI_TRUONG="${MOI_TRUONG:-dev}"   # biến môi trường, hoặc mặc định
-BAT_BUOC="${API_KEY:?Thiếu API_KEY}"   # bắt buộc phải có
+file="bao cao.txt"
 
-readonly THU_MUC="/opt/ung-dung"  # hằng số
-local tam                          # biến cục bộ trong hàm — luôn dùng
+rm $file      # → rm bao cao.txt   ⇒ xoá HAI file: "bao" và "cao.txt"
+rm "$file"    # → rm "bao cao.txt" ⇒ đúng
 ```
 
-## Điều kiện và vòng lặp
+Bash **tách chuỗi theo dấu cách** trước khi chạy lệnh. Dấu ngoặc kép tắt việc tách đó. Quy tắc không có ngoại lệ đáng nhớ: **luôn bọc `"$..."`**.
+
+## Cú pháp
 
 ```bash
-if [[ -f "$FILE" ]]; then echo "file tồn tại"; fi
-if [[ -d "$DIR" ]]; then echo "thư mục tồn tại"; fi
-if [[ -z "$BIEN" ]]; then echo "rỗng"; fi
-if [[ "$A" == "$B" ]]; then echo "bằng nhau"; fi
-if [[ "$SO" -gt 10 ]]; then echo "lớn hơn 10"; fi
+# Tham số bắt buộc — dừng ngay với thông báo rõ ràng
+DAU_VAO="${1:?Cần đường dẫn đầu vào}"
 
+# Giá trị mặc định
+CONG="${PORT:-3000}"
+
+# Điều kiện: dùng [[ ]] chứ không [ ]
+if [[ -f "$file" ]]; then      # -f file tồn tại, -d thư mục, -z chuỗi rỗng
+  echo "có"
+elif [[ "$a" == "b" ]]; then
+  echo "bằng"
+fi
+
+# Lặp qua file — nhớ dấu ngoặc kép ở "$f"
 for f in *.log; do
-  [[ -e "$f" ]] || continue        # glob không khớp gì thì f là chuỗi "*.log"
-  gzip "$f"
+  echo "$f"
 done
 
-while IFS= read -r dong; do
-  echo "Dòng: $dong"
-done < "$FILE"                     # đọc file an toàn, giữ nguyên khoảng trắng
-```
-
-Dùng `[[ ]]` thay vì `[ ]`: nó an toàn hơn với biến rỗng và hỗ trợ nhiều toán tử hơn.
-
-## Hàm, mã thoát, dọn dẹp
-
-```bash
-log()  { echo "[$(date +'%F %T')] $*" >&2; }        # log ra stderr
-loi()  { log "LỖI: $*"; exit 1; }
-
-kiem_tra_lenh() {
-  command -v "$1" >/dev/null 2>&1 || loi "Thiếu lệnh: $1"
+# Hàm, và bắt đầu ra của lệnh
+function dem_dong() {
+  local duong_dan="$1"        # local: không rò biến ra ngoài
+  wc -l < "$duong_dan"
 }
-
-# trap: chạy dọn dẹp dù script kết thúc kiểu gì
-TMP="$(mktemp -d)"
-don_dep() { rm -rf "$TMP"; }
-trap don_dep EXIT
-
-kiem_tra_lenh jq
-kiem_tra_lenh curl
+so=$(dem_dong "/var/log/app.log")
 ```
 
-`trap ... EXIT` là thứ khiến script đáng tin: file tạm được xoá kể cả khi script lỗi giữa chừng hay bị Ctrl-C.
+`[[ ]]` an toàn hơn `[ ]`: nó không tách chuỗi, xử lý biến rỗng đúng, và hỗ trợ `&&`/`||` bên trong.
 
-Log ra `stderr` (`>&2`) để `stdout` chỉ chứa kết quả thật — nhờ vậy script vẫn ghép vào đường ống được.
-
-## Script sao lưu hoàn chỉnh
+**Dọn dẹp dù thoát kiểu gì:**
 
 ```bash
-#!/usr/bin/env bash
+TAM="$(mktemp -d)"
+trap 'rm -rf "$TAM"' EXIT     # chạy khi script kết thúc, kể cả khi lỗi
+```
+
+`trap ... EXIT` là cách bash làm việc của `finally`. Không có nó, `set -e` sẽ để lại rác mỗi lần script chết giữa chừng.
+
+## Tại sao cần nó
+
+Vì script không có `set -e` **báo thành công khi đã hỏng** — và đó là kiểu lỗi tốn nhiều thời gian nhất để phát hiện.
+
+```bash
+# ❌ Kịch bản có thật
+cd /opt/app          # thư mục không tồn tại → lỗi, nhưng script chạy tiếp
+rm -rf ./build       # xoá build ở THƯ MỤC HIỆN TẠI, không phải /opt/app
+npm run build
+
+# ✅
 set -euo pipefail
-
-readonly THU_MUC_LUU="${THU_MUC_LUU:-/var/backups}"
-readonly GIU_NGAY=7
-readonly DB_URL="${DATABASE_URL:?Thiếu DATABASE_URL}"
-
-log() { echo "[$(date +'%F %T')] $*" >&2; }
-
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
-
-ten="sao-luu-$(date +%Y%m%d-%H%M%S).sql.gz"
-
-log "Bắt đầu sao lưu"
-pg_dump "$DB_URL" | gzip > "$TMP/$ten"
-
-# Kiểm tra file không rỗng trước khi coi là thành công
-[[ -s "$TMP/$ten" ]] || { log "LỖI: file sao lưu rỗng"; exit 1; }
-
-mkdir -p "$THU_MUC_LUU"
-mv "$TMP/$ten" "$THU_MUC_LUU/$ten"
-
-log "Xoá bản cũ hơn $GIU_NGAY ngày"
-find "$THU_MUC_LUU" -name "sao-luu-*.sql.gz" -mtime "+$GIU_NGAY" -delete
-
-log "Xong: $THU_MUC_LUU/$ten ($(du -h "$THU_MUC_LUU/$ten" | cut -f1))"
+cd /opt/app          # thất bại ⇒ dừng ngay tại đây
 ```
 
-Chú ý bước kiểm tra file rỗng: `pg_dump` lỗi vẫn tạo ra file, và một thư mục đầy file 0 byte là loại "sao lưu" tệ nhất — nó tạo cảm giác an toàn giả.
-
-## Kiểm tra script
+**Kiểm tra script bằng shellcheck** — nó bắt gần hết các lỗi ở bài này:
 
 ```bash
-shellcheck script.sh          # bắt phần lớn lỗi bash phổ biến
-bash -n script.sh             # kiểm tra cú pháp, không chạy
-bash -x script.sh             # in từng lệnh khi chạy — để gỡ lỗi
+shellcheck backup.sh
 ```
 
-`shellcheck` nên chạy trong CI. Nó bắt được gần hết những lỗi nêu trong bài này.
+Đưa nó vào CI thì mọi script trong repo được kiểm mỗi lần push ([[cau-truc-mot-workflow]]).
 
-## Khi nào nên bỏ bash
+**Khi nào bỏ bash:** bash tốt cho việc **nối các lệnh có sẵn lại với nhau**. Chuyển sang Python/Go khi bắt đầu cần:
 
-Bash phù hợp cho: ghép lệnh, tự động hoá thao tác file, script CI ngắn.
+```text
+□ Phân tích JSON hoặc XML          □ Xử lý lỗi có phân nhánh
+□ Cấu trúc dữ liệu (mảng lồng, map) □ Số học ngoài phép cộng đơn giản
+□ Gọi HTTP có retry và phân tích phản hồi
+□ Script đã vượt ~100 dòng
+```
 
-Chuyển sang Python/Node khi: cần xử lý JSON phức tạp, cần cấu trúc dữ liệu, cần xử lý lỗi tinh vi, hoặc script vượt **150 dòng**. Bash không có kiểu dữ liệu, xử lý lỗi thô sơ, và rất khó test.
+Dấu hiệu rõ nhất: bạn đang dùng `sed`/`awk` để cắt JSON. Dừng lại — viết bằng Python ([[xu-ly-loi-va-doc-ghi-file]]).
 
-## Lỗi hay gặp
+## So sánh
 
-| Lỗi | Hậu quả | Sửa thế nào |
+| | Không `set -euo pipefail` | Có |
 |---|---|---|
-| Không có `set -euo pipefail` | Lỗi bị bỏ qua, chạy tiếp | Thêm vào mọi script |
-| `$BIEN` không nháy kép | Vỡ với khoảng trắng | Luôn `"$BIEN"` |
-| `rm -rf "$DIR/"` | `DIR` rỗng là xoá từ gốc | `${DIR:?}` |
-| Không có `trap` dọn dẹp | File tạm tích tụ | `trap ... EXIT` |
-| Script bash 500 dòng | Không bảo trì nổi | Chuyển sang Python |
+| Lệnh giữa chừng hỏng | chạy tiếp, báo OK | dừng, báo lỗi |
+| Biến gõ sai tên | thành chuỗi rỗng | dừng ngay |
+| `a \| b`, a hỏng | coi như thành công | báo lỗi |
+| Gỡ lỗi | tìm ở lệnh cuối | dừng đúng chỗ hỏng |
 
-## Ghi nhớ
+## Dễ nhầm
 
-- `set -euo pipefail` là bắt buộc, không phải tuỳ chọn.
-- Mọi biến đều bọc trong nháy kép.
-- `trap ... EXIT` để dọn dẹp trong mọi trường hợp.
-- Trên 150 dòng thì đổi ngôn ngữ.
+**1. Quên `set -euo pipefail`.** Script báo thành công khi đã hỏng.
 
-## Tự kiểm tra
+**2. Không bọc biến trong `"..."`.** Đường dẫn có dấu cách gây hậu quả không lường được.
 
-1. `set -e` và `pipefail` mỗi cái bắt loại lỗi nào?
-2. Vì sao `rm $FILE` nguy hiểm khi tên file có khoảng trắng?
-3. Script sao lưu cần kiểm tra gì trước khi báo thành công?
+**3. Dùng `[ ]` thay `[[ ]]`.** Vỡ với biến rỗng hoặc có dấu cách.
+
+**4. Tin rằng `set -e` bắt mọi lỗi.** Nó **không** kích hoạt trong `if`, trong `&&`/`||`, và ở lệnh không phải cuối trong pipe (đó là việc của `pipefail`).
+
+**5. `cd` mà không kiểm tra kết quả.** Lệnh xoá tiếp theo chạy ở nhầm chỗ.
+
+**6. Không dọn file tạm.** Dùng `trap ... EXIT`.
+
+**7. Phân tích JSON bằng `grep`/`sed`.** Dùng `jq`, hoặc đổi ngôn ngữ.
+
+**8. Script bash 500 dòng.** Đáng lẽ đã phải chuyển ngôn ngữ từ 400 dòng trước.
+
+**9. Ghi secret vào script.** Nó vào git, vào lịch sử shell, vào log của CI ([[quan-ly-secret-va-cau-hinh]]).
+
+## Mẹo nhớ
+
+> **`set -euo pipefail` — bốn ký tự đổi bash từ "chạy tiếp dù hỏng" thành "dừng khi hỏng".**
+>
+> **Luôn bọc biến: `"$x"`. Bash tách chuỗi theo dấu cách.**
+>
+> **Cần phân tích JSON hoặc quá 100 dòng ⇒ đổi ngôn ngữ.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. `-e`, `-u`, `pipefail` — mỗi cái chặn loại tai nạn nào?
+2. Vì sao `rm $file` khác `rm "$file"`, và hậu quả cụ thể?
+3. Nêu hai trường hợp `set -e` **không** dừng script.
+4. `trap ... EXIT` dùng để làm gì?
+5. Ba dấu hiệu cho biết đã đến lúc bỏ bash?
+
+## Tự viết lại
+
+Không nhìn lại, viết script sao lưu thư mục thành file `.tar.gz` có gắn ngày, giữ 7 bản gần nhất, xoá các bản cũ hơn:
+
+```text
+① dòng đầu và dòng set
+② nhận tham số bắt buộc, báo lỗi rõ nếu thiếu
+③ nén vào thư mục tạm, dọn thư mục tạm dù thoát kiểu gì
+④ xoá bản cũ
+```
+
+Tự kiểm: nếu tham số đầu vào là thư mục **không tồn tại**, script của bạn dừng ở bước nào — trước hay sau khi xoá bản cũ?
+
+## Thử sức
+
+Script triển khai chạy trên CI, báo **"Deploy thành công"**, nhưng website vẫn là phiên bản cũ. Script không có `set -e`.
+
+Ba câu để trả lời: chuyện gì đã xảy ra; bạn thêm gì để lần sau nó **thất bại to và rõ**; và bạn kiểm tra bằng cách nào rằng lần triển khai này **thực sự** đã đưa mã mới lên. Câu khó nhất: nếu chỉ thêm `set -e` mà script vẫn báo thành công, chỗ nào trong script có thể đang nuốt mã lỗi?

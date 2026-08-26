@@ -4,127 +4,195 @@ slug: quyen-va-nguoi-dung
 summary: Ba nhóm quyền, ý nghĩa của 755 và 644, và vì sao đừng chạy mọi thứ bằng root.
 level: co-ban
 tags: [linux, quyen, bao-mat]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** đọc được `-rwxr-xr--` trong một cái nhìn, và đặt quyền đúng cho từng loại file.
+> **Sau bài này bạn sẽ:** đọc được `-rwxr-xr--` không cần tra, và biết vì sao 777 gần như luôn là dấu hiệu của một lỗi khác.
 
-## Đọc dòng quyền
+## Ý tưởng chính
 
-```
--rwxr-xr--  1 kiet  staff  4096 Aug 18 10:00 script.sh
-│└┬┘└┬┘└┬┘     │      │
-│ │  │  └── khác (o): r--  = đọc
-│ │  └───── nhóm (g): r-x  = đọc + thực thi
-│ └──────── chủ  (u): rwx  = đọc + ghi + thực thi
-└────────── loại: - file thường, d thư mục, l liên kết mềm
-```
+Mỗi file có **một chủ**, **một nhóm**, và ba bộ quyền: cho chủ, cho nhóm, cho **mọi người còn lại**.
 
-Ba quyền, ba nhóm:
+Ba bộ đó, mỗi bộ ba bit: đọc (r), ghi (w), chạy (x). Toàn bộ hệ thống quyền cơ bản của Linux nằm gọn trong chín bit này.
 
-| Ký hiệu | Số | Với file | Với thư mục |
-|---|---|---|---|
-| `r` | 4 | Đọc nội dung | Liệt kê nội dung |
-| `w` | 2 | Sửa nội dung | Tạo/xoá file bên trong |
-| `x` | 1 | Chạy được | **Đi vào được** |
+## Mental model
 
-Điểm hay gây bối rối: với thư mục, `x` nghĩa là "đi vào được". Thư mục có `r` mà không có `x` thì bạn thấy tên file nhưng không đọc được file nào.
+Hãy nghĩ tới **một căn phòng trong công ty**.
 
-## Số quyền thường dùng
+> Cửa phòng có ba mức phân quyền, dán ba tấm bảng khác nhau:
+>
+> - **Bạn** (chủ phòng) — vào, sắp xếp lại, dùng đồ.
+> - **Đội của bạn** (nhóm) — có thể chỉ được vào xem.
+> - **Người ngoài** — có thể không được vào.
+
+Điều quan trọng của mô hình này: hệ thống kiểm **theo thứ tự và dừng ở lần khớp đầu tiên**. Bạn là chủ ⇒ chỉ áp bộ quyền của chủ, kể cả khi nhóm có quyền rộng hơn. Đây là chỗ gây bất ngờ: chủ file bị từ chối ghi trong khi cả nhóm ghi được — vì bộ "chủ" khớp trước.
+
+## Ví dụ nhỏ
 
 ```bash
-chmod 755 script.sh    # rwxr-xr-x — chủ toàn quyền, người khác đọc+chạy
-chmod 644 config.json  # rw-r--r-- — file thường
-chmod 600 ~/.ssh/id_ed25519   # rw------- — CHỈ chủ đọc được
-chmod 700 ~/.ssh       # rwx------ — thư mục riêng tư
-chmod +x script.sh     # thêm quyền chạy cho tất cả
-chmod -R 755 thu-muc/  # đệ quy
+$ ls -l
+-rwxr-xr--  1 an  dev   1204 Aug 21 10:00 chay.sh
+drwxr-xr-x  2 an  dev   4096 Aug 21 10:00 du-lieu
 ```
 
-SSH từ chối làm việc nếu khoá riêng có quyền rộng hơn `600` — đó là tính năng, không phải lỗi.
+## Code chạy thế nào
 
-Mặc định đúng: `644` cho file, `755` cho thư mục và script. **Không bao giờ** `chmod 777` — nó nghĩa là bất kỳ ai trên máy cũng sửa được.
+**Giải mã `-rwxr-xr--` từ trái sang phải:**
 
-## Chủ sở hữu
+```text
+-  rwx  r-x  r--
+│   │    │    │
+│   │    │    └─ NGƯỜI KHÁC: chỉ đọc                       (4)
+│   │    └────── NHÓM "dev":  đọc + chạy, không ghi        (5)
+│   └─────────── CHỦ "an":    đọc + ghi + chạy             (7)
+└─────────────── loại: "-" file thường, "d" thư mục, "l" liên kết
+```
+
+⇒ **754**. Con số bát phân chỉ là ba bit viết gọn:
+
+```text
+r = 4    w = 2    x = 1
+
+7 = 4+2+1 = rwx
+6 = 4+2   = rw-
+5 = 4+  1 = r-x
+4 = 4     = r--
+```
+
+Cách nhớ nhanh không cần tính: **7 là toàn quyền, 6 là đọc-ghi, 5 là đọc-chạy, 4 là chỉ đọc.**
+
+**`x` trên thư mục nghĩa là gì — chỗ hay hiểu sai nhất:**
+
+```text
+Trên FILE:     x = chạy được file này
+Trên THƯ MỤC:  x = ĐI QUA được thư mục này
+               r = liệt kê được nội dung
+
+⇒ Thư mục có r nhưng không x: ls thấy tên file, nhưng
+  không mở được file nào bên trong.
+⇒ Thư mục có x nhưng không r: mở được file NẾU bạn biết tên,
+  nhưng không liệt kê ra được.
+```
+
+Đó là lý do thư mục hầu như luôn là `755` chứ không phải `644`: bỏ `x` đi là khoá cả lối vào.
+
+## Cú pháp
 
 ```bash
-chown kiet:staff file.txt      # đổi chủ và nhóm
-chown -R www-data:www-data /var/www
-chgrp docker file.txt          # chỉ đổi nhóm
+chmod 755 chay.sh          # đặt tuyệt đối
+chmod +x chay.sh           # thêm quyền chạy cho mọi bộ
+chmod u+w,go-w file        # u=chủ, g=nhóm, o=người khác, a=tất cả
+chmod -R 755 thu-muc/      # đệ quy
+
+chown an:dev file          # đổi chủ và nhóm
+sudo chown -R app:app /opt/app
 ```
 
-Lỗi phổ biến trong Docker: container chạy bằng UID khác với chủ của volume, dẫn tới "Permission denied" khi ghi. Cách xử lý là khớp UID giữa host và container, không phải `chmod 777`.
+**Hai giá trị dùng 90% thời gian:**
 
-## sudo và root
-
-```bash
-sudo lenh                # chạy một lệnh với quyền root
-sudo -u www-data lenh    # chạy dưới danh nghĩa người dùng khác
-sudo -i                  # mở shell root (dùng khi thật sự cần)
+```text
+644  file thường     rw-r--r--   chủ sửa, người khác đọc
+755  thư mục & script rwxr-xr-x  chủ sửa, người khác đọc + đi qua
+600  file bí mật     rw-------   CHỈ chủ. Khoá SSH, .env
 ```
 
-Nguyên tắc: dùng `sudo` cho **một lệnh cụ thể**, không mở hẳn shell root rồi làm mọi việc trong đó. Nhiều sự cố xảy ra vì người ta quên mình đang ở shell root.
+`600` cho khoá riêng không phải khuyến nghị — SSH **từ chối chạy** nếu khoá riêng có quyền rộng hơn thế.
 
-Tạo người dùng riêng cho mỗi dịch vụ:
+## Tại sao cần nó
 
-```bash
-sudo useradd -r -s /usr/sbin/nologin ung-dung
-sudo chown -R ung-dung:ung-dung /opt/ung-dung
+Vì `777` là cách "sửa" nhanh nhất và sai nhất.
+
+```text
+chmod 777 làm gì:  ai đăng nhập được vào máy cũng GHI ĐÈ được file đó.
+Với thư mục web:   kẻ tấn công ghi được mã của bạn ⇒ chiếm máy chủ.
+
+Nó "sửa được lỗi" vì nó xoá bỏ mọi ràng buộc — kể cả ràng buộc
+đang che một vấn đề THẬT: sai chủ sở hữu.
 ```
 
-`-s /usr/sbin/nologin` nghĩa là tài khoản này không đăng nhập tương tác được — nếu ứng dụng bị chiếm quyền, kẻ tấn công không có shell.
+Quy trình đúng khi gặp "Permission denied":
 
-## Đặc quyền tối thiểu trong thực tế
-
-- Ứng dụng web chạy dưới người dùng riêng, không phải root.
-- Ứng dụng chỉ ghi được vào thư mục dữ liệu của nó, không ghi được vào thư mục mã nguồn.
-- Container Docker khai báo `USER` không phải root.
-- Tài khoản CSDL của ứng dụng không có quyền `DROP`.
-
-Vì sao quan trọng: nó biến "kẻ tấn công chiếm được ứng dụng" thành "kẻ tấn công chiếm được một tài khoản gần như không làm được gì" thay vì "kẻ tấn công chiếm được cả máy chủ".
-
-## SSH cơ bản
-
-```bash
-ssh-keygen -t ed25519 -C "may-lam-viec"     # tạo cặp khoá
-ssh-copy-id user@may-chu                    # chép khoá công khai lên
-ssh user@may-chu
-
-# ~/.ssh/config — đặt bí danh cho gọn
-Host prod
-  HostName 10.0.0.5
-  User deploy
-  IdentityFile ~/.ssh/id_ed25519
+```text
+① ls -l <file>          → chủ là ai, quyền là gì?
+② id                    → tôi là ai, thuộc nhóm nào?
+③ So hai cái            → bộ quyền nào áp cho tôi?
+④ Sửa CHỦ nếu sai:      chown
+   Sửa QUYỀN nếu sai:   chmod (đủ dùng, không hơn)
 ```
 
-Trên máy chủ, luôn tắt đăng nhập bằng mật khẩu và tắt đăng nhập root:
+**Vì sao không chạy ứng dụng bằng root:**
 
+```text
+Ứng dụng chạy bằng root, có lỗ hổng thực thi mã
+  ⇒ kẻ tấn công có TOÀN QUYỀN máy chủ.
+
+Ứng dụng chạy bằng user "app" riêng, cùng lỗ hổng
+  ⇒ kẻ tấn công chỉ động được vào những gì "app" động được.
 ```
-# /etc/ssh/sshd_config
-PasswordAuthentication no
-PermitRootLogin no
-```
 
-Đây là hai dòng chặn được phần lớn các đợt dò mật khẩu tự động nhắm vào máy chủ công khai.
+Đây là **nguyên tắc đặc quyền tối thiểu**: không phải để ngăn lỗ hổng, mà để **giới hạn thiệt hại** khi nó xảy ra. Cùng tinh thần với [[broken-access-control]] ở tầng ứng dụng.
 
-## Lỗi hay gặp
+## So sánh
 
-| Lỗi | Hậu quả | Sửa thế nào |
+| | File | Thư mục |
 |---|---|---|
-| `chmod 777` để "cho nó chạy" | Ai cũng sửa được file | Đặt đúng chủ sở hữu |
-| Chạy ứng dụng bằng root | Bị chiếm quyền là mất cả máy | Người dùng riêng cho dịch vụ |
-| Khoá SSH quyền `644` | SSH từ chối dùng khoá | `chmod 600` |
-| Ở lâu trong shell root | Lỡ tay là hậu quả lớn | `sudo` từng lệnh |
-| Bật đăng nhập mật khẩu qua SSH | Bị dò liên tục | Chỉ dùng khoá |
+| `r` | đọc nội dung | liệt kê tên bên trong |
+| `w` | sửa nội dung | **tạo/xoá file bên trong** |
+| `x` | chạy như chương trình | đi qua để tới file bên trong |
 
-## Ghi nhớ
+Ô đáng chú ý: `w` trên thư mục cho phép **xoá file bên trong kể cả khi bạn không có quyền ghi file đó** — vì xoá là sửa thư mục, không phải sửa file.
 
-- `x` trên thư mục nghĩa là "đi vào được", không phải "chạy được".
-- `644` cho file, `755` cho thư mục và script, `600` cho khoá.
-- Mỗi dịch vụ một người dùng riêng, không dùng root.
-- SSH: chỉ khoá, không mật khẩu, không đăng nhập root.
+## Dễ nhầm
 
-## Tự kiểm tra
+**1. `chmod 777` để cho xong.** Che một lỗi sai chủ sở hữu bằng một lỗ hổng.
 
-1. `drwxr-x---` nghĩa là gì? Ai làm được gì?
-2. Vì sao `chmod 777` gần như luôn sai?
-3. Ứng dụng Node cần ghi vào `/var/app/uploads` — đặt quyền và chủ sở hữu thế nào?
+**2. Tưởng `x` trên thư mục là "chạy".** Nó là "đi qua".
+
+**3. Quên rằng chỉ bộ quyền khớp ĐẦU TIÊN được áp.** Chủ file không được ghi thì không "mượn" quyền của nhóm được.
+
+**4. `chmod -R 755` lên cả thư mục lẫn file.** File thường không cần `x`. Dùng `find . -type d -exec chmod 755 {} +` và `-type f ... 644`.
+
+**5. Khoá SSH quyền 644.** SSH từ chối dùng.
+
+**6. Chạy ứng dụng bằng root cho tiện.** Biến một lỗ hổng nhỏ thành mất máy chủ.
+
+**7. Quên `w` trên thư mục là quyền xoá file bên trong.**
+
+**8. `sudo` mọi thứ khi gặp lỗi quyền** thay vì tìm nguyên nhân — file được tạo ra sẽ thuộc root và gây lỗi tiếp ở bước sau.
+
+## Mẹo nhớ
+
+> **r=4, w=2, x=1. 755 cho thư mục, 644 cho file, 600 cho bí mật.**
+>
+> **Trên thư mục: x là ĐI QUA, không phải chạy.**
+>
+> **777 không phải cách sửa — nó là cách giấu lỗi sai chủ sở hữu.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. `-rw-r-----` là số mấy? Ai đọc được, ai ghi được?
+2. `x` trên thư mục nghĩa là gì, khác gì trên file?
+3. Vì sao chủ file có thể bị từ chối trong khi nhóm lại được phép?
+4. Vì sao `chmod 777` nguy hiểm, và nó thường đang che lỗi gì?
+5. Vì sao không nên chạy ứng dụng web bằng root?
+
+## Tự viết lại
+
+Bạn triển khai ứng dụng vào `/opt/app`. Không nhìn lại, viết các lệnh để:
+
+```text
+① Ứng dụng chạy bằng user riêng tên "app"
+② Mã nguồn: app đọc được, KHÔNG ghi được
+③ /opt/app/uploads: app ghi được
+④ /opt/app/.env: CHỈ app đọc được
+```
+
+Tự kiểm: bước ② có lý do gì để cố ý không cho ghi — dù ứng dụng là của bạn?
+
+## Thử sức
+
+Ứng dụng báo `EACCES: permission denied, open '/opt/app/logs/app.log'`. Đồng nghiệp đề nghị `chmod -R 777 /opt/app`.
+
+Ba câu để trả lời: vì sao đề nghị đó **sai**; ba lệnh bạn chạy để tìm nguyên nhân thật; và lệnh sửa đúng. Câu khó nhất: nếu file log đó **đã** thuộc user `app` và quyền đã là `644`, còn nguyên nhân nào khác khiến ghi thất bại?

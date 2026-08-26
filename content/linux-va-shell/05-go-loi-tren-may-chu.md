@@ -4,141 +4,193 @@ slug: go-loi-tren-may-chu
 summary: Quy trình chẩn đoán khi hệ thống có sự cố — từ triệu chứng tới nguyên nhân, theo thứ tự.
 level: nang-cao
 tags: [linux, go-loi, van-hanh]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** có một quy trình cố định để chạy khi "trang web không vào được", thay vì thử ngẫu nhiên.
+> **Sau bài này bạn sẽ:** có một quy trình cố định để chạy khi sự cố xảy ra, thay vì gõ lệnh theo linh cảm.
 
-## Nguyên tắc
+## Ý tưởng chính
 
-Khi đang có sự cố, cám dỗ lớn nhất là khởi động lại mọi thứ. Đôi khi nó hiệu quả — và bạn mất luôn manh mối, để rồi sự cố lặp lại tuần sau.
+Lúc sự cố, thứ hỏng đầu tiên không phải hệ thống — mà là **khả năng suy nghĩ có thứ tự** của bạn.
 
-Quy trình đúng: **thu thập trước, sửa sau**. Trừ khi hệ thống đang chết hẳn, hãy dành hai phút chụp lại trạng thái.
+Nên thứ cần chuẩn bị trước không phải là danh sách lệnh, mà là một **quy trình**: kiểm tra theo thứ tự cố định, ghi lại kết quả, thu hẹp dần. Quy trình tồn tại chính vì lúc 3 giờ sáng bạn không sáng suốt.
 
-## Bước 1: Xác định phạm vi
+## Mental model
 
-```bash
-curl -I https://site.com                    # site có phản hồi không
-curl -I http://localhost:3000               # ứng dụng có sống không
-systemctl status ung-dung nginx postgresql  # dịch vụ nào đang chạy
-```
+Hãy nghĩ tới **bác sĩ cấp cứu**.
 
-Câu hỏi cần trả lời ngay: hỏng toàn bộ hay một phần? Mọi người dùng hay một nhóm? Bắt đầu từ khi nào? Có gì thay đổi ngay trước đó không (deploy, đổi cấu hình, tăng lưu lượng)?
+> Bệnh nhân vào, bác sĩ không đoán bệnh ngay. Họ chạy đúng một trình tự, **luôn luôn cùng một trình tự**: đường thở → hô hấp → tuần hoàn.
+>
+> Không phải vì đường thở hay hỏng nhất, mà vì **nếu nó hỏng thì mọi chẩn đoán khác đều vô nghĩa** — và vì trình tự cố định thì không ai bỏ sót bước nào khi đang cuống.
 
-Câu cuối quan trọng nhất — phần lớn sự cố có nguyên nhân là một thay đổi vừa xảy ra.
+Bốn tài nguyên của máy chủ — **đĩa, RAM, CPU, mạng** — là "đường thở, hô hấp, tuần hoàn" của bạn. Kiểm tra chúng trước, luôn theo thứ tự đó, trước khi đọc bất kỳ dòng log nào.
 
-## Bước 2: Bốn tài nguyên
+## Ví dụ nhỏ
 
 ```bash
-df -h                    # ĐĨA — hết dung lượng gây lỗi rất kỳ quặc
-free -h                  # BỘ NHỚ
-uptime                   # CPU (tải trung bình)
-ss -s                    # KẾT NỐI mạng
+df -h        # ① Đĩa còn chỗ không?     ← kiểm tra đầu tiên, luôn luôn
+free -h      # ② RAM còn không?
+uptime       # ③ Tải trung bình
+journalctl -u app --since "30 min ago" | tail -50   # ④ Log
 ```
 
-Hết dung lượng đĩa là nguyên nhân bị xem nhẹ nhất. Nó khiến CSDL không ghi được, log không ghi được, session không lưu được — mỗi thứ báo một lỗi khác nhau, không cái nào nói "hết đĩa".
+## Code chạy thế nào
+
+**Vì sao `df -h` là lệnh đầu tiên, không phải lệnh cuối:**
+
+```text
+Đĩa đầy gây ra triệu chứng KHÔNG GIỐNG "đĩa đầy":
+  → CSDL từ chối ghi     ⇒ "lỗi kết nối database"
+  → Log không ghi được   ⇒ log im lặng, mất manh mối
+  → Session không lưu    ⇒ "người dùng bị đăng xuất liên tục"
+  → Build thất bại       ⇒ "lỗi npm không rõ nguyên nhân"
+
+Bạn có thể tốn hai giờ đọc log ứng dụng cho một vấn đề
+mà `df -h` trả lời trong hai giây.
+```
+
+Cùng lý do đó, kiểm cả **inode** — đĩa còn chỗ nhưng hết inode cũng cho triệu chứng y hệt:
 
 ```bash
-du -h --max-depth=1 /var | sort -hr | head    # thường là /var/log
-journalctl --vacuum-size=500M                 # dọn log systemd
+df -h      # dung lượng
+df -i      # số inode — hết khi có hàng triệu file nhỏ (session, cache)
 ```
 
-Tải trung bình đọc theo số nhân CPU: `4.0` trên máy 4 nhân là đầy tải nhưng bình thường; trên máy 1 nhân là quá tải nặng.
+**Quy trình bảy bước:**
 
-## Bước 3: Log
+```text
+① CÓ THAY ĐỔI GÌ KHÔNG?
+   Vừa deploy? đổi config? hết hạn chứng chỉ? nhà cung cấp có sự cố?
+   ⇒ ~80% sự cố có một thay đổi đứng ngay trước nó.
+   Nếu có ⇒ QUAY LUI TRƯỚC, điều tra sau.
+
+② TÀI NGUYÊN:  df -h → df -i → free -h → uptime
+
+③ DỊCH VỤ CÒN SỐNG KHÔNG?
+   systemctl status app
+   curl -sS -o /dev/null -w '%{http_code} %{time_total}\n' localhost:3000/health
+
+④ LOG — đọc từ THỜI ĐIỂM BẮT ĐẦU SỰ CỐ, không đọc từ cuối
+   journalctl -u app --since "14:30" | head -100
+   ⇒ Lỗi ĐẦU TIÊN là nguyên nhân; hàng ngàn lỗi sau là hậu quả.
+
+⑤ PHỤ THUỘC:  CSDL? cache? API bên ngoài?
+   pg_isready -h db     redis-cli ping     curl -I https://api.doi-tac.com
+
+⑥ MẠNG:  ss -tlnp (ai nghe cổng nào)   ping   dig ten-mien.com
+
+⑦ CHIA ĐÔI: sự cố nằm trước hay sau Nginx?
+   Gọi thẳng ứng dụng, bỏ qua proxy ⇒ loại được một nửa hệ thống.
+```
+
+Bước ④ có một chi tiết dễ làm sai. Bản năng là `tail -f` để xem lỗi mới nhất — nhưng lỗi mới nhất thường là **hậu quả** thứ n. Lỗi đầu tiên tại thời điểm sự cố bắt đầu mới là nguyên nhân.
+
+## Cú pháp
 
 ```bash
-journalctl -u ung-dung --since "30 min ago" -p err
-tail -100 /var/log/nginx/error.log
-grep -c " 500 " /var/log/nginx/access.log
+# Đĩa: cái gì đang chiếm chỗ?
+du -sh /var/* | sort -rh | head        # thư mục lớn nhất
+du -sh /var/log/*  | sort -rh | head
 
-# 10 IP gọi nhiều nhất trong giờ qua — phát hiện bot/tấn công
-awk '{print $1}' /var/log/nginx/access.log | sort | uniq -c | sort -rn | head
+# File đã XOÁ nhưng tiến trình còn giữ — chỗ không hiện ra trong du
+lsof +L1 | head
+
+# RAM
+free -h                 # nhìn cột "available", không nhìn "free"
+ps aux --sort=-%mem | head
+
+# Mạng
+ss -tlnp                # cổng nào đang được nghe, bởi ai
+ss -s                   # tổng số kết nối theo trạng thái
+
+# Log
+journalctl -u app -p err --since today     # chỉ mức lỗi
+grep -c "ERROR" /var/log/app.log           # đếm, để so trước/sau
 ```
 
-Đọc log theo thời gian: tìm **thông báo lỗi đầu tiên**, không phải cái mới nhất. Lỗi mới nhất thường là hệ quả dây chuyền; lỗi đầu tiên mới là nguyên nhân.
+`lsof +L1` giải một câu đố kinh điển: `df` báo đầy, `du` cộng lại thì không đầy. Nguyên nhân thường là log đã bị xoá nhưng tiến trình vẫn giữ file mở — dung lượng chỉ được trả lại khi tiến trình đó khởi động lại.
 
-## Bước 4: Tiến trình và kết nối
+`free -h`: cột **available** mới là RAM thật sự dùng được. Cột `free` thấp là bình thường — Linux dùng RAM rỗi làm cache đĩa và trả lại ngay khi cần.
 
-```bash
-ps aux --sort=-%mem | head       # ngốn bộ nhớ nhất
-ps aux --sort=-%cpu | head       # ngốn CPU nhất
-ss -tn state established | wc -l # số kết nối đang mở
-lsof -p PID | wc -l              # số file descriptor tiến trình đang giữ
+## Tại sao cần nó
+
+Vì mục tiêu lúc sự cố **không phải** tìm ra nguyên nhân — mà là **khôi phục dịch vụ**. Hai việc đó khác nhau, và nhầm lẫn chúng làm sự cố kéo dài.
+
+```text
+Ưu tiên khi đang có sự cố:
+  ① Khôi phục dịch vụ         ← quay lui, khởi động lại, chuyển traffic
+  ② Thu thập bằng chứng       ← log, số liệu, snapshot — TRƯỚC khi sửa
+  ③ Tìm nguyên nhân gốc       ← sau khi đã yên, viết hậu kiểm
 ```
 
-Hết file descriptor cho lỗi `EMFILE: too many open files` — thường do rò rỉ kết nối không đóng. Kiểm tra giới hạn bằng `ulimit -n`.
+Bước ② hay bị bỏ qua và là bước tốn kém nhất khi thiếu: khởi động lại dịch vụ xoá sạch bằng chứng, và bạn sẽ gặp lại đúng sự cố đó vào tuần sau mà không có gì trong tay ([[su-co-va-hau-kiem]]).
 
-## Bước 5: Cơ sở dữ liệu
+**Ghi lại trong lúc làm** — một dòng cho mỗi việc:
 
-```sql
--- Truy vấn đang chạy lâu
-SELECT pid, now() - query_start AS thoi_gian, state, query
-FROM pg_stat_activity
-WHERE state != 'idle' AND now() - query_start > interval '5 seconds'
-ORDER BY thoi_gian DESC;
-
--- Đang bị khoá chờ nhau
-SELECT * FROM pg_locks WHERE NOT granted;
-
--- Số kết nối theo trạng thái
-SELECT state, count(*) FROM pg_stat_activity GROUP BY state;
+```text
+14:32 cảnh báo 5xx tăng
+14:35 df -h: /var 94% — cao nhưng chưa đầy
+14:37 log: "connection pool exhausted" từ 14:28
+14:39 pg: 98/100 kết nối đang mở
+14:41 restart app → 5xx về bình thường
 ```
 
-Nhiều dòng `idle in transaction` là dấu hiệu ứng dụng mở transaction rồi quên đóng — nó giữ khoá và làm nghẽn mọi thứ khác.
+Bản ghi này mất một phút để viết và là toàn bộ nội dung của hậu kiểm sau đó. Nó cũng ngăn bạn thử lại cùng một thứ hai lần lúc đang cuống.
 
-## Bước 6: Mạng và DNS
+## So sánh
 
-```bash
-dig site.com +short              # DNS trỏ đúng chưa
-curl -v https://site.com 2>&1 | head -30    # xem toàn bộ quá trình bắt tay
-openssl s_client -connect site.com:443 -servername site.com | openssl x509 -noout -dates
-```
-
-Chứng chỉ TLS hết hạn là nguyên nhân kinh điển của "sáng nay tự nhiên không vào được". Hãy đặt cảnh báo trước 14 ngày, đừng chờ nó xảy ra.
-
-## Bảng triệu chứng — nguyên nhân
-
-| Triệu chứng | Nghi ngờ đầu tiên |
-|---|---|
-| 502 Bad Gateway | Ứng dụng chết hoặc chưa lắng nghe cổng |
-| 504 Gateway Timeout | Ứng dụng chậm; truy vấn treo |
-| Chậm đều mọi endpoint | CSDL, hoặc thiếu bộ nhớ gây swap |
-| Chậm một endpoint | Truy vấn thiếu index |
-| Lỗi ngẫu nhiên | Một instance hỏng trong nhóm cân bằng tải |
-| Chết định kỳ | Rò rỉ bộ nhớ, hoặc cron job nặng |
-| Tiến trình biến mất | OOM killer — kiểm tra `dmesg` |
-| Lỗi kỳ quặc khắp nơi | Hết dung lượng đĩa |
-
-## Sau khi xử lý xong
-
-Viết một bản rà soát ngắn, **không đổ lỗi cá nhân**:
-
-1. Điều gì đã xảy ra (mốc thời gian cụ thể).
-2. Vì sao xảy ra (nguyên nhân gốc, không phải "ai làm").
-3. Vì sao không phát hiện sớm hơn.
-4. Việc cần làm để lần sau tự phát hiện hoặc không tái diễn.
-
-Điểm 3 thường có giá trị nhất: nó dẫn tới cảnh báo mới, và cảnh báo tốt biến sự cố lớn thành phiền toái nhỏ.
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
+| Triệu chứng | Nghi ngờ trước | Lệnh |
 |---|---|---|
-| Khởi động lại trước khi xem log | Mất manh mối, sự cố tái diễn | Thu thập trước |
-| Đọc lỗi mới nhất | Chỉ thấy hệ quả | Tìm lỗi đầu tiên |
-| Bỏ qua `df -h` | Bỏ sót nguyên nhân đơn giản nhất | Kiểm tra bốn tài nguyên trước |
-| Sửa xong là xong | Lặp lại sau vài tuần | Viết rà soát, thêm cảnh báo |
-| Không có cảnh báo hạn TLS | Sập vào một sáng đẹp trời | Cảnh báo trước 14 ngày |
+| Lỗi lạ, không nhất quán | **đĩa đầy** | `df -h`, `df -i` |
+| Tiến trình bị giết bất ngờ | OOM killer | `dmesg -T \| grep -i oom` |
+| Chậm nhưng CPU thấp | chờ I/O hoặc chờ mạng | `iostat`, `ss -s` |
+| "Connection refused" | dịch vụ chết / sai cổng | `systemctl status`, `ss -tlnp` |
+| Chỉ chậm với một số người | DNS, CDN, một node hỏng | `dig`, kiểm từng node |
 
-## Ghi nhớ
+## Dễ nhầm
 
-- Thu thập trước, sửa sau.
-- Bốn tài nguyên: đĩa, bộ nhớ, CPU, kết nối — kiểm tra theo thứ tự đó.
-- Lỗi đầu tiên trong log là nguyên nhân; lỗi cuối là hệ quả.
-- Rà soát sau sự cố quan trọng ngang việc khắc phục.
+**1. Đọc log trước khi kiểm tài nguyên.** Đĩa đầy gây ra hàng chục triệu chứng không liên quan.
 
-## Tự kiểm tra
+**2. `tail -f` để tìm nguyên nhân.** Lỗi mới nhất là hậu quả; lỗi **đầu tiên** là nguyên nhân.
 
-1. "Trang không vào được" — năm lệnh đầu tiên bạn chạy là gì, theo thứ tự nào?
-2. Vì sao hết dung lượng đĩa lại gây ra đủ loại lỗi không liên quan?
-3. `idle in transaction` trong `pg_stat_activity` nói lên điều gì về ứng dụng?
+**3. Khởi động lại trước khi thu thập bằng chứng.** Sự cố sẽ quay lại và bạn vẫn tay trắng.
+
+**4. Không hỏi "vừa có thay đổi gì".** Phần lớn sự cố đứng ngay sau một thay đổi.
+
+**5. Nhìn cột `free` thay vì `available`.** Hiểu nhầm về RAM.
+
+**6. Quên `df -i`.** Hết inode có triệu chứng giống hết đĩa.
+
+**7. Không dùng cách chia đôi.** Đoán mò trong hệ thống nhiều tầng.
+
+**8. Không ghi lại quá trình.** Không viết được hậu kiểm, và dễ lặp lại thao tác.
+
+**9. Sửa vội trên production không ai biết.** Người tiếp theo sẽ điều tra một hệ thống đã bị bạn thay đổi mà không có dấu vết.
+
+## Mẹo nhớ
+
+> **`df -h` LUÔN là lệnh đầu tiên. Đĩa đầy giả dạng thành mọi loại lỗi.**
+>
+> **Đọc log từ lúc sự cố BẮT ĐẦU, không đọc từ cuối.**
+>
+> **Khôi phục trước, điều tra sau — nhưng thu bằng chứng TRƯỚC khi restart.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Vì sao `df -h` chạy trước khi đọc log?
+2. Vì sao đọc log từ đầu sự cố chứ không từ cuối?
+3. `df` báo đầy mà `du` không cộng đủ — chuyện gì đang xảy ra?
+4. Ba ưu tiên khi đang có sự cố, theo thứ tự?
+5. Câu hỏi đầu tiên nên đặt ra khi sự cố xảy ra là gì?
+
+## Tự viết lại
+
+Không nhìn lại, viết ra quy trình bảy bước của bạn — mỗi bước một dòng, kèm **một lệnh**. Rồi tự hỏi: nếu bước ② cho kết quả bình thường hết, bước nào bạn làm tiếp và vì sao?
+
+## Thử sức
+
+3 giờ sáng. Cảnh báo: tỉ lệ lỗi 5xx là 40%. Bạn vừa vào được máy chủ.
+
+Ba câu để trả lời: **năm lệnh đầu** và thứ tự; nếu tất cả đều bình thường thì bạn đi tiếp theo hướng nào; và bạn ghi lại những gì trong lúc làm. Câu khó nhất: 40% — không phải 100% — gợi ý điều gì về **hình dạng** của sự cố, và điều đó thay đổi thứ tự điều tra của bạn ra sao?

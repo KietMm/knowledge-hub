@@ -4,125 +4,188 @@ slug: he-thong-file-va-duong-dan
 summary: Cây thư mục Linux, đường dẫn tuyệt đối/tương đối, và bộ lệnh điều hướng dùng hằng ngày.
 level: co-ban
 tags: [linux, shell, co-ban]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** di chuyển và thao tác file trong terminal mà không phải tra cứu, và biết mỗi thư mục hệ thống chứa gì.
+> **Sau bài này bạn sẽ:** đọc được một đường dẫn bất kỳ và biết ngay nó tuyệt đối hay tương đối, cùng lý do điều đó quan trọng.
 
-## Cây thư mục
+## Ý tưởng chính
 
-Linux có **một** gốc duy nhất là `/` — không có ổ C:, ổ D:. Thiết bị được "gắn" vào một thư mục nào đó trong cây.
+Linux có **một cây duy nhất**, gốc là `/`. Không có ổ C:, ổ D:. Mọi thứ — ổ cứng thứ hai, USB, thậm chí thông tin về tiến trình đang chạy — đều **được gắn vào một chỗ nào đó trên cây đó**.
 
-| Thư mục | Chứa gì |
-|---|---|
-| `/etc` | File cấu hình hệ thống |
-| `/var` | Dữ liệu thay đổi: log (`/var/log`), cache |
-| `/usr` | Chương trình và thư viện của hệ thống |
-| `/usr/local` | Chương trình cài thủ công |
-| `/home/ten` | Thư mục cá nhân (viết tắt `~`) |
-| `/tmp` | File tạm, xoá khi khởi động lại |
-| `/opt` | Phần mềm bên thứ ba |
-| `/proc`, `/sys` | Thông tin nhân hệ điều hành dạng file ảo |
+Nhớ một câu: *"mọi thứ đều là file, và mọi file đều nằm trên một cây."*
 
-`/proc` đáng chú ý: nó không phải file thật trên đĩa mà là giao diện tới nhân. `cat /proc/cpuinfo` hay `cat /proc/meminfo` cho thông tin hệ thống ngay lập tức.
+## Mental model
 
-## Đường dẫn
+Hãy nghĩ tới **địa chỉ nhà**.
 
-```bash
-/etc/nginx/nginx.conf     # tuyệt đối — bắt đầu bằng /
-./script.sh               # tương đối — từ thư mục hiện tại
-../du-an                  # thư mục cha
-~/tai-lieu                # thư mục cá nhân
-```
+> **Đường dẫn tuyệt đối** = "số 12, đường Lê Lợi, quận 1, TP.HCM". Đưa cho ai cũng tìm được, đứng ở đâu cũng đúng. Bắt đầu bằng `/`.
+>
+> **Đường dẫn tương đối** = "rẽ trái ở ngã tư rồi đi thêm hai nhà". Chỉ đúng **nếu người nghe đang đứng đúng chỗ bạn tưởng**. Không bắt đầu bằng `/`.
 
-Trong script, luôn dùng đường dẫn tuyệt đối hoặc tính đường dẫn từ vị trí script:
+Toàn bộ lỗi "file not found" của người mới đều từ chỗ này: script viết đường dẫn tương đối, rồi được chạy từ một thư mục khác.
+
+## Ví dụ nhỏ
 
 ```bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/lib.sh"
+pwd                 # tôi đang đứng ở đâu?  → /home/an/du-an
+ls -la              # có gì ở đây? (-a: cả file ẩn, -l: chi tiết)
+cd ../khac          # lùi một cấp rồi vào "khac"
+cd                  # về thẳng thư mục nhà (~)
 ```
 
-Không có dòng này, script chạy đúng khi bạn đứng trong thư mục của nó và hỏng khi cron gọi từ `/`.
+## Code chạy thế nào
 
-## Lệnh điều hướng và thao tác
+**Đọc một đường dẫn, từng ký hiệu:**
+
+```text
+/etc/nginx/nginx.conf
+↑
+└─ bắt đầu bằng "/" ⇒ TUYỆT ĐỐI, đọc từ gốc cây
+
+./script.sh      "." = thư mục hiện tại        → TƯƠNG ĐỐI
+../du-lieu       ".." = thư mục cha            → TƯƠNG ĐỐI
+~/ghi-chu.txt    "~" = thư mục nhà của bạn     → shell đổi thành /home/<bạn>
+config.json      không dấu gì ⇒ tương đối, giống ./config.json
+```
+
+**Vì sao phải gõ `./script.sh` mà không phải `script.sh`:**
+
+```text
+Khi bạn gõ một cái tên trần, shell tìm nó trong PATH:
+    /usr/local/bin, /usr/bin, /bin, ...
+    và KHÔNG tìm ở thư mục hiện tại.
+
+Vì sao cố ý loại thư mục hiện tại ra?
+  Nếu có, ai đó để một file tên `ls` độc hại trong thư mục chung,
+  bạn cd vào đó, gõ `ls` ⇒ chạy nhầm file của họ.
+```
+
+Nên `./` không phải sự phiền toái — nó là lời khẳng định "tôi cố ý chạy file **ở đây**".
+
+**Cây thư mục — chỗ nào để làm gì:**
+
+```text
+/etc      cấu hình của hệ thống và dịch vụ
+/var/log  log — chỗ đầu tiên nhìn khi có sự cố
+/home     thư mục cá nhân của từng người dùng
+/tmp      file tạm, MẤT khi khởi động lại
+/usr/bin  chương trình đi kèm hệ điều hành
+/opt      phần mềm cài thêm, không thuộc hệ điều hành
+/proc     KHÔNG PHẢI file thật — cửa sổ nhìn vào nhân và tiến trình
+```
+
+`/proc` là ví dụ rõ nhất của "mọi thứ đều là file": `cat /proc/cpuinfo` không đọc file trên đĩa, nó hỏi nhân về CPU và nhận câu trả lời dưới dạng văn bản.
+
+## Cú pháp
 
 ```bash
-pwd                       # đang ở đâu
-cd -                      # quay lại thư mục trước đó
-ls -lah                   # dài, có file ẩn, dung lượng dễ đọc
-tree -L 2                 # cây thư mục 2 tầng
+ls -lh              # -h: kích thước dễ đọc (4.2K thay vì 4300)
+ls -lt              # sắp theo thời gian sửa, mới nhất trước
+cd -                # quay lại thư mục VỪA rời khỏi
 
-cp -r nguon/ dich/        # sao chép thư mục
-mv cu moi                 # đổi tên hoặc di chuyển
-mkdir -p a/b/c            # tạo cả cây, không lỗi nếu đã có
-rm -rf thu-muc            # xoá đệ quy — NGUY HIỂM
-ln -s /duong/dan lien-ket # liên kết mềm
+cp nguon dich       # sao chép
+cp -r thu-muc dich  # -r: đệ quy, bắt buộc khi copy thư mục
+mv cu moi           # di chuyển — CŨNG là cách đổi tên
+rm -r thu-muc       # xoá — KHÔNG có thùng rác
+
+mkdir -p a/b/c      # -p: tạo cả các cấp cha còn thiếu
 ```
 
-Về `rm -rf`: không có thùng rác. Trước khi gõ, hãy chạy `ls` trên đúng đường dẫn đó để nhìn thấy mình sắp xoá gì. Đặc biệt cẩn thận với biến: `rm -rf "$DIR/"` khi `DIR` rỗng sẽ thành `rm -rf /`.
-
-## Tìm file
+**Tìm file:**
 
 ```bash
-find . -name "*.log"                      # theo tên
-find . -type f -mtime -7                  # sửa trong 7 ngày qua
-find . -type f -size +100M                # lớn hơn 100MB
-find . -name "*.tmp" -delete              # tìm và xoá
-find . -name "*.log" -exec gzip {} \;     # chạy lệnh trên từng kết quả
-
-du -sh *                 # dung lượng từng mục
-du -h --max-depth=1 | sort -hr | head     # thư mục nào chiếm chỗ nhất
-df -h                    # dung lượng còn trống của các phân vùng
+find . -name "*.log"                 # theo tên, từ thư mục hiện tại
+find /var/log -name "*.log" -mtime -1  # sửa trong 1 ngày qua
+grep -rn "TODO" src/                 # theo NỘI DUNG (-r đệ quy, -n số dòng)
 ```
 
-Bộ ba `du`/`df`/`find -size` là thứ bạn cần khi máy chủ báo hết dung lượng.
+Phân biệt gọn: `find` tìm theo **tên/thuộc tính**, `grep` tìm theo **nội dung bên trong**.
 
-## Đọc và lọc nội dung
+## Tại sao cần nó
+
+Vì `rm` không có thùng rác, và vì đường dẫn tương đối trong script là lỗi hay gặp nhất khi triển khai.
 
 ```bash
-cat file.txt              # in cả file
-less file.txt             # xem có phân trang (q để thoát, / để tìm)
-head -20 / tail -20       # 20 dòng đầu / cuối
-tail -f /var/log/app.log  # theo dõi log theo thời gian thực
+# ❌ Script này chạy đúng trên máy bạn, sai trên máy chủ
+cd /Users/an/du-an   # đường dẫn chỉ có ở máy bạn
+cat config.json      # đúng nếu chạy từ thư mục dự án, sai nếu chạy từ cron
 
-grep -r "TODO" src/       # tìm đệ quy
-grep -n "loi" app.log     # kèm số dòng
-grep -i "error" app.log   # không phân biệt hoa thường
-grep -v "debug" app.log   # loại bỏ dòng khớp
-grep -c "500" access.log  # đếm số dòng khớp
-grep -A3 -B3 "panic" log  # kèm 3 dòng trước và sau
+# ✅ Neo vào vị trí của chính file script
+GOC="$(cd "$(dirname "$0")" && pwd)"
+cat "$GOC/config.json"
 ```
 
-`tail -f` và `grep -A/-B` là hai thứ dùng nhiều nhất khi tìm nguyên nhân sự cố.
+`$0` là đường dẫn tới chính script đang chạy, nên `dirname "$0"` cho ra thư mục chứa nó — **bất kể người ta chạy nó từ đâu**.
 
-## Đường ống
+Và trước mọi lệnh `rm -r`:
 
 ```bash
-cat access.log | grep " 500 " | awk '{print $1}' | sort | uniq -c | sort -rn | head
+ls thu-muc-can-xoa/   # nhìn tận mắt cái sắp mất
+rm -r thu-muc-can-xoa/
 ```
 
-Đọc từ trái sang: lấy log → giữ dòng lỗi 500 → lấy cột đầu (IP) → sắp xếp → đếm trùng → sắp theo số giảm dần → 10 dòng đầu.
+## So sánh
 
-Đây là triết lý Unix: mỗi lệnh làm một việc, ghép lại bằng `|` để giải quyết việc lớn. Một dòng thay cho một script phân tích log.
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
+| | Tuyệt đối | Tương đối |
 |---|---|---|
-| `rm -rf "$DIR/"` với `DIR` rỗng | Xoá từ gốc | Kiểm tra biến trước: `[ -n "$DIR" ]` |
-| Đường dẫn tương đối trong cron | Script hỏng khi chạy tự động | Tính từ `BASH_SOURCE` |
-| `cat file \| grep x` | Thừa một tiến trình | `grep x file` |
-| Quên `-p` khi `mkdir` | Lỗi khi thư mục cha chưa có | `mkdir -p` |
-| Chỉnh file trong `/tmp` rồi mong nó còn | Bị xoá khi khởi động lại | Dùng thư mục khác |
+| Bắt đầu bằng | `/` | tên, `.`, `..`, `~` |
+| Phụ thuộc thư mục hiện tại | Không | **Có** |
+| Dùng trong script/cron/systemd | ✅ nên | ⚠️ chỉ khi đã neo |
+| Dùng khi gõ tay | dài dòng | ✅ tiện |
 
-## Ghi nhớ
+## Dễ nhầm
 
-- Một cây duy nhất từ `/`; thiết bị được gắn vào cây đó.
-- Trong script, luôn dùng đường dẫn tuyệt đối.
-- `rm -rf` không có thùng rác — `ls` trước khi xoá.
-- Đường ống ghép các lệnh nhỏ thành công cụ mạnh.
+**1. Dùng đường dẫn tương đối trong script chạy bằng cron.** Cron chạy từ thư mục nhà, không phải thư mục script.
 
-## Tự kiểm tra
+**2. Tưởng `rm` có thùng rác.** Không có. Mất là mất.
 
-1. Viết một lệnh tìm 10 file lớn nhất trong `/var/log`.
-2. Vì sao script dùng đường dẫn tương đối hay hỏng khi chạy bằng cron?
-3. Đếm số lần mỗi mã trạng thái HTTP xuất hiện trong access.log.
+**3. Quên dấu ngoặc kép quanh biến:** `rm $duong_dan` với đường dẫn có dấu cách sẽ xoá **nhiều thứ hơn bạn định**. Luôn `"$duong_dan"`.
+
+**4. Nhầm `mv a b/` với `mv a b`.** Có `/` là đưa vào thư mục; không có, và `b` chưa tồn tại, là **đổi tên**.
+
+**5. `cp` thư mục mà quên `-r`.** Báo lỗi — may là lỗi ồn ào.
+
+**6. Để dữ liệu quan trọng ở `/tmp`.** Nó bị dọn.
+
+**7. Nhầm `~` với `/`.** `~` là `/home/<bạn>`, không phải gốc.
+
+**8. Tên file phân biệt hoa thường.** `Config.json` và `config.json` là hai file khác nhau — macOS thường không phân biệt, máy chủ Linux thì có. Đây là nguồn của bug "chạy trên máy tôi mà hỏng trên server".
+
+## Mẹo nhớ
+
+> **Bắt đầu bằng `/` là tuyệt đối — đứng đâu cũng đúng.**
+>
+> **Script thì dùng tuyệt đối, hoặc neo vào `dirname "$0"`.**
+>
+> **Luôn bọc biến trong dấu ngoặc kép: `"$x"`.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Làm sao nhìn một đường dẫn là biết ngay nó tuyệt đối hay tương đối?
+2. Vì sao phải gõ `./script.sh` chứ không phải `script.sh`?
+3. `/var/log`, `/etc`, `/tmp` dùng để làm gì?
+4. Vì sao script chạy đúng khi bạn gõ tay nhưng sai khi cron chạy?
+5. Vì sao phải bọc biến trong `"..."`?
+
+## Tự viết lại
+
+Không nhìn lại, viết lệnh cho từng việc:
+
+```text
+① Tìm mọi file .log trong /var/log sửa trong 24 giờ qua
+② Tìm mọi file trong src/ có chứa chữ "TODO", kèm số dòng
+③ Tạo thư mục bao/2026/08 kể cả khi bao/ chưa tồn tại
+④ Đổi tên ghi-chu.txt thành ghi-chu-cu.txt
+⑤ Một script biết chắc thư mục của chính nó
+```
+
+Tự kiểm: câu ⑤ của bạn còn đúng khi ai đó chạy nó bằng `bash /duong/dan/day/du/script.sh` từ thư mục khác không?
+
+## Thử sức
+
+Một script sao lưu chạy bằng cron mỗi đêm. Nó báo thành công trong log, nhưng thư mục sao lưu **trống rỗng**.
+
+Ba câu để trả lời: nguyên nhân khả dĩ nhất liên quan đến đường dẫn là gì; bạn **kiểm chứng** giả thuyết đó bằng lệnh nào; và sửa script thế nào để lỗi này không lặp lại. Câu khó nhất: vì sao script vẫn **báo thành công** thay vì báo lỗi — và bạn thêm gì để lần sau nó gào lên?
