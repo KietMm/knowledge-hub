@@ -21,6 +21,10 @@
  * để lại một quãng rộng 105° giữa amber (58°) và emerald (163°), và lime (132°) nằm trong
  * đó — cách màu gần nhất 31° so với 16° nếu chọn indigo. Nó cũng phải dùng sắc 700: lime-600
  * trên lime-100 chỉ đạt 2,82:1, còn lime-700 đạt 4,58:1 — y hệt trường hợp amber.
+ *
+ * Hai màu thêm cho mảng Nền tảng máy tính và AI: indigo (272°) nằm giữa sky và violet nên
+ * dùng sắc 600 như hai màu đó; orange (43°) sáng như amber nên phải dùng 700 — orange-600
+ * trên orange-100 chỉ đạt ~2,9:1, orange-700 đạt ~4,3:1.
  */
 const CATEGORY_COLOR_CLASSES: Record<string, string> = {
   sky: 'bg-sky-100 text-sky-600 dark:bg-sky-500/15 dark:text-sky-400',
@@ -31,6 +35,8 @@ const CATEGORY_COLOR_CLASSES: Record<string, string> = {
   cyan: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-400',
   fuchsia: 'bg-fuchsia-100 text-fuchsia-600 dark:bg-fuchsia-500/15 dark:text-fuchsia-400',
   lime: 'bg-lime-100 text-lime-700 dark:bg-lime-500/15 dark:text-lime-400',
+  indigo: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-400',
+  orange: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400',
 }
 
 /** Màu lạ (chưa có trong bảng trắng) rơi về trung tính, không vỡ giao diện. */

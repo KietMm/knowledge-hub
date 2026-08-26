@@ -32,6 +32,30 @@
     "order": 4
   },
   {
+    "id": "topic-cs",
+    "name": "Khoa học máy tính nền tảng",
+    "slug": "khoa-hoc-may-tinh",
+    "description": "Bit, byte, số thực, encoding, bộ nhớ và cái giá thật của một phép truy cập.",
+    "categoryId": "cat-may-tinh",
+    "order": 1
+  },
+  {
+    "id": "topic-os",
+    "name": "Hệ điều hành",
+    "slug": "he-dieu-hanh",
+    "description": "Tiến trình, luồng, lập lịch, bộ nhớ ảo và các nguyên thuỷ đồng bộ hoá.",
+    "categoryId": "cat-may-tinh",
+    "order": 2
+  },
+  {
+    "id": "topic-network",
+    "name": "Mạng máy tính",
+    "slug": "mang-may-tinh",
+    "description": "TCP, UDP, DNS, TLS và HTTP/2 — cái gì thật sự xảy ra giữa hai máy.",
+    "categoryId": "cat-may-tinh",
+    "order": 3
+  },
+  {
     "id": "topic-typescript",
     "name": "JavaScript / TypeScript",
     "slug": "javascript-typescript",

@@ -2,11 +2,13 @@ import {
   Activity,
   Blocks,
   Code2,
+  Cpu,
   Database,
   Folder,
   Network,
   Server,
   ShieldCheck,
+  Sparkles,
   Users,
   type LucideIcon,
 } from 'lucide-react'
@@ -18,12 +20,14 @@ import {
 const ICONS: Record<string, LucideIcon> = {
   Blocks,
   Code2,
+  Cpu,
   Database,
   ShieldCheck,
   Server,
   Network,
   Activity,
   Users,
+  Sparkles,
 }
 
 export function getIcon(name: string): LucideIcon {

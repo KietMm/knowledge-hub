@@ -522,6 +522,369 @@
     "updatedAt": "2026-01-02T01:00:00.000Z"
   },
   {
+    "id": "note-bit-byte-va-bieu-dien-so",
+    "topicId": "topic-cs",
+    "title": "Bit, byte và cách máy biểu diễn số",
+    "slug": "bit-byte-va-bieu-dien-so",
+    "summary": "Mọi thứ trong máy đều là số nhị phân — hiểu điều đó giải thích tràn số, số âm, và vì sao int có giới hạn.",
+    "content": "> **Sau bài này bạn sẽ:** giải thích được vì sao `int` tràn, số âm được lưu thế nào, và khi nào phải lo về điều đó.\n\n## Ý tưởng chính\n\nMáy tính chỉ có **hai trạng thái**: có điện và không điện. Mọi thứ khác — số, chữ, ảnh, video — đều là cách **quy ước** để diễn giải một chuỗi hai trạng thái đó.\n\nTừ đó suy ra điều quan trọng nhất: **số trong máy luôn có giới hạn**, vì số bit dành cho nó là hữu hạn.\n\n## Mental model\n\nHãy nghĩ tới **đồng hồ đo số km trên xe cũ** — loại có sáu ô số cơ khí.\n\n> Nó đếm được tới 999999. Đi thêm 1 km nữa thì nó không hiện 1000000 — nó **quay về 000000**.\n>\n> Đồng hồ không hỏng. Nó chỉ **hết ô số**. Và nó không có cách nào báo cho bạn biết chuyện đó vừa xảy ra.\n\nĐó chính xác là tràn số nguyên. Kiểu `int32` có 32 ô số nhị phân; vượt quá là quay vòng, im lặng, không báo lỗi.\n\n## Ví dụ nhỏ\n\n```text\nSố 13 trong hệ nhị phân, 8 bit:\n\n  0  0  0  0  1  1  0  1\n128 64 32 16  8  4  2  1\n            8 +4    +1  = 13\n```\n\n## Code chạy thế nào\n\n**Một byte = 8 bit, và nó chứa được bao nhiêu:**\n\n```text\n1 bit   → 2 giá trị       (0, 1)\n2 bit   → 4\n8 bit   → 256             một byte\n16 bit  → 65.536\n32 bit  → ~4,29 tỉ\n64 bit  → ~1,8 × 10¹⁹\n\nQuy luật: n bit → 2ⁿ giá trị. Thêm một bit là GẤP ĐÔI.\n```\n\n**Số âm — bù hai, và vì sao nó được chọn:**\n\n```text\nCách ngây thơ: dùng bit đầu làm dấu.\n  0000 0001 = +1\n  1000 0001 = −1\n  Vấn đề: có HAI số 0 (+0 và −0), và phép cộng phải xét dấu riêng.\n\nBù hai (thứ mọi máy dùng): đảo mọi bit rồi cộng 1.\n  +5      = 0000 0101\n  đảo bit = 1111 1010\n  cộng 1  = 1111 1011  = −5\n\nVì sao đáng chọn: PHÉP CỘNG KHÔNG CẦN BIẾT DẤU.\n  0000 0101  (+5)\n+ 1111 1011  (−5)\n= 1 0000 0000 → bỏ bit tràn → 0000 0000 = 0  ✓\n```\n\nHệ quả của bù hai là dải số **lệch một đơn vị**:\n\n```text\nint8:  −128 … +127        (không phải −127 … +127)\nint32: −2.147.483.648 … +2.147.483.647\n```\n\nCon số 2.147.483.647 xuất hiện ở khắp nơi trong lỗi thực tế — nó là `int32` lớn nhất.\n\n## Cú pháp\n\n**Tràn số — nó im lặng, và đó là vấn đề:**\n\n```js\n// JS dùng số thực 64-bit nên không tràn kiểu này, nhưng bitwise thì có:\nconsole.log(2147483647 | 0)      // 2147483647\nconsole.log((2147483647 + 1) | 0) // -2147483648  ← quay vòng\n\n// Postgres integer (int32):\n// INSERT ... VALUES (2147483648) → lỗi \"integer out of range\"\n```\n\n```text\nBa nơi tràn số gây sự cố thật:\n  ① Khoá chính AUTO_INCREMENT kiểu int32\n     → bảng đạt 2,1 tỉ dòng ⇒ không insert được nữa\n     ⇒ dùng bigint cho bảng có thể lớn\n  ② Đếm mili giây: 32 bit chỉ chứa được ~24,8 ngày\n  ③ Nhân hai số lớn rồi mới chia — kết quả trung gian tràn\n```\n\n**Toán tử bit — khi nào thật sự dùng:**\n\n```js\nconst DOC = 1      // 0001\nconst GHI = 2      // 0010\nconst XOA = 4      // 0100\n\nlet quyen = DOC | GHI          // 0011 — gộp cờ\nquyen & GHI                     // 2 (khác 0) — có quyền ghi?\nquyen &= ~GHI                   // bỏ cờ ghi\n```\n\n```text\n&   AND  cả hai đều 1        → kiểm tra cờ\n|   OR   một trong hai là 1  → bật cờ\n^   XOR  khác nhau thì 1     → đảo cờ, và dùng trong checksum\n~   NOT  đảo mọi bit\n<<  dịch trái n bit = nhân 2ⁿ\n>>  dịch phải n bit = chia 2ⁿ (làm tròn xuống)\n```\n\nNgày nay bạn hiếm khi viết bitwise để tối ưu — trình biên dịch làm tốt hơn. Chỗ nó còn cần thiết là **cờ quyền**, **giao thức nhị phân**, và **đọc mã người khác viết**.\n\n## Tại sao cần nó\n\nVì hai câu hỏi thực tế phụ thuộc vào nó:\n\n```text\n① \"Cột này nên int hay bigint?\"\n   int    4 byte, tới 2,1 tỉ\n   bigint 8 byte, tới 9,2 × 10¹⁸\n   ⇒ Bảng log, bảng sự kiện, bảng đơn hàng của hệ thống lớn: bigint.\n   ⇒ Đổi từ int sang bigint trên bảng 500 triệu dòng ĐANG CHẠY là một dự án,\n     không phải một lệnh ALTER.\n\n② \"Kiểu này chiếm bao nhiêu bộ nhớ?\"\n   1 triệu bản ghi × 8 byte thừa mỗi bản ghi = 8 MB.\n   Nhân với index, với bản sao, với cache ⇒ con số thật lớn hơn.\n```\n\n**Đơn vị — chỗ hay nhầm:**\n\n```text\n1 byte = 8 bit\n1 KB = 1024 byte (hoặc 1000, tuỳ ngữ cảnh — ổ cứng dùng 1000)\n1 Gbps = 125 MB/s        ← b nhỏ là bit, B lớn là byte\n\nNhầm bit với byte ⇒ sai 8 lần khi tính băng thông.\n```\n\n## So sánh\n\n| Kiểu | Bit | Dải giá trị | Dùng khi |\n|---|---|---|---|\n| `int8` / `tinyint` | 8 | −128…127 | cờ, mã trạng thái nhỏ |\n| `int32` / `integer` | 32 | ±2,1 tỉ | mặc định hợp lý |\n| `int64` / `bigint` | 64 | ±9,2 × 10¹⁸ | id, tiền, timestamp |\n| `uint32` | 32 | 0…4,29 tỉ | khi chắc chắn không âm |\n\n## Dễ nhầm\n\n**1. Dùng `int` cho khoá chính của bảng lớn.** 2,1 tỉ đến nhanh hơn bạn nghĩ, và sửa lúc đó rất đắt.\n\n**2. Tưởng tràn số sẽ báo lỗi.** Ở nhiều ngôn ngữ nó quay vòng im lặng.\n\n**3. Nhầm bit với byte.** Sai 8 lần khi tính băng thông hay dung lượng.\n\n**4. Quên dải bù hai lệch một.** `−128` có, `+128` không, với `int8`.\n\n**5. Nhân trước rồi mới chia** khi kết quả trung gian có thể tràn.\n\n**6. Dùng `int32` cho timestamp mili giây.** Tràn sau ~24,8 ngày.\n\n**7. Tưởng `>>` và `>>>` giống nhau.** Với số âm, `>>` giữ dấu, `>>>` thì không.\n\n**8. Tối ưu bằng bitwise khi không cần.** Trình biên dịch đã làm; bạn chỉ đổi mã dễ đọc thành mã khó đọc.\n\n## Mẹo nhớ\n\n> **n bit → 2ⁿ giá trị. Thêm một bit là gấp đôi.**\n>\n> **Tràn số quay vòng IM LẶNG — không có ai báo cho bạn.**\n>\n> **2.147.483.647 là `int32` lớn nhất. Nhớ con số này.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. 8 bit chứa được bao nhiêu giá trị? 16 bit?\n2. Bù hai hoạt động thế nào, và vì sao được chọn thay vì bit dấu?\n3. Vì sao `int8` là −128…127 chứ không phải −127…127?\n4. Ba tình huống thật mà tràn số gây sự cố?\n5. 1 Gbps là bao nhiêu MB/s, và vì sao?\n\n## Tự viết lại\n\nKhông nhìn lại, làm bằng tay:\n\n```text\n① Đổi 37 sang nhị phân 8 bit\n② Tìm biểu diễn bù hai của −37\n③ Cộng hai kết quả trên, kiểm xem có ra 0 không\n④ Một bảng dự kiến 5 tỉ dòng — chọn kiểu khoá chính nào, vì sao\n```\n\nTự kiểm: ở ③ bạn xử lý bit tràn ra ngoài 8 bit thế nào?\n\n## Thử sức\n\nHệ thống chạy 3 năm, bảng `su_kien` có khoá chính `integer`, hiện đã 1,9 tỉ dòng và tăng 2 triệu/ngày.\n\nBa câu để trả lời: bao lâu nữa thì vỡ, và **chuyện gì xảy ra** đúng lúc đó; hai cách xử lý và đánh đổi của mỗi cách; và bạn làm gì **ngay hôm nay**. Câu khó nhất: nếu `ALTER TABLE ... TYPE bigint` khoá bảng nhiều giờ, bạn chuyển kiểu mà **không dừng dịch vụ** bằng cách nào?",
+    "tags": [
+      "nen-tang",
+      "bit",
+      "so-hoc",
+      "computer-science"
+    ],
+    "order": 1,
+    "level": "co-ban",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-02T02:00:00.000Z",
+    "updatedAt": "2026-01-02T02:00:00.000Z"
+  },
+  {
+    "id": "note-so-thuc-va-sai-so",
+    "topicId": "topic-cs",
+    "title": "Số thực và sai số dấu phẩy động",
+    "slug": "so-thuc-va-sai-so",
+    "summary": "Vì sao 0.1 + 0.2 không bằng 0.3, và vì sao không bao giờ được lưu tiền bằng float.",
+    "content": "> **Sau bài này bạn sẽ:** giải thích được `0.1 + 0.2 !== 0.3`, và biết dùng gì thay cho float khi tính tiền.\n\n## Ý tưởng chính\n\nSố thực trong máy được lưu bằng **dấu phẩy động**: một số hữu hạn bit chia cho phần định trị và phần mũ.\n\nHữu hạn bit nghĩa là **phần lớn số thập phân không biểu diễn được chính xác** — chúng bị làm tròn tới giá trị gần nhất mà máy lưu được.\n\nĐây không phải lỗi của ngôn ngữ nào cả. Nó là chuẩn IEEE 754, và mọi ngôn ngữ đều như vậy.\n\n## Mental model\n\nHãy nghĩ tới **viết 1/3 dưới dạng số thập phân**.\n\n> 1/3 = 0,3333... Bạn có bao nhiêu ô để viết? Mười ô? Vậy bạn viết 0,3333333333.\n>\n> Đó **không phải** 1/3. Nó là số gần nhất bạn viết được với mười ô. Nhân nó với 3 ra 0,9999999999, không phải 1.\n>\n> Bạn không sai, và máy tính cũng không hỏng. Chỉ là **hệ đếm và số ô có hạn**.\n\nMáy dùng hệ nhị phân. Trong hệ nhị phân, `0,1` là một số vô hạn tuần hoàn — y như 1/3 trong hệ thập phân.\n\n## Ví dụ nhỏ\n\n```js\n0.1 + 0.2              // 0.30000000000000004\n0.1 + 0.2 === 0.3      // false\n0.1 + 0.2 - 0.3        // 5.551115123125783e-17\n```\n\n## Code chạy thế nào\n\n**Vì sao `0.1` không lưu chính xác được:**\n\n```text\nTrong hệ 10, phân số lưu chính xác được khi mẫu số chỉ có ước 2 và 5:\n  1/2 = 0,5   ✓      1/4 = 0,25  ✓      1/3 = 0,333... ✗\n\nTrong hệ 2, chỉ khi mẫu số là luỹ thừa của 2:\n  1/2  = 0.1₂     ✓\n  1/4  = 0.01₂    ✓\n  1/10 = 0.000110011001100...₂  ← TUẦN HOÀN VÔ HẠN  ✗\n\n⇒ 0.1 lưu thành số gần nhất trong 64 bit:\n  0.1000000000000000055511151231257827...\n```\n\nCộng hai số đã lệch một chút thì kết quả lệch nhiều hơn một chút. Đó là toàn bộ câu chuyện `0.1 + 0.2`.\n\n**`double` 64 bit chia bit ra sao:**\n\n```text\n[1 bit dấu][11 bit mũ][52 bit định trị]\n\n⇒ Độ chính xác ~15–17 chữ số thập phân.\n⇒ Số nguyên biểu diễn CHÍNH XÁC tới 2⁵³ = 9.007.199.254.740.992\n```\n\n```js\nNumber.MAX_SAFE_INTEGER          // 9007199254740991\n9007199254740992 === 9007199254740993   // true  ← hai số khác nhau, máy thấy như một\n```\n\nĐây là lý do id từ backend nên trả về **dạng chuỗi** nếu nó là `bigint`: JSON parse ra `number` và bạn mất chính xác ở id lớn — âm thầm.\n\n## Cú pháp\n\n**So sánh số thực — không dùng `===`:**\n\n```js\n// ❌\nif (a === b) { ... }\n\n// ✅ so với một sai số chấp nhận được\nconst gan = (a, b, eps = 1e-9) => Math.abs(a - b) < eps\ngan(0.1 + 0.2, 0.3)     // true\n```\n\n**Tiền — ba cách, theo thứ tự ưu tiên:**\n\n```text\n① SỐ NGUYÊN ĐƠN VỊ NHỎ NHẤT      ← đơn giản và đủ dùng nhất\n   Lưu 199000 (đồng) chứ không 199.00\n   Lưu cent thay vì dollar.\n   ⇒ Mọi phép cộng trừ đều chính xác tuyệt đối.\n   ⇒ Chỉ cẩn thận lúc CHIA (chiết khấu, chia đều) — phải quyết định\n     làm tròn ở đâu và ai chịu phần lẻ.\n\n② KIỂU THẬP PHÂN CỦA CSDL\n   Postgres NUMERIC(12,2) — chính xác, chậm hơn, nhưng an toàn.\n\n③ THƯ VIỆN DECIMAL\n   decimal.js, big.js ở tầng ứng dụng.\n\n❌ KHÔNG BAO GIỜ: float/double cho tiền.\n```\n\n```text\nSai số tích luỹ, ví dụ thật:\n  Cộng 0.1 mười lần bằng float ⇒ 0.9999999999999999\n  Một triệu giao dịch ⇒ lệch tới mức kiểm toán phát hiện.\n  Và lệch đó KHÔNG tái hiện được theo cách dễ hiểu ⇒ rất khó gỡ.\n```\n\n**Ba giá trị đặc biệt cần biết:**\n\n```js\n1 / 0            // Infinity\n-1 / 0           // -Infinity\n0 / 0            // NaN\nNaN === NaN      // false  ← giá trị duy nhất không bằng chính nó\nNumber.isNaN(x)  // cách kiểm đúng\n```\n\n`NaN` lan truyền: một `NaN` trong chuỗi tính toán làm mọi kết quả sau đó thành `NaN`. Nên khi thấy `NaN` ở cuối, hãy tìm chỗ **đầu tiên** nó xuất hiện — thường là một phép chia cho 0 hoặc một `parseFloat` trên chuỗi rỗng.\n\n## Tại sao cần nó\n\nVì ba lớp bug sinh ra từ đúng chỗ này, và cả ba đều khó tái hiện:\n\n```text\n① Tiền lệch vài đồng sau nhiều phép tính\n   → chỉ lộ ra khi đối soát, và không ai biết bắt đầu từ đâu.\n\n② So sánh bằng thất bại \"vô lý\"\n   → if (tong === 100) không chạy dù in ra đúng 100.\n\n③ id lớn bị làm tròn khi qua JSON\n   → hai bản ghi khác nhau trở thành một, âm thầm.\n```\n\n**Thứ tự phép tính cũng ảnh hưởng:**\n\n```js\n(0.1 + 0.2) + 0.3      // 0.6000000000000001\n0.1 + (0.2 + 0.3)      // 0.6\n\n// Cộng số lớn với số rất nhỏ ⇒ số nhỏ bị nuốt mất\n1e16 + 1 === 1e16      // true\n```\n\n```text\nMẹo khi phải cộng nhiều số thực: cộng các số NHỎ trước.\nCộng số nhỏ vào một tổng đã rất lớn thì nó bị làm tròn mất.\n```\n\n## So sánh\n\n| Kiểu | Chính xác | Tốc độ | Dùng cho |\n|---|---|---|---|\n| `float`/`double` | ❌ xấp xỉ | nhanh | khoa học, đồ hoạ, thống kê |\n| số nguyên (đơn vị nhỏ) | ✅ | nhanh | **tiền** |\n| `NUMERIC`/`DECIMAL` | ✅ | chậm hơn | tiền, kế toán |\n| thư viện decimal | ✅ | chậm nhất | tính toán tài chính phức tạp |\n\n## Dễ nhầm\n\n**1. Dùng float cho tiền.** Sai số tích luỹ, và phát hiện lúc đối soát.\n\n**2. So sánh số thực bằng `===`.** Dùng sai số chấp nhận được.\n\n**3. Tưởng đây là lỗi của JavaScript.** Python, Java, C, Go đều vậy — chuẩn IEEE 754.\n\n**4. Trả id `bigint` dưới dạng number trong JSON.** Mất chính xác trên 2⁵³.\n\n**5. Quên `NaN !== NaN`.** Dùng `Number.isNaN`.\n\n**6. `parseFloat` không kiểm kết quả.** Chuỗi lạ cho ra `NaN` và nó lan đi.\n\n**7. Cộng số nhỏ vào tổng rất lớn.** Bị nuốt mất.\n\n**8. Làm tròn ở nhiều chỗ khác nhau.** Làm tròn **một lần**, ở tầng hiển thị.\n\n**9. Tưởng `toFixed(2)` sửa được vấn đề.** Nó chỉ định dạng lúc hiển thị, không sửa giá trị đã sai.\n\n## Mẹo nhớ\n\n> **`0.1` là số vô hạn tuần hoàn trong hệ nhị phân — như 1/3 trong hệ 10.**\n>\n> **TIỀN thì lưu bằng SỐ NGUYÊN đơn vị nhỏ nhất, hoặc NUMERIC. Không bao giờ float.**\n>\n> **Số nguyên chính xác tới 2⁵³. Id lớn phải đi qua JSON dưới dạng chuỗi.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Vì sao `0.1` không lưu chính xác được trong hệ nhị phân?\n2. Ba cách lưu tiền đúng, ưu tiên cái nào?\n3. `Number.MAX_SAFE_INTEGER` là gì và vì sao nó quan trọng với id?\n4. Vì sao so sánh số thực bằng `===` là sai?\n5. Vì sao thứ tự cộng ảnh hưởng tới kết quả?\n\n## Tự viết lại\n\nKhông nhìn lại, viết mã cho:\n\n```text\n① Hàm so sánh hai số thực \"bằng nhau trong sai số cho phép\"\n② Cộng một giỏ hàng gồm giá 199.000đ, 49.500đ, 1.200.000đ và thuế 8%,\n   dùng cách lưu tiền đúng\n③ Định dạng kết quả để hiển thị\n```\n\nTự kiểm: thuế 8% cho ra số lẻ — bạn làm tròn ở bước nào, và ai được lợi từ phần lẻ đó?\n\n## Thử sức\n\nKế toán báo: tổng doanh thu hệ thống tính ra **lệch 340 đồng** so với tổng các đơn hàng. Hệ thống lưu tiền bằng `double`.\n\nBa câu để trả lời: vì sao lệch, và vì sao con số lệch **nhỏ nhưng không bằng 0**; kế hoạch chuyển sang cách lưu đúng trên dữ liệu đang chạy; và bạn xử lý **dữ liệu cũ đã sai** thế nào. Câu khó nhất: sau khi chuyển sang số nguyên, phép chia (chia đều đơn hàng cho 3 người) vẫn cho số lẻ — bạn quyết định quy tắc gì, và vì sao nó phải được ghi thành tài liệu?",
+    "tags": [
+      "nen-tang",
+      "so-hoc",
+      "float",
+      "computer-science"
+    ],
+    "order": 2,
+    "level": "co-ban",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-02T03:00:00.000Z",
+    "updatedAt": "2026-01-02T03:00:00.000Z"
+  },
+  {
+    "id": "note-unicode-va-encoding",
+    "topicId": "topic-cs",
+    "title": "Unicode, encoding và chuỗi ký tự",
+    "slug": "unicode-va-encoding",
+    "summary": "Vì sao chuỗi tiếng Việt đếm ra sai độ dài, emoji làm vỡ hàm cắt chuỗi, và mojibake từ đâu ra.",
+    "content": "> **Sau bài này bạn sẽ:** phân biệt được ký tự với byte, và biết vì sao `.length` nói dối với emoji và tiếng Việt.\n\n## Ý tưởng chính\n\n**Unicode** là bảng danh mục: mỗi ký tự trên đời có một số thứ tự, gọi là code point. Chữ `A` là U+0041, chữ `ế` là U+1EBF, 🐢 là U+1F422.\n\n**Encoding** là cách **ghi số đó xuống thành byte**. UTF-8 là một cách; UTF-16 là cách khác.\n\nLẫn hai khái niệm này là nguồn của gần như mọi bug liên quan tới chuỗi.\n\n## Mental model\n\nHãy nghĩ tới **số điện thoại và cách đọc nó ra**.\n\n> Số điện thoại là **một dãy số cố định** — đó là Unicode code point.\n>\n> Nhưng bạn **đọc** nó ra được nhiều kiểu: từng chữ số một, hay gom thành cặp, hay gom ba số một. Đó là encoding.\n>\n> Nếu người nghe gom theo kiểu khác kiểu bạn đọc, họ ghi lại được một số **khác hoàn toàn** — mà vẫn trông như một số điện thoại hợp lệ.\n\nĐó chính xác là **mojibake**: cùng một dãy byte, đọc bằng bảng mã khác, ra chữ khác. Không có lỗi nào được báo, chỉ là chữ vô nghĩa.\n\n## Ví dụ nhỏ\n\n```js\n'A'.length        // 1  — 1 byte trong UTF-8\n'ế'.length        // 1  — nhưng 3 byte\n'🐢'.length       // 2  ← JS đếm theo đơn vị UTF-16, không theo ký tự\n[...'🐢'].length  // 1  ← đúng\n```\n\n## Code chạy thế nào\n\n**UTF-8 dùng số byte thay đổi — đó là điểm mấu chốt:**\n\n```text\nCode point          Số byte   Chứa gì\nU+0000 … U+007F        1      ASCII: a-z, 0-9, dấu câu\nU+0080 … U+07FF        2      chữ có dấu châu Âu, Ả Rập\nU+0800 … U+FFFF        3      TIẾNG VIỆT có dấu, chữ Hán, chữ Nhật\nU+10000 … U+10FFFF     4      emoji, ký tự hiếm\n\n⇒ \"Xin chào\"  = 8 ký tự, 10 byte  (à = 3 byte)\n⇒ \"Hello\"     = 5 ký tự, 5 byte\n```\n\nHệ quả rất thực tế:\n\n```sql\n-- ❌ Người dùng nhập \"Nguyễn Văn Ánh\" (14 ký tự) → 20 byte\n-- Cột VARCHAR(20) TÍNH THEO BYTE ở một số hệ ⇒ bị cắt cụt\n-- Postgres tính theo KÝ TỰ, MySQL tuỳ charset ⇒ phải biết hệ mình dùng gì\n```\n\n**Ba đơn vị đếm khác nhau — và `.length` chọn cái sai:**\n\n```text\nBYTE        đơn vị lưu trữ         → dùng khi tính dung lượng, giới hạn cột\nCODE POINT  một mục trong Unicode  → dùng khi lặp qua \"ký tự\"\nGRAPHEME    thứ NGƯỜI DÙNG thấy là một ký tự\n\nVí dụ 👨‍👩‍👧 (gia đình):\n  1 grapheme\n  5 code point (3 người + 2 ký tự nối vô hình)\n  18 byte trong UTF-8\n\n⇒ 'gia đình'.length trong JS trả về 11 — không phải 1, cũng không phải 5.\n```\n\n```js\n// Cắt chuỗi bằng slice ⇒ VỠ emoji thành hai nửa vô nghĩa\n'🐢🐢'.slice(0, 1)            // '\\ud83d' — nửa ký tự, hiện ra dấu hỏi\n\n// Đúng: tách theo grapheme\nconst seg = new Intl.Segmenter('vi', { granularity: 'grapheme' })\n[...seg.segment('👨‍👩‍👧 xin chào')].length    // đếm đúng thứ người dùng thấy\n```\n\n## Cú pháp\n\n**Chuẩn hoá — hai chuỗi trông giống hệt nhau nhưng không bằng nhau:**\n\n```js\nconst a = 'ế'              // U+1EBF — một code point\nconst b = 'ế'              // U+0065 U+0302 U+0301 — e + hai dấu ghép\na === b                     // false  ← trông y hệt trên màn hình\na.normalize('NFC') === b.normalize('NFC')   // true\n```\n\n```text\nĐây là bug thật, không phải chuyện lý thuyết:\n  macOS lưu tên file ở dạng NFD (tách dấu)\n  Linux/Windows thường NFC (gộp)\n  ⇒ Cùng một tên file, so sánh ra khác nhau.\n  ⇒ Người dùng gõ tên trên iPhone, tìm kiếm trên web không ra.\n\nQuy tắc: CHUẨN HOÁ VỀ NFC ở biên — ngay khi nhận dữ liệu vào.\n```\n\n**Mojibake — nhận diện và sửa:**\n\n```text\n\"Xin chào\"  đọc đúng UTF-8\n\"Xin chÃ o\" ← byte UTF-8 bị đọc như Latin-1\n\"Xin ch??o\" ← đã mất dữ liệu, KHÔNG khôi phục được\n\nNguyên nhân: một mắt xích trong chuỗi không khai UTF-8.\nKiểm cả sáu chỗ:\n  □ <meta charset=\"utf-8\"> trong HTML\n  □ Content-Type: application/json; charset=utf-8\n  □ Charset của cột và của kết nối CSDL (MySQL: utf8mb4, KHÔNG phải utf8)\n  □ Encoding của file mã nguồn\n  □ Locale của tiến trình\n  □ Encoding khi đọc/ghi file\n```\n\nMySQL có một cái bẫy riêng: charset tên là `utf8` **chỉ chứa được 3 byte**, nên emoji không lưu được. Phải dùng `utf8mb4`.\n\n## Tại sao cần nó\n\nVì bốn bug phổ biến đều xuất phát từ đây:\n\n```text\n① Đếm ký tự sai ⇒ giới hạn \"tối đa 100 ký tự\" chặn nhầm người dùng tiếng Việt\n② Cắt chuỗi vỡ emoji ⇒ hiện dấu hỏi ở cuối đoạn tóm tắt\n③ Tìm kiếm không ra ⇒ dữ liệu NFD, truy vấn NFC\n④ Mojibake ⇒ toàn bộ dữ liệu tiếng Việt thành ký tự lạ\n```\n\n**Sáu quy tắc gói gọn:**\n\n```text\n① UTF-8 ở MỌI NƠI. Không có ngoại lệ đáng cân nhắc.\n② Chuẩn hoá NFC ngay khi nhận dữ liệu vào.\n③ Giới hạn độ dài thì nói rõ đơn vị: byte hay ký tự.\n④ Cắt chuỗi bằng Intl.Segmenter, không bằng slice.\n⑤ So sánh chuỗi không phân biệt hoa thường: dùng localeCompare\n   hoặc toLocaleLowerCase — 'İ' của tiếng Thổ không hạ về 'i'.\n⑥ MySQL: utf8mb4, không phải utf8.\n```\n\n**Sắp xếp cũng phụ thuộc ngôn ngữ:**\n\n```js\n['ă', 'a', 'b'].sort()                          // theo code point: a, b, ă  ✗\n['ă', 'a', 'b'].sort((x, y) => x.localeCompare(y, 'vi'))   // a, ă, b  ✓\n```\n\nSắp xếp mặc định dùng thứ tự code point, và thứ tự đó **không phải** thứ tự bảng chữ cái của bất kỳ ngôn ngữ nào.\n\n## So sánh\n\n| | Byte | Code point | Grapheme |\n|---|---|---|---|\n| Là gì | đơn vị lưu | mục trong Unicode | ký tự người dùng thấy |\n| `'🐢'` | 4 | 1 | 1 |\n| `'👨‍👩‍👧'` | 18 | 5 | 1 |\n| Dùng khi | dung lượng, cột CSDL | xử lý ký tự | đếm, cắt cho người đọc |\n\n## Dễ nhầm\n\n**1. Dùng `.length` để đếm ký tự.** Sai với emoji và ký tự ghép.\n\n**2. `slice` để cắt chuỗi có emoji.** Vỡ thành nửa ký tự.\n\n**3. Quên chuẩn hoá NFC.** Chuỗi giống hệt nhau mà không bằng nhau.\n\n**4. MySQL charset `utf8`.** Chỉ 3 byte — emoji không lưu được.\n\n**5. Giới hạn độ dài không nói rõ đơn vị.** Người dùng tiếng Việt bị chặn sớm.\n\n**6. `sort()` mặc định cho chuỗi tiếng Việt.** Thứ tự code point, không phải thứ tự bảng chữ cái.\n\n**7. Quên khai charset ở một mắt xích.** Mojibake.\n\n**8. Nghĩ mojibake luôn sửa được.** Nếu đã ghi bằng ký tự thay thế thì dữ liệu mất hẳn.\n\n**9. Dùng `toLowerCase` cho dữ liệu đa ngôn ngữ.** Tiếng Thổ có ngoại lệ.\n\n## Mẹo nhớ\n\n> **Unicode là DANH MỤC. Encoding là CÁCH GHI XUỐNG BYTE. Đừng lẫn.**\n>\n> **UTF-8 khắp nơi + chuẩn hoá NFC ở biên.**\n>\n> **`.length` đếm đơn vị UTF-16, không đếm ký tự. Dùng `Intl.Segmenter`.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Unicode khác encoding thế nào?\n2. Chữ tiếng Việt có dấu chiếm mấy byte trong UTF-8? Emoji?\n3. Ba đơn vị đếm, mỗi cái dùng khi nào?\n4. Chuẩn hoá NFC giải quyết vấn đề gì? Cho một tình huống thật.\n5. Mojibake sinh ra thế nào, kiểm ở những mắt xích nào?\n\n## Tự viết lại\n\nKhông nhìn lại, viết:\n\n```text\n① Hàm cắt chuỗi tóm tắt còn tối đa 100 ký tự, không vỡ emoji\n② Hàm chuẩn hoá dữ liệu người dùng nhập trước khi lưu\n③ Hàm so sánh hai tên có thể ở dạng NFC hoặc NFD\n④ Sắp xếp danh sách tên tiếng Việt cho đúng\n```\n\nTự kiểm: hàm ① của bạn xử lý thế nào khi ký tự thứ 100 nằm giữa một emoji gia đình?\n\n## Thử sức\n\nSau khi chuyển dữ liệu sang hệ mới, toàn bộ tên tiếng Việt hiện thành `Nguyá»…n VÄƒn An`.\n\nBa câu để trả lời: chuyện gì đã xảy ra, ở tầng nào; bạn xác định **mắt xích nào** sai bằng cách nào; và dữ liệu có khôi phục được không, phụ thuộc vào điều gì. Câu khó nhất: nếu một phần dữ liệu đã hiện dấu `?` thay vì ký tự lạ, vì sao phần đó **khác hẳn** về khả năng cứu — và điều đó đổi kế hoạch của bạn ra sao?",
+    "tags": [
+      "nen-tang",
+      "unicode",
+      "encoding",
+      "chuoi",
+      "computer-science"
+    ],
+    "order": 3,
+    "level": "co-ban",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-02T04:00:00.000Z",
+    "updatedAt": "2026-01-02T04:00:00.000Z"
+  },
+  {
+    "id": "note-bo-nho-stack-va-heap",
+    "topicId": "topic-cs",
+    "title": "Bộ nhớ, stack và heap",
+    "slug": "bo-nho-stack-va-heap",
+    "summary": "Biến nằm ở đâu, tham trị khác tham chiếu thế nào, và vì sao đệ quy sâu làm tràn stack.",
+    "content": "> **Sau bài này bạn sẽ:** biết biến của mình nằm ở đâu, vì sao sửa một object lại ảnh hưởng chỗ khác, và stack overflow từ đâu ra.\n\n## Ý tưởng chính\n\nChương trình dùng hai vùng bộ nhớ với hai luật hoàn toàn khác nhau:\n\n**Stack** — nhanh, tự động dọn, nhỏ, và theo luật vào sau ra trước.\n**Heap** — lớn, sống lâu tuỳ ý, chậm hơn, và phải có ai đó dọn.\n\nGần như mọi hành vi \"kỳ lạ\" của biến đều giải thích được bằng câu hỏi: *thứ này nằm ở stack hay heap?*\n\n## Mental model\n\nHãy nghĩ tới **bàn làm việc và nhà kho**.\n\n> **Stack là mặt bàn**: bạn đặt giấy tờ lên theo thứ tự, xong việc thì lấy từ trên xuống. Rất nhanh vì mọi thứ trong tầm tay. Nhưng **mặt bàn có hạn** — chồng cao quá là đổ.\n>\n> **Heap là nhà kho**: chứa được nhiều, để bao lâu cũng được. Nhưng mỗi lần lấy phải **đi tìm**, và phải nhớ dọn — nếu không kho đầy dần.\n\nVà điểm quan trọng nhất: khi bạn \"đưa cho đồng nghiệp một thùng hàng trong kho\", bạn không bê cả thùng ra — bạn **đưa số hiệu kệ**. Hai người cùng cầm một số hiệu thì đang nói về **cùng một thùng**. Đó là tham chiếu.\n\n## Ví dụ nhỏ\n\n```js\nlet a = 5\nlet b = a          // sao chép GIÁ TRỊ\nb = 10\nconsole.log(a)     // 5 — không đổi\n\nlet x = { n: 5 }\nlet y = x          // sao chép THAM CHIẾU\ny.n = 10\nconsole.log(x.n)   // 10 ← cùng một object\n```\n\n## Code chạy thế nào\n\n**Chuyện gì xảy ra trong bộ nhớ:**\n\n```text\nlet a = 5;  let b = a;\n  STACK\n  ┌─────────┐\n  │ a  =  5 │   hai ô riêng biệt, hai giá trị riêng\n  │ b  =  5 │\n  └─────────┘\n\nlet x = { n: 5 };  let y = x;\n  STACK              HEAP\n  ┌───────────┐      ┌──────────┐\n  │ x → 0x1A4 │─┬───▶│ { n: 5 } │\n  │ y → 0x1A4 │─┘    └──────────┘\n  └───────────┘      MỘT object, HAI tham chiếu\n```\n\nTừ hình này suy ra được cả ba hành vi hay gây bất ngờ:\n\n```js\n// ① So sánh object là so THAM CHIẾU, không so nội dung\n{ n: 5 } === { n: 5 }        // false — hai ô khác nhau trong heap\n\n// ② Truyền vào hàm cũng là truyền tham chiếu\nfunction them(ds) { ds.push(1) }\nconst a = []; them(a); a.length   // 1 ← hàm sửa được mảng bên ngoài\n\n// ③ Gán lại BÊN TRONG hàm thì không ảnh hưởng bên ngoài\nfunction thay(ds) { ds = [9] }     // chỉ đổi biến cục bộ trỏ đi đâu\nconst b = []; thay(b); b.length    // 0\n```\n\n**Stack overflow — cụ thể là gì:**\n\n```text\nMỗi lời gọi hàm đẩy một KHUNG lên stack:\n  tham số, biến cục bộ, địa chỉ quay về.\n\nfunction dem(n) { return n === 0 ? 0 : 1 + dem(n - 1) }\ndem(100000)\n\n  dem(100000) ─┐\n  dem(99999)   │  100.000 khung chồng lên nhau\n  dem(99998)   │  Stack mặc định ~1 MB\n  ...          ┘  ⇒ RangeError: Maximum call stack size exceeded\n```\n\n```text\nBa cách xử lý:\n  ① Chuyển sang vòng lặp — khung không tích luỹ\n  ② Tự quản lý ngăn xếp bằng một mảng trên heap\n  ③ Đệ quy đuôi (tail call) — nhưng ít runtime thật sự tối ưu nó,\n     kể cả khi ngôn ngữ có khai\n```\n\n## Cú pháp\n\n**Sao chép nông và sao chép sâu:**\n\n```js\nconst goc = { ten: 'An', dia: { tp: 'HCM' } }\n\nconst nong = { ...goc }           // sao chép NÔNG\nnong.dia.tp = 'HN'\ngoc.dia.tp                        // 'HN'  ← object lồng vẫn dùng chung!\n\nconst sau = structuredClone(goc)  // sao chép SÂU\nsau.dia.tp = 'DN'\ngoc.dia.tp                        // 'HN'  ← độc lập\n```\n\n```text\nSpread và Object.assign đều là NÔNG — chỉ sao chép một tầng.\nĐây là nguyên nhân của cả một lớp bug trong React:\n  cập nhật state bằng spread, object lồng bên trong vẫn là object cũ\n  ⇒ React so sánh tham chiếu, thấy giống ⇒ KHÔNG render lại.\n```\n\n**Rò rỉ bộ nhớ — bốn nguyên nhân phổ biến:**\n\n```js\n// ① Listener không gỡ\nwindow.addEventListener('resize', xuLy)     // thiếu removeEventListener\n// ② Timer không dọn\nsetInterval(chay, 1000)                     // thiếu clearInterval\n// ③ Closure giữ dữ liệu lớn\nfunction tao() { const to = new Array(1e6); return () => to.length }\n// ④ Cache không giới hạn — Map cứ lớn mãi\n```\n\n```text\nBộ dọn rác (GC) chỉ thu hồi thứ KHÔNG CÒN AI THAM CHIẾU TỚI.\n⇒ Rò rỉ = bạn vẫn giữ tham chiếu tới thứ không còn cần.\n⇒ GC không cứu được bạn khỏi lỗi này; nó chỉ cứu bạn khỏi việc\n  phải tự gọi free().\n```\n\n`WeakMap`/`WeakSet` tồn tại đúng cho trường hợp này: chúng giữ tham chiếu **yếu**, không ngăn GC thu hồi.\n\n## Tại sao cần nó\n\nVì ba câu hỏi hằng ngày phụ thuộc vào mô hình này:\n\n```text\n① \"Vì sao sửa chỗ này lại ảnh hưởng chỗ kia?\"\n   → tham chiếu dùng chung.\n\n② \"Vì sao React không render lại dù tôi đã đổi state?\"\n   → sửa tại chỗ, tham chiếu không đổi ⇒ so sánh nông thấy giống.\n\n③ \"Vì sao ứng dụng chạy lâu thì chậm dần rồi chết?\"\n   → rò rỉ bộ nhớ.\n```\n\n**Bất biến — vì sao nó được ưa chuộng:**\n\n```js\n// ❌ Sửa tại chỗ — tham chiếu không đổi\nds.push(item)\nsetState(ds)                  // React thấy \"vẫn cùng mảng\" ⇒ không render\n\n// ✅ Tạo tham chiếu mới\nsetState([...ds, item])\n```\n\nĐây không phải quy ước tuỳ tiện: React, Redux và nhiều thư viện khác dùng **so sánh tham chiếu** vì nó chạy trong nano giây, còn so sánh sâu thì tỉ lệ với kích thước dữ liệu ([[mang-object-va-bat-bien]]).\n\n## So sánh\n\n| | Stack | Heap |\n|---|---|---|\n| Tốc độ | rất nhanh | chậm hơn |\n| Kích thước | nhỏ (~1–8 MB) | lớn |\n| Dọn dẹp | tự động khi hàm kết thúc | GC hoặc thủ công |\n| Chứa | biến cục bộ, tham số, tham chiếu | object, mảng, closure |\n| Hỏng thì | stack overflow | rò rỉ / hết bộ nhớ |\n\n## Dễ nhầm\n\n**1. Tưởng gán object là sao chép.** Nó sao chép tham chiếu.\n\n**2. So sánh object bằng `===`.** So tham chiếu, không so nội dung.\n\n**3. Tưởng spread là sao chép sâu.** Chỉ một tầng.\n\n**4. Sửa state tại chỗ trong React.** Tham chiếu không đổi ⇒ không render lại.\n\n**5. Quên gỡ listener và timer.** Rò rỉ.\n\n**6. Tin GC dọn hết mọi thứ.** Nó chỉ dọn thứ không còn ai tham chiếu.\n\n**7. Đệ quy sâu trên dữ liệu do người dùng đưa vào.** Stack overflow — và đó là một vector DoS.\n\n**8. Cache bằng `Map` không giới hạn.** Lớn mãi.\n\n**9. Tin rằng đệ quy đuôi luôn được tối ưu.** Phần lớn runtime không làm.\n\n## Mẹo nhớ\n\n> **Stack là mặt bàn (nhanh, nhỏ, tự dọn). Heap là nhà kho (lớn, cần dọn).**\n>\n> **Gán object = đưa SỐ HIỆU KỆ, không phải bê cả thùng.**\n>\n> **Rò rỉ = bạn vẫn GIỮ THAM CHIẾU tới thứ không còn cần.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Stack khác heap ở bốn điểm nào?\n2. Vì sao `{a:1} === {a:1}` là `false`?\n3. Sao chép nông khác sao chép sâu thế nào, spread thuộc loại nào?\n4. Stack overflow xảy ra khi nào, ba cách xử lý?\n5. Vì sao GC không cứu được rò rỉ bộ nhớ?\n\n## Tự viết lại\n\nKhông nhìn lại, làm:\n\n```text\n① Vẽ stack và heap cho: const a = {x: [1,2]}; const b = {...a};\n② Sửa b.x.push(3) — a thay đổi không? Vì sao?\n③ Viết lại một hàm đệ quy tính tổng cây thành phiên bản không đệ quy\n④ Kể ba chỗ trong mã bạn từng viết có thể đang rò rỉ\n```\n\nTự kiểm: ở ③, bạn dùng cấu trúc gì thay cho stack của hệ thống — và nó nằm ở vùng bộ nhớ nào?\n\n## Thử sức\n\nỨng dụng Node chạy tốt lúc khởi động, nhưng sau 6 tiếng thì RAM lên 4 GB và bị OOM killer giết.\n\nBa câu để trả lời: đây là loại vấn đề gì, và bạn **xác nhận** giả thuyết bằng cách nào; bốn nguyên nhân bạn kiểm theo thứ tự; và làm sao **tìm ra** chính xác thứ đang giữ tham chiếu. Câu khó nhất: nếu heap snapshot cho thấy hàng trăm nghìn object cùng loại đang sống, bạn lần ngược từ đó ra thủ phạm bằng cách nào?",
+    "tags": [
+      "nen-tang",
+      "bo-nho",
+      "stack",
+      "heap",
+      "computer-science"
+    ],
+    "order": 4,
+    "level": "trung-cap",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-02T05:00:00.000Z",
+    "updatedAt": "2026-01-02T05:00:00.000Z"
+  },
+  {
+    "id": "note-cache-cpu-va-tinh-cuc-bo",
+    "topicId": "topic-cs",
+    "title": "Cache CPU và tính cục bộ",
+    "slug": "cache-cpu-va-tinh-cuc-bo",
+    "summary": "Vì sao cùng một thuật toán O(n) lại chạy nhanh chậm khác nhau mười lần tuỳ cách sắp dữ liệu.",
+    "content": "> **Sau bài này bạn sẽ:** giải thích được vì sao duyệt mảng nhanh hơn duyệt danh sách liên kết dù cùng O(n).\n\n## Ý tưởng chính\n\nCPU nhanh hơn RAM khoảng **hai bậc độ lớn**. Nếu mỗi phép tính phải chờ RAM, CPU sẽ đứng không gần như suốt.\n\nNên giữa chúng có nhiều tầng cache. Và cache hoạt động dựa trên một giả định: **thứ bạn vừa dùng, và thứ nằm cạnh nó, sẽ sớm được dùng lại**.\n\nViết mã hợp với giả định đó nhanh hơn nhiều lần so với mã chống lại nó — với **cùng một độ phức tạp**.\n\n## Mental model\n\nHãy nghĩ tới **nấu ăn với nguyên liệu ở ba nơi**.\n\n> Trên **thớt** là thứ bạn đang cầm — lấy tức thì. Đó là thanh ghi.\n>\n> Trong **tủ lạnh cạnh bếp** — bước hai bước. Đó là cache.\n>\n> Ngoài **siêu thị** — đi mất nửa tiếng. Đó là RAM.\n>\n> Người nấu giỏi không chạy siêu thị mỗi lần cần một củ hành. Họ **mang về cả túi một lần** — vì đã đi thì mang luôn thứ nằm cạnh.\n\nĐó chính xác là **cache line**: CPU không bao giờ đọc một byte từ RAM. Nó luôn đọc cả một khối 64 byte.\n\n## Ví dụ nhỏ\n\n```text\nCùng số phép tính, thứ tự truy cập khác nhau:\n\n  Duyệt theo hàng   →  mỗi cache line dùng hết   →  nhanh\n  Duyệt theo cột    →  mỗi cache line dùng 1 ô   →  chậm gấp nhiều lần\n```\n\n## Code chạy thế nào\n\n**Bảng chi phí — con số làm rõ mọi thứ:**\n\n```text\nThanh ghi CPU        ~0     chu kỳ\nL1 cache             ~4     chu kỳ      (~32 KB)\nL2 cache             ~12    chu kỳ      (~256 KB–1 MB)\nL3 cache             ~40    chu kỳ      (vài MB, chung nhiều lõi)\nRAM                  ~200   chu kỳ      ← chậm hơn L1 50 LẦN\nSSD                  ~100.000 chu kỳ\n```\n\n```text\nNếu quy đổi ra thời gian người:\n  L1  = lấy thứ trên bàn        (1 giây)\n  RAM = đi bộ sang toà nhà khác (50 giây)\n  SSD = bay sang thành phố khác (7 giờ)\n```\n\n**Hai loại cục bộ mà cache khai thác:**\n\n```text\nCỤC BỘ THỜI GIAN   thứ vừa dùng sẽ sớm dùng lại\n                   → biến trong vòng lặp nằm sẵn trong cache\n\nCỤC BỘ KHÔNG GIAN  thứ nằm cạnh thứ vừa dùng sẽ sớm được dùng\n                   → CPU đọc cả CACHE LINE 64 byte một lần\n```\n\nCache line 64 byte là con số quan trọng nhất trong bài:\n\n```text\nMảng số 8 byte: một lần đọc RAM mang về 8 phần tử.\n⇒ Duyệt tuần tự: cứ 8 phần tử mới phải đi RAM một lần.\n\nDanh sách liên kết: mỗi node nằm rải rác trong heap.\n⇒ Mỗi node là một lần đi RAM, và 56/64 byte mang về bị bỏ phí.\n```\n\n**Vì sao cùng O(n) mà khác nhau nhiều lần:**\n\n```js\n// Mảng — bộ nhớ liền khối\nfor (let i = 0; i < arr.length; i++) tong += arr[i]\n\n// Danh sách liên kết — mỗi node một chỗ\nfor (let node = head; node; node = node.next) tong += node.value\n```\n\n```text\nCả hai đều O(n) — đúng số phép cộng.\nNhưng mảng đọc RAM ~n/8 lần, danh sách đọc ~n lần.\n⇒ Trong thực tế mảng thường nhanh hơn 3–10 lần.\n\nBig-O đếm SỐ PHÉP TÍNH. Nó cố ý bỏ qua chi phí truy cập bộ nhớ.\nỞ n nhỏ và vừa, chi phí bị bỏ qua đó lại là phần lớn thời gian.\n```\n\nĐây là lý do thực tế khiến `Array` gần như luôn thắng `LinkedList` trong đo đạc, dù sách giáo khoa nói chèn giữa của danh sách là O(1) ([[mang-va-danh-sach-lien-ket]]).\n\n## Cú pháp\n\n**Duyệt ma trận — ví dụ kinh điển:**\n\n```js\n// ✅ Theo hàng: đi đúng thứ tự bộ nhớ\nfor (let i = 0; i < N; i++)\n  for (let j = 0; j < N; j++) tong += m[i][j]\n\n// ❌ Theo cột: mỗi bước nhảy qua cả một hàng\nfor (let j = 0; j < N; j++)\n  for (let i = 0; i < N; i++) tong += m[i][j]\n```\n\n```text\nCùng N² phép cộng.\nBản thứ hai: mỗi lần đọc mang về 64 byte nhưng chỉ dùng 8.\n⇒ Với ma trận lớn, chậm hơn nhiều lần — chỉ vì đổi thứ tự hai vòng lặp.\n```\n\n**Bố cục dữ liệu — mảng của struct hay struct của mảng:**\n\n```js\n// AoS — mảng các object. Tự nhiên, nhưng nếu chỉ cần một trường thì phí.\nconst nguoi = [{ ten, tuoi, dia }, ...]\n// Tính tuổi trung bình ⇒ kéo về cả ten và dia, dùng 8/200 byte mỗi lần.\n\n// SoA — mỗi trường một mảng riêng.\nconst tuoi = new Int32Array(n)\n// Tính tuổi trung bình ⇒ mọi byte mang về đều được dùng.\n```\n\nSoA là kỹ thuật của xử lý dữ liệu lớn và game engine. Với ứng dụng web thông thường thì **đừng dùng** — nó đánh đổi khả năng đọc lấy tốc độ mà bạn không cần.\n\n**Chia sẻ giả — cái bẫy của đa luồng:**\n\n```text\nHai luồng ghi vào hai biến KHÁC NHAU nhưng nằm cùng một cache line 64 byte.\n⇒ Mỗi lần một luồng ghi, cache line của luồng kia bị vô hiệu.\n⇒ Hai luồng \"không liên quan\" làm chậm nhau đáng kể.\n⇒ Cách sửa: chèn đệm để mỗi biến nóng nằm riêng một cache line.\n```\n\n## Tại sao cần nó\n\nVì nó đổi cách bạn đọc kết quả đo:\n\n```text\n\"Thuật toán này O(n log n), cái kia O(n²), sao cái O(n²) lại nhanh hơn?\"\n\nVới n nhỏ (vài trăm), hằng số và chi phí bộ nhớ áp đảo phần tiệm cận.\n⇒ Sắp xếp chèn thắng quicksort ở n < ~30 — đó là lý do các thư viện\n  sắp xếp thật đều chuyển sang sắp xếp chèn khi đoạn đủ nhỏ.\n```\n\n**Nhưng đừng tối ưu cache trước:**\n\n```text\nThứ tự đúng khi tối ưu:\n  ① Chọn đúng thuật toán và cấu trúc dữ liệu   ← thắng lớn nhất\n  ② Bỏ việc không cần làm\n  ③ Giảm số lần đi RAM (bố cục dữ liệu)         ← bài này\n  ④ Tinh chỉnh vi mô                            ← gần như không bao giờ đáng\n\nVới ứng dụng web, điểm nghẽn hầu như luôn là I/O và CSDL,\nkhông phải cache CPU ([[hieu-nang-va-do-luong]]).\n```\n\nGiá trị thật của bài này với đa số người đọc không phải để tối ưu, mà để **giải thích được kết quả đo bất ngờ** — và để chọn mảng thay vì danh sách liên kết mà biết vì sao.\n\n## So sánh\n\n| Cấu trúc | Big-O duyệt | Số lần đọc RAM | Thực tế |\n|---|---|---|---|\n| Mảng liền khối | O(n) | ~n/8 | nhanh nhất |\n| Mảng object | O(n) | ~n | trung bình |\n| Danh sách liên kết | O(n) | ~n, rải rác | chậm |\n| Cây/đồ thị con trỏ | O(n) | ~n, rất rải rác | chậm nhất |\n\n## Dễ nhầm\n\n**1. Tin rằng cùng Big-O thì cùng tốc độ.** Big-O bỏ qua chi phí bộ nhớ.\n\n**2. Chọn danh sách liên kết vì \"chèn O(1)\".** Đo trước — mảng thường thắng.\n\n**3. Duyệt ma trận theo cột.**\n\n**4. Tối ưu cache trước khi sửa thuật toán.**\n\n**5. Dùng SoA trong ứng dụng web bình thường.** Đánh đổi sai.\n\n**6. Quên chia sẻ giả trong mã đa luồng.**\n\n**7. Đo hiệu năng với dữ liệu nhỏ.** Vừa trong cache thì mọi thứ đều nhanh.\n\n**8. Đo mà không warm-up.** Lần chạy đầu tính cả chi phí nạp cache.\n\n## Mẹo nhớ\n\n> **CPU không đọc byte — nó đọc CACHE LINE 64 byte.**\n>\n> **RAM chậm hơn L1 khoảng 50 lần. Đi RAM là chuyện đắt.**\n>\n> **Big-O đếm phép tính, không đếm số lần đi RAM.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Thứ tự các tầng và chênh lệch tốc độ giữa L1 và RAM?\n2. Cache line là gì, bao nhiêu byte, và vì sao nó quan trọng?\n3. Hai loại cục bộ, mỗi loại nghĩa là gì?\n4. Vì sao mảng nhanh hơn danh sách liên kết dù cùng O(n)?\n5. Chia sẻ giả là gì?\n\n## Tự viết lại\n\nKhông nhìn lại:\n\n```text\n① Viết hai vòng lặp duyệt ma trận, đánh dấu cái nào nhanh và vì sao\n② Giải thích vì sao duyệt 1 triệu object chậm hơn duyệt 1 triệu số\n③ Một cấu trúc lưu 10 triệu điểm (x, y, z) mà thường chỉ cần x —\n   bạn thiết kế thế nào và đánh đổi gì\n```\n\nTự kiểm: ở ③, thiết kế nhanh hơn của bạn khó đọc hơn bao nhiêu — và với 10 nghìn điểm thay vì 10 triệu, bạn còn chọn nó không?\n\n## Thử sức\n\nĐồng nghiệp thay `Array` bằng `LinkedList` cho một danh sách hay chèn giữa, \"vì chèn là O(1)\". Sau đó ứng dụng **chậm hơn**.\n\nBa câu để trả lời: giải thích vì sao; bạn **chứng minh** bằng phép đo nào; và bạn đề xuất cấu trúc gì. Câu khó nhất: với kích thước nào thì danh sách liên kết mới thật sự thắng — và làm sao tìm ra ngưỡng đó cho trường hợp cụ thể của bạn?",
+    "tags": [
+      "nen-tang",
+      "hieu-nang",
+      "bo-nho",
+      "computer-science"
+    ],
+    "order": 5,
+    "level": "trung-cap",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-02T06:00:00.000Z",
+    "updatedAt": "2026-01-02T06:00:00.000Z"
+  },
+  {
+    "id": "note-bien-dich-va-thong-dich",
+    "topicId": "topic-cs",
+    "title": "Biên dịch, thông dịch và cái gì thật sự chạy",
+    "slug": "bien-dich-va-thong-dich",
+    "summary": "Từ mã nguồn tới mã máy — và vì sao \"ngôn ngữ chậm\" là một cách nói không chính xác.",
+    "content": "> **Sau bài này bạn sẽ:** mô tả được đường đi từ mã nguồn tới CPU, và biết vì sao JIT làm mã \"thông dịch\" chạy nhanh.\n\n## Ý tưởng chính\n\nCPU chỉ hiểu **mã máy** — những con số. Mọi ngôn ngữ lập trình đều là một cách viết dễ hơn cho con người, và luôn có một bước dịch ở giữa.\n\nĐiều đáng nói: **\"biên dịch\" và \"thông dịch\" không phải thuộc tính của ngôn ngữ**. Chúng là thuộc tính của bản cài đặt. Có trình thông dịch C, và có trình biên dịch Python.\n\n## Mental model\n\nHãy nghĩ tới **hai cách xử lý một cuốn sách tiếng nước ngoài**.\n\n> **Biên dịch**: thuê người dịch cả cuốn sách trước, in ra. Mất thời gian ban đầu, nhưng sau đó **ai đọc cũng nhanh**, và người dịch có thời gian đọc cả cuốn nên **sửa được cả những chỗ tối nghĩa**.\n>\n> **Thông dịch**: thuê phiên dịch ngồi cạnh, dịch từng câu khi bạn đọc tới. Bắt đầu được ngay. Nhưng đọc lại đoạn cũ thì **phải dịch lại từ đầu**.\n>\n> **JIT**: phiên dịch ngồi cạnh, nhưng nhận ra bạn đọc đi đọc lại chương 3 — nên **dịch sẵn chương đó ra giấy** và đưa bạn. Từ lần sau, chương 3 nhanh như đã biên dịch.\n\nVế thứ ba là cách JavaScript, Java và C# thật sự chạy, và là lý do \"ngôn ngữ thông dịch thì chậm\" đã lỗi thời.\n\n## Ví dụ nhỏ\n\n```text\nmã nguồn  →  phân tích cú pháp  →  cây cú pháp (AST)\n          →  tối ưu  →  mã máy hoặc bytecode  →  CPU\n```\n\n## Code chạy thế nào\n\n**Các bước dịch, và mỗi bước bắt loại lỗi gì:**\n\n```text\n① PHÂN TÍCH TỪ VỰNG   chuỗi ký tự → các token\n   Bắt: ký tự không hợp lệ\n\n② PHÂN TÍCH CÚ PHÁP   token → cây cú pháp (AST)\n   Bắt: thiếu dấu ngoặc, sai cú pháp\n\n③ PHÂN TÍCH NGỮ NGHĨA kiểm kiểu, kiểm biến đã khai báo\n   Bắt: gán string cho number, gọi hàm không tồn tại\n   ⇒ ĐÂY là bước TypeScript làm — và nó dừng ở đây,\n     không sinh mã tối ưu gì cả.\n\n④ TỐI ƯU              gộp hằng số, bỏ mã chết, nội tuyến hàm\n\n⑤ SINH MÃ             ra mã máy hoặc bytecode\n```\n\nHiểu bước ③ giải thích một chuyện hay gây nhầm: **TypeScript không làm mã chạy nhanh hơn**. Nó xoá kiểu đi và sinh ra JavaScript. Lợi ích của nó nằm hoàn toàn ở thời điểm viết mã.\n\n**JIT — vì sao nó nhanh:**\n\n```text\n① Bắt đầu: thông dịch bytecode, chạy ngay, không chờ\n② Vừa chạy vừa ĐẾM: hàm nào gọi nhiều? vòng lặp nào chạy lâu?\n③ Chỗ nóng ⇒ biên dịch sang mã máy, kèm GIẢ ĐỊNH:\n     \"biến này luôn là số nguyên\"\n     \"object này luôn có đúng các trường này\"\n④ Giả định sai ⇒ HUỶ TỐI ƯU, quay về thông dịch, thử lại sau\n```\n\nBước ③ là chỗ JIT có thể **thắng cả trình biên dịch tĩnh**: nó biết dữ liệu thật lúc chạy, còn trình biên dịch tĩnh chỉ đoán.\n\nNhưng bước ④ giải thích một lời khuyên quen thuộc:\n\n```js\n// ❌ Hình dạng object thay đổi ⇒ JIT huỷ tối ưu liên tục\nconst p = { x: 1 }\np.y = 2              // đổi hình dạng sau khi tạo\n\n// ✅ Khai đủ trường ngay từ đầu, giữ kiểu ổn định\nconst p = { x: 1, y: 2 }\n```\n\n```js\n// ❌ Mảng đa kiểu ⇒ không tối ưu được\nconst a = [1, 'hai', {}, null]\n// ✅ Đồng nhất kiểu\nconst a = [1, 2, 3]\n```\n\nĐây không phải \"mẹo vặt hiệu năng\" — nó là hệ quả trực tiếp của cách JIT hoạt động.\n\n## Cú pháp\n\n**Bốn kiểu chạy, xếp theo thời điểm dịch:**\n\n```text\nBIÊN DỊCH TRƯỚC (AOT)        C, C++, Rust, Go\n  Dịch thẳng ra mã máy trước khi chạy.\n  + Khởi động tức thì, hiệu năng dự đoán được, không cần runtime\n  − Biên dịch lâu, mã máy phụ thuộc nền tảng\n\nBYTECODE + MÁY ẢO            Java, C#\n  Dịch ra bytecode, máy ảo chạy và JIT các chỗ nóng.\n  + Một artifact chạy nhiều nền tảng\n  − Cần máy ảo, khởi động chậm hơn\n\nTHÔNG DỊCH + JIT             JavaScript, Python (PyPy), Ruby\n  Chạy ngay, tối ưu dần.\n  + Bắt đầu nhanh, linh hoạt\n  − Vài giây đầu chậm; bộ nhớ tốn hơn\n\nTHÔNG DỊCH THUẦN             shell, Python (CPython, phần lớn)\n  + Đơn giản nhất\n  − Chậm nhất với việc nặng CPU\n```\n\n**Vì sao \"khởi động chậm\" quan trọng ở serverless:**\n\n```text\nHàm serverless chạy 200ms rồi kết thúc.\nJIT chưa kịp phát hiện chỗ nóng, chưa kịp tối ưu gì.\n⇒ Ưu thế của JIT biến mất; ngôn ngữ AOT (Go, Rust) thắng rõ rệt\n  ở loại tải này ([[chi-phi-ha-tang]]).\n```\n\n**Hai bước \"dịch\" nữa trong đời sống web:**\n\n```text\nTRANSPILE   TypeScript → JavaScript, JSX → JavaScript\n            Dịch giữa hai ngôn ngữ CÙNG MỨC TRỪU TƯỢNG.\n            TS chỉ XOÁ kiểu — không tối ưu gì.\n\nBUNDLE      nhiều file → ít file, kèm tree-shaking, minify\n            Không đổi ngôn ngữ; đổi cách phân phối.\n```\n\n## Tại sao cần nó\n\nVì nó trả lời được ba câu hỏi thường gặp một cách chính xác:\n\n```text\n① \"Python chậm hơn Go bao nhiêu lần?\"\n   → Với vòng lặp thuần CPU: 10–100 lần.\n   → Với ứng dụng web chờ CSDL: gần như KHÔNG khác biệt,\n     vì 95% thời gian là chờ I/O.\n   ⇒ Chọn ngôn ngữ theo bài toán, không theo bảng benchmark.\n\n② \"TypeScript có làm ứng dụng nhanh hơn không?\"\n   → Không. Nó bắt lỗi lúc viết. Mã chạy y hệt JavaScript.\n\n③ \"Vì sao lần chạy đầu chậm?\"\n   → JIT chưa tối ưu, cache lạnh, module chưa nạp.\n   ⇒ Đó là lý do đo hiệu năng phải có warm-up.\n```\n\n**Và nó giải thích thông báo lỗi:**\n\n```text\nLỗi cú pháp        → bước ②, trước khi chạy dòng nào\nLỗi kiểu (TS)      → bước ③, lúc biên dịch\nLỗi kiểu (JS)      → lúc chạy, tại đúng dòng đó\nLỗi ở runtime      → sau khi đã sinh mã, phụ thuộc dữ liệu thật\n```\n\n## So sánh\n\n| | AOT | Bytecode + VM | JIT | Thông dịch thuần |\n|---|---|---|---|---|\n| Khởi động | tức thì | chậm | nhanh | tức thì |\n| Đỉnh hiệu năng | cao | cao | cao | thấp |\n| Đa nền tảng | biên dịch lại | ✅ | ✅ | ✅ |\n| Ví dụ | Go, Rust | Java, C# | JS, PyPy | shell, CPython |\n\n## Dễ nhầm\n\n**1. Tưởng biên dịch/thông dịch là thuộc tính của ngôn ngữ.** Nó thuộc về bản cài đặt.\n\n**2. Nghĩ TypeScript làm mã chạy nhanh hơn.** Nó chỉ xoá kiểu.\n\n**3. Chọn ngôn ngữ theo benchmark thuần CPU** cho ứng dụng chủ yếu chờ I/O.\n\n**4. Đo hiệu năng không warm-up.** Đo cả giai đoạn JIT chưa tối ưu.\n\n**5. Đổi hình dạng object sau khi tạo.** JIT huỷ tối ưu.\n\n**6. Mảng trộn nhiều kiểu.** Không tối ưu được.\n\n**7. Dùng ngôn ngữ JIT cho serverless siêu ngắn** rồi ngạc nhiên vì chậm.\n\n**8. Nhầm transpile với compile.** Transpile dịch giữa hai ngôn ngữ cùng mức.\n\n**9. Tin rằng AOT luôn nhanh hơn JIT.** JIT biết dữ liệu thật lúc chạy.\n\n## Mẹo nhớ\n\n> **Biên dịch/thông dịch là thuộc tính của BẢN CÀI ĐẶT, không phải của ngôn ngữ.**\n>\n> **JIT = thông dịch trước, biên dịch chỗ NÓNG, huỷ tối ưu khi giả định sai.**\n>\n> **TypeScript chỉ XOÁ KIỂU. Mã chạy y hệt JavaScript.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Năm bước từ mã nguồn tới mã máy, mỗi bước bắt lỗi gì?\n2. JIT hoạt động thế nào, và vì sao nó có thể thắng biên dịch tĩnh?\n3. \"Huỷ tối ưu\" là gì, và nó liên quan gì tới cách bạn viết object?\n4. Vì sao ngôn ngữ AOT hợp với serverless ngắn hơn?\n5. TypeScript ảnh hưởng tới hiệu năng lúc chạy thế nào?\n\n## Tự viết lại\n\nKhông nhìn lại:\n\n```text\n① Vẽ đường đi của một file .ts trong dự án Next.js, từ mã nguồn tới trình duyệt\n② Đánh dấu bước nào là transpile, bước nào là bundle, bước nào là JIT\n③ Viết hai đoạn mã tương đương, một cái JIT tối ưu được, một cái không\n```\n\nTự kiểm: ở ① có bước nào **kiểm kiểu** không, và nó nằm trước hay sau bước sinh mã chạy được?\n\n## Thử sức\n\nĐội đề xuất viết lại dịch vụ API từ Python sang Go \"để nhanh hơn\". Đo hiện tại: p95 = 180ms, trong đó 160ms là chờ CSDL.\n\nBa câu để trả lời: viết lại sẽ cải thiện được bao nhiêu, ước lượng ra sao; bạn đề xuất làm gì **thay vào đó**; và có lý do chính đáng nào khác để đổi ngôn ngữ không. Câu khó nhất: nếu 160ms chờ CSDL kia là **tổng của 12 truy vấn tuần tự**, thì con số cải thiện thật sự nằm ở đâu — và nó có liên quan gì tới ngôn ngữ không?",
+    "tags": [
+      "nen-tang",
+      "bien-dich",
+      "runtime",
+      "computer-science"
+    ],
+    "order": 6,
+    "level": "trung-cap",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-02T07:00:00.000Z",
+    "updatedAt": "2026-01-02T07:00:00.000Z"
+  },
+  {
+    "id": "note-tien-trinh-va-luong",
+    "topicId": "topic-os",
+    "title": "Tiến trình và luồng",
+    "slug": "tien-trinh-va-luong",
+    "summary": "Khác biệt thật giữa process và thread, chi phí của mỗi cái, và chọn cái nào cho bài toán nào.",
+    "content": "> **Sau bài này bạn sẽ:** chọn được giữa tiến trình và luồng, và giải thích được vì sao Node dùng một luồng mà vẫn phục vụ hàng nghìn kết nối.\n\n## Ý tưởng chính\n\n**Tiến trình** là một chương trình đang chạy, có **không gian bộ nhớ riêng**. Hai tiến trình không nhìn thấy bộ nhớ của nhau.\n\n**Luồng** là một dòng thực thi bên trong tiến trình. Các luồng cùng tiến trình **dùng chung bộ nhớ**.\n\nToàn bộ khác biệt về ưu điểm, nhược điểm và loại bug của hai thứ này đều suy ra được từ hai câu trên.\n\n## Mental model\n\nHãy nghĩ tới **nhà riêng và phòng trong cùng một nhà**.\n\n> **Hai tiến trình = hai căn nhà riêng.** Muốn đưa nhau đồ thì phải mang qua đường — chậm hơn. Nhưng nhà này cháy, nhà kia vẫn nguyên.\n>\n> **Hai luồng = hai người trong cùng một nhà.** Chia sẻ tủ lạnh, chung phòng khách — trao đổi tức thì.\n>\n> Và đây là chỗ sinh ra mọi rắc rối: **hai người cùng mở tủ lạnh lấy quả trứng cuối cùng**. Cả hai đều thấy còn trứng. Cả hai đều với tay. Kết quả không xác định.\n\nQuả trứng đó là **race condition**. Nó chỉ tồn tại khi có bộ nhớ dùng chung.\n\n## Ví dụ nhỏ\n\n```text\nTiến trình A ──┐ bộ nhớ riêng\nTiến trình B ──┘ bộ nhớ riêng     → giao tiếp qua IPC/socket/file\n\nTiến trình C ── luồng 1 ─┐\n             └─ luồng 2 ─┴─ CÙNG bộ nhớ  → giao tiếp tức thì, và cần khoá\n```\n\n## Code chạy thế nào\n\n**Chi phí — con số quyết định lựa chọn:**\n\n```text\n                        Tiến trình        Luồng\nTạo mới                 ~1–10 ms          ~10–100 µs   (nhanh hơn ~100 lần)\nBộ nhớ mỗi cái          vài MB            ~1 MB stack\nChuyển ngữ cảnh         đắt (đổi bảng     rẻ hơn (cùng\n                        trang bộ nhớ)     không gian địa chỉ)\nGiao tiếp               IPC — phải sao    đọc thẳng bộ nhớ chung\n                        chép dữ liệu\nMột cái sập             cái kia sống      CẢ TIẾN TRÌNH chết\n```\n\nDòng cuối là lý do trình duyệt tách mỗi tab thành một **tiến trình** riêng: một trang web treo không kéo theo cả trình duyệt.\n\n**Chuyển ngữ cảnh — vì sao nó không miễn phí:**\n\n```text\nCPU chỉ chạy được một luồng mỗi lõi tại một thời điểm.\nHệ điều hành luân phiên: chạy A 10ms → lưu trạng thái A →\nnạp trạng thái B → chạy B...\n\nMỗi lần chuyển:\n  lưu/nạp thanh ghi\n  và quan trọng hơn: CACHE CPU bị \"nguội\" ([[cache-cpu-va-tinh-cuc-bo]])\n\n⇒ Tạo 10.000 luồng KHÔNG làm nhanh hơn tạo 8 luồng trên máy 8 lõi.\n  Nó làm chậm đi, vì phần lớn thời gian dành cho việc chuyển qua lại.\n```\n\nĐây là lý do các thư viện dùng **pool luồng** cố định thay vì tạo luồng mỗi việc.\n\n## Cú pháp\n\n**Chặn CPU và chặn I/O — phân biệt quyết định kiến trúc:**\n\n```text\nCHẶN CPU (tính toán, mã hoá, xử lý ảnh)\n  → cần NHIỀU LÕI thật sự chạy song song\n  → số worker ≈ số lõi\n\nCHẶN I/O (chờ CSDL, chờ mạng, chờ đĩa)\n  → luồng ngồi CHỜ, không dùng CPU\n  → một luồng phục vụ được RẤT NHIỀU kết nối nếu không chờ đồng bộ\n```\n\nVế thứ hai giải thích Node.js:\n\n```text\nNode có MỘT luồng chạy mã JS của bạn.\nNhưng khi bạn gọi CSDL:\n  ① Node đăng ký \"khi có kết quả thì gọi hàm này\"\n  ② Luồng đó QUAY LẠI phục vụ request khác ngay\n  ③ Kết quả về ⇒ event loop gọi lại hàm bạn đăng ký\n\n⇒ 10.000 kết nối đang chờ CSDL chỉ tốn 10.000 mục trong một bảng,\n  không tốn 10.000 luồng × 1 MB stack.\n```\n\nVà nó cũng giải thích điểm yếu:\n\n```js\n// ☠️ Một vòng lặp nặng chặn TOÀN BỘ server Node\nfunction tinhNang() { for (let i = 0; i < 1e10; i++) {} }\n// Trong lúc này KHÔNG request nào được phục vụ.\n```\n\n```text\nCách xử lý:\n  ① Đẩy việc nặng sang worker thread\n  ② Hoặc sang tiến trình riêng / hàng đợi ([[hang-doi-va-xu-ly-bat-dong-bo]])\n  ③ Hoặc chia nhỏ và nhường lại event loop giữa chừng\n```\n\n**Ba mô hình đồng thời, và ai dùng cái nào:**\n\n```text\nMỘT LUỒNG + EVENT LOOP        Node.js, Python asyncio, nginx\n  + Không có race condition trên bộ nhớ chung\n  + Rất nhiều kết nối đồng thời với ít RAM\n  − Một chỗ nặng CPU chặn tất cả\n\nNHIỀU LUỒNG                    Java, C#, Go (goroutine)\n  + Dùng được nhiều lõi\n  − Cần khoá; race condition, deadlock\n\nNHIỀU TIẾN TRÌNH               PHP-FPM, Gunicorn, cluster của Node\n  + Cách ly thật; một cái sập không kéo theo\n  − Tốn RAM hơn, chia sẻ trạng thái khó\n```\n\nGo nằm giữa: **goroutine** là \"luồng nhẹ\" do runtime của Go tự lập lịch trên một số ít luồng hệ điều hành — nên tạo hàng trăm nghìn goroutine là chuyện bình thường, trong khi hàng trăm nghìn luồng thật thì không.\n\n## Tại sao cần nó\n\nVì ba quyết định hằng ngày dựa vào đây:\n\n```text\n① \"Đặt bao nhiêu worker?\"\n   Nặng CPU  → ≈ số lõi\n   Nặng I/O  → nhiều hơn số lõi, đo mà chỉnh\n   Node      → cluster với số tiến trình ≈ số lõi\n\n② \"Vì sao thêm luồng mà không nhanh hơn?\"\n   → Chặn ở I/O chứ không ở CPU, hoặc đang tranh nhau một khoá.\n\n③ \"Vì sao một request chậm làm cả server chậm?\"\n   → Mô hình một luồng, và có việc nặng CPU chặn event loop.\n```\n\n**Và nó giải thích các con số bạn thấy khi vận hành:**\n\n```text\n`ps` cho thấy tiến trình.  `top -H` cho thấy luồng.\nLoad average đếm cả tiến trình đang CHỜ I/O — nên load cao\nvới CPU thấp nghĩa là đang chờ đĩa hoặc mạng ([[go-loi-tren-may-chu]]).\n```\n\n## So sánh\n\n| | Tiến trình | Luồng | Goroutine / coroutine |\n|---|---|---|---|\n| Bộ nhớ | riêng | chung | chung |\n| Chi phí tạo | cao | vừa | rất thấp |\n| Một cái sập | cái kia sống | cả tiến trình chết | cả tiến trình chết |\n| Race condition | không (trên bộ nhớ) | **có** | có |\n| Tạo được bao nhiêu | trăm | nghìn | trăm nghìn |\n\n## Dễ nhầm\n\n**1. Tạo càng nhiều luồng càng nhanh.** Chuyển ngữ cảnh ăn hết lợi ích.\n\n**2. Chạy việc nặng CPU trên event loop.** Chặn toàn bộ server.\n\n**3. Tưởng luồng có bộ nhớ riêng.** Chúng dùng chung — đó là nguồn của race condition.\n\n**4. Đặt số worker bằng nhau cho tải CPU và tải I/O.**\n\n**5. Nhầm đồng thời với song song.** Đồng thời là *quản lý nhiều việc*; song song là *chạy cùng lúc trên nhiều lõi*.\n\n**6. Dùng luồng để cách ly lỗi.** Luồng chết kéo cả tiến trình.\n\n**7. Quên rằng mỗi luồng tốn stack.** 10.000 luồng × 1 MB = 10 GB.\n\n**8. Đọc load average như là phần trăm CPU.** Nó đếm cả tiến trình chờ I/O.\n\n## Mẹo nhớ\n\n> **Tiến trình = nhà riêng. Luồng = hai người chung nhà, chung tủ lạnh.**\n>\n> **Chặn CPU cần nhiều LÕI. Chặn I/O chỉ cần đừng CHỜ ĐỒNG BỘ.**\n>\n> **Nhiều luồng hơn số lõi không làm nhanh hơn — nó làm chậm đi.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Khác biệt cốt lõi giữa tiến trình và luồng? Mọi khác biệt khác suy ra từ đâu?\n2. Chuyển ngữ cảnh tốn gì, và vì sao nhiều luồng lại phản tác dụng?\n3. Vì sao Node một luồng vẫn phục vụ được hàng nghìn kết nối?\n4. Chặn CPU khác chặn I/O thế nào, ảnh hưởng gì tới số worker?\n5. Goroutine khác luồng hệ điều hành ở chỗ nào?\n\n## Tự viết lại\n\nKhông nhìn lại, quyết định cho từng hệ thống và giải thích:\n\n```text\n① API web chủ yếu đọc CSDL, 5.000 req/s\n② Dịch vụ resize ảnh, mỗi ảnh tốn 200ms CPU\n③ Trình duyệt với 50 tab\n④ Worker gửi email đọc từ hàng đợi\n```\n\nTự kiểm: ở ② bạn đặt bao nhiêu worker trên máy 8 lõi, và vì sao không đặt 100?\n\n## Thử sức\n\nAPI Node phục vụ tốt 2.000 req/s. Sau khi thêm tính năng xuất PDF (mỗi lần ~800ms CPU), **toàn bộ API** chậm hẳn dù chỉ vài người xuất PDF.\n\nBa câu để trả lời: giải thích cơ chế; ba cách sửa và đánh đổi của mỗi cách; và bạn **xác nhận** chẩn đoán bằng số liệu nào. Câu khó nhất: nếu chuyển PDF sang worker thread thay vì hàng đợi, bạn được gì và **vẫn chưa** được gì?",
+    "tags": [
+      "he-dieu-hanh",
+      "tien-trinh",
+      "luong",
+      "dong-thoi"
+    ],
+    "order": 1,
+    "level": "co-ban",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-02T08:00:00.000Z",
+    "updatedAt": "2026-01-02T08:00:00.000Z"
+  },
+  {
+    "id": "note-lap-lich-va-uu-tien",
+    "topicId": "topic-os",
+    "title": "Lập lịch CPU và độ ưu tiên",
+    "slug": "lap-lich-va-uu-tien",
+    "summary": "Hệ điều hành chia CPU thế nào, vì sao load average không phải phần trăm CPU, và nice làm gì.",
+    "content": "> **Sau bài này bạn sẽ:** đọc đúng `load average`, phân biệt \"bận CPU\" với \"chờ I/O\", và biết `nice` thật sự làm gì.\n\n## Ý tưởng chính\n\nMáy có 8 lõi nhưng đang chạy 300 tiến trình. Hệ điều hành **luân phiên** cho từng cái một lát CPU, nhanh tới mức trông như chúng chạy cùng lúc.\n\nBộ lập lịch quyết định *ai chạy tiếp theo và trong bao lâu*. Hiểu nó giải thích được phần lớn những con số bạn nhìn thấy khi hệ thống có sự cố.\n\n## Mental model\n\nHãy nghĩ tới **một bác sĩ và phòng chờ**.\n\n> Bác sĩ khám được **một người tại một thời điểm**. Phòng chờ có 20 người.\n>\n> Bác sĩ không khám xong hẳn một người rồi mới gọi người sau — họ khám 10 phút, cho đi xét nghiệm, gọi người tiếp theo. Người đi xét nghiệm **không chiếm chỗ của bác sĩ** trong lúc chờ kết quả.\n>\n> Có người được ưu tiên: cấp cứu chen lên trước. Đó là độ ưu tiên.\n\nBa chi tiết đó ánh xạ đúng: lát thời gian, tiến trình chờ I/O **không tiêu CPU**, và độ ưu tiên. Và câu hỏi quan trọng nhất khi hệ thống chậm là: *hàng người đang chờ **bác sĩ**, hay đang chờ **kết quả xét nghiệm**?*\n\n## Ví dụ nhỏ\n\n```bash\n$ uptime\n 14:32:01 up 42 days,  load average: 8.15, 6.20, 4.05\n#                                     1 phút  5 phút  15 phút\n```\n\n## Code chạy thế nào\n\n**Load average — thứ hay bị đọc sai nhất:**\n\n```text\nLoad average KHÔNG phải phần trăm CPU.\nNó là SỐ TIẾN TRÌNH trung bình đang chạy HOẶC đang chờ.\n\nTrên Linux, nó đếm cả tiến trình ở trạng thái D — chờ đĩa/mạng.\n\nMáy 8 lõi:\n  load 4   → còn dư một nửa\n  load 8   → dùng hết, không còn dư\n  load 16  → mỗi tiến trình chờ trung bình gấp đôi thời gian\n\n⇒ Luôn chia load cho SỐ LÕI trước khi kết luận.\n  `nproc` cho biết số lõi.\n```\n\nVà đây là chỗ nó gây nhầm nhiều nhất:\n\n```text\nload = 20, CPU = 5%   ← không mâu thuẫn!\n⇒ 20 tiến trình đang CHỜ ĐĨA hoặc CHỜ MẠNG, không chờ CPU.\n⇒ Thêm CPU không cứu được gì. Vấn đề nằm ở I/O.\n```\n\n**Các trạng thái tiến trình — `ps` cột STAT:**\n\n```text\nR  đang chạy hoặc sẵn sàng chạy   → cạnh tranh CPU\nS  ngủ, đánh thức được            → chờ mạng, chờ sự kiện. Bình thường.\nD  ngủ KHÔNG ngắt được            → chờ đĩa. Nhiều D = I/O đang tắc.\n                                     Không kill được, kể cả -9.\nZ  zombie                          → đã chết, cha chưa thu dọn\nT  bị dừng                         → nhận SIGSTOP\n```\n\nNhìn thấy nhiều tiến trình ở trạng thái `D` là dấu hiệu rõ nhất của **nghẽn đĩa** — và nó giải thích luôn vì sao `kill -9` không có tác dụng lúc đó ([[tien-trinh-va-dich-vu]]).\n\n**`%iowait` — chỉ số hay bị bỏ qua:**\n\n```bash\n$ top\n%Cpu(s):  5.2 us,  1.1 sy,  0.0 ni, 21.3 id, 72.1 wa\n#          user    system         idle      ← wa = 72% thời gian CHỜ I/O\n```\n\nCPU rảnh 21% nhưng hệ thống vẫn chậm, vì nó dành 72% thời gian ngồi chờ đĩa.\n\n## Cú pháp\n\n**Cách lập lịch hiện đại — CFS của Linux:**\n\n```text\nÝ tưởng: mỗi tiến trình nên nhận PHẦN CPU CÔNG BẰNG theo thời gian.\n\nBộ lập lịch giữ \"thời gian ảo đã dùng\" của từng tiến trình,\nvà luôn chọn cái đã dùng ÍT NHẤT.\n\n⇒ Tiến trình vừa chờ I/O xong được ưu tiên chạy ngay\n  (vì nó đã dùng ít CPU) ⇒ ứng dụng tương tác vẫn mượt\n  dù máy đang chạy một job nặng nền.\n```\n\n**`nice` — điều chỉnh phần chia, không phải điều chỉnh tốc độ:**\n\n```bash\nnice -n 19 ./job-nang.sh        # nhường nhất  (−20 … 19)\nrenice -n 10 -p 4821            # đổi cho tiến trình đang chạy\nionice -c 3 ./sao-luu.sh        # nhường ở tầng ĐĨA — thường quan trọng hơn\n```\n\n```text\nnice CAO  = TỬ TẾ hơn với người khác = ưu tiên THẤP hơn\nnice 19   = \"chỉ chạy khi không ai cần CPU\"\nnice −20  = cần quyền root\n\nQuan trọng: nice KHÔNG làm job chạy nhanh hơn khi máy rảnh.\nNó chỉ quyết định ai nhường ai KHI CÓ TRANH CHẤP.\n```\n\nVà với các job sao lưu, nén, quét — **`ionice` thường có tác dụng hơn `nice`**, vì thứ chúng tranh giành là đĩa chứ không phải CPU.\n\n**Giới hạn CPU trong container:**\n\n```yaml\ndeploy:\n  resources:\n    limits: { cpus: '1.5' }\n```\n\n```text\nCơ chế: cgroup cấp cho container một hạn ngạch mỗi chu kỳ 100ms.\nDùng hết hạn ngạch ⇒ tiến trình bị \"bóp\" (throttle) tới chu kỳ sau.\n\nTriệu chứng khó chịu: p99 tăng vọt trong khi CPU trung bình thấp\n— vì tiến trình bị dừng 20ms mỗi lần chạm trần.\n⇒ Đo `container_cpu_cfs_throttled_seconds` chứ không chỉ đo %CPU.\n```\n\nĐây là một trong những nguyên nhân phổ biến nhất của \"chậm bất thường\" trong Kubernetes, và nó **không** hiện ra trên biểu đồ CPU.\n\n## Tại sao cần nó\n\nVì nó phân biệt được ba loại \"hệ thống chậm\" cần ba cách xử lý khác hẳn:\n\n```text\n① load cao + CPU cao          → thật sự thiếu CPU\n   ⇒ tối ưu mã, hoặc thêm lõi/máy\n\n② load cao + CPU thấp + wa cao → nghẽn I/O\n   ⇒ thêm CPU KHÔNG cứu được. Sửa truy vấn, thêm index, đổi đĩa.\n\n③ CPU thấp + throttle cao      → bị giới hạn cgroup\n   ⇒ nâng limit, hoặc giảm việc trong mỗi request\n```\n\n**Quy trình đọc số khi có sự cố:**\n\n```bash\nnproc                 # ① máy có mấy lõi?\nuptime                # ② load / số lõi = mức bão hoà\ntop                   # ③ us cao hay wa cao?\nps aux | awk '$8 ~ /D/'   # ④ có tiến trình nào kẹt chờ đĩa?\n```\n\nBốn lệnh này trả lời được câu hỏi \"chậm vì CPU hay vì I/O\" trong dưới một phút ([[go-loi-tren-may-chu]]).\n\n## So sánh\n\n| Chỉ số | Nói lên | Hiểu sai thường gặp |\n|---|---|---|\n| `load average` | số tiến trình chạy + chờ | tưởng là % CPU |\n| `%us` | CPU cho mã người dùng | — |\n| `%sy` | CPU cho nhân | cao bất thường = nhiều syscall |\n| `%wa` | chờ I/O | bỏ qua, rồi thêm CPU vô ích |\n| throttle | bị cgroup bóp | không đo, nên không thấy |\n\n## Dễ nhầm\n\n**1. Đọc load average như phần trăm CPU.**\n\n**2. Không chia load cho số lõi.** Load 8 trên 16 lõi là bình thường.\n\n**3. Bỏ qua `%wa`.** Thêm CPU cho một vấn đề I/O.\n\n**4. Không đo CPU throttling trong container.** p99 tăng mà không rõ vì sao.\n\n**5. Tưởng `nice` làm job nhanh hơn.** Nó chỉ quyết định ai nhường khi tranh chấp.\n\n**6. Dùng `nice` cho job nặng đĩa.** Cần `ionice`.\n\n**7. `kill -9` tiến trình ở trạng thái `D`.** Không có tác dụng cho tới khi I/O xong.\n\n**8. Bỏ qua tiến trình zombie.** Chúng vô hại về tài nguyên, nhưng nhiều zombie nghĩa là tiến trình **cha** đang có lỗi.\n\n## Mẹo nhớ\n\n> **Load average là SỐ TIẾN TRÌNH chờ, không phải % CPU. Luôn chia cho số lõi.**\n>\n> **Load cao + CPU thấp = nghẽn I/O. Thêm CPU không cứu được.**\n>\n> **Trong container, đo CPU THROTTLING — nó không hiện trên biểu đồ %CPU.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Load average đo cái gì, và đọc nó thế nào cho đúng?\n2. Load 20 với CPU 5% nghĩa là gì?\n3. Trạng thái `D` là gì, và vì sao `kill -9` không có tác dụng?\n4. `nice` làm gì và **không** làm gì?\n5. CPU throttling trong container gây triệu chứng gì?\n\n## Tự viết lại\n\nKhông nhìn lại, viết quy trình chẩn đoán \"hệ thống chậm\":\n\n```text\n① bốn lệnh đầu tiên và thứ tự\n② với mỗi kết quả có thể, kết luận gì\n③ ba loại chậm và cách xử lý mỗi loại\n```\n\nTự kiểm: nếu cả bốn lệnh đều bình thường mà người dùng vẫn kêu chậm, bạn nghi ngờ ở đâu tiếp theo?\n\n## Thử sức\n\nCảnh báo: `load average: 45.2` trên máy 8 lõi. Nhưng `top` cho thấy CPU chỉ dùng 12%, `%wa` là 78%.\n\nBa câu để trả lời: chuyện gì đang xảy ra; ba nguyên nhân khả dĩ và cách kiểm từng cái; và vì sao **thêm CPU sẽ không giúp gì**. Câu khó nhất: nếu nguyên nhân là một job sao lưu đang chạy, bạn xử lý **ngay bây giờ** thế nào và **lâu dài** thế nào để nó không lặp lại?",
+    "tags": [
+      "he-dieu-hanh",
+      "lap-lich",
+      "hieu-nang",
+      "van-hanh"
+    ],
+    "order": 2,
+    "level": "co-ban",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-02T09:00:00.000Z",
+    "updatedAt": "2026-01-02T09:00:00.000Z"
+  },
+  {
+    "id": "note-bo-nho-ao-va-phan-trang",
+    "topicId": "topic-os",
+    "title": "Bộ nhớ ảo và phân trang",
+    "slug": "bo-nho-ao-va-phan-trang",
+    "summary": "Vì sao mỗi tiến trình tưởng mình có cả máy, swap làm gì, và OOM killer chọn nạn nhân ra sao.",
+    "content": "> **Sau bài này bạn sẽ:** đọc đúng `free -h`, biết vì sao `RSS` mới là RAM thật, và OOM killer chọn ai.\n\n## Ý tưởng chính\n\nMỗi tiến trình nhìn thấy một không gian địa chỉ **liên tục và của riêng nó**, bắt đầu từ 0. Đó là ảo giác do hệ điều hành dựng lên.\n\nBên dưới, hệ điều hành ánh xạ từng **trang** (thường 4 KB) của không gian ảo đó tới một khung nhớ vật lý — hoặc tới đĩa, hoặc **chưa tới đâu cả**.\n\nVế cuối giải thích gần hết những con số bộ nhớ trông kỳ lạ.\n\n## Mental model\n\nHãy nghĩ tới **số phòng khách sạn và sơ đồ của lễ tân**.\n\n> Khách ở \"phòng 301\". Với khách, đó là địa chỉ cố định — họ không cần biết gì hơn.\n>\n> Lễ tân giữ **sơ đồ ánh xạ**: phòng 301 của đoàn A nằm ở tầng 3 cánh trái; phòng 301 của đoàn B nằm ở toà nhà bên cạnh. Hai khách cùng nói \"phòng 301\" mà không đụng nhau.\n>\n> Và lễ tân có thể **chuyển đồ của một khách vắng mặt xuống kho** để lấy phòng cho người khác. Khách quay lại, phải chờ nhân viên mang đồ lên — chậm, nhưng vẫn được.\n\nSơ đồ đó là **bảng trang**. Cái kho là **swap**. Và \"phòng đã đặt nhưng khách chưa tới\" chính là bộ nhớ đã cấp phát nhưng chưa dùng — lý do `VSZ` luôn lớn hơn `RSS`.\n\n## Ví dụ nhỏ\n\n```bash\n$ free -h\n              total   used   free   shared  buff/cache   available\nMem:           15Gi   6.2Gi  312Mi   410Mi       8.5Gi       8.1Gi\n#                                                            ↑ nhìn cột này\n```\n\n## Code chạy thế nào\n\n**`free` gần bằng 0 là chuyện bình thường:**\n\n```text\nfree       RAM chưa dùng vào việc gì   ← con số ÍT Ý NGHĨA NHẤT\nbuff/cache RAM đang dùng làm cache đĩa  ← LẤY LẠI ĐƯỢC bất cứ lúc nào\navailable  RAM thật sự dùng được ngay   ← ĐÂY là con số cần nhìn\n           ≈ free + phần lớn buff/cache\n\nLinux cố ý dùng hết RAM rỗi làm cache đĩa.\nRAM rỗi là RAM lãng phí — nó không sinh lợi gì khi nằm không.\n⇒ \"free chỉ còn 312 MB\" KHÔNG phải cảnh báo.\n  \"available chỉ còn 312 MB\" MỚI là cảnh báo.\n```\n\n**`VSZ` và `RSS` — vì sao chúng chênh nhau nhiều:**\n\n```text\nVSZ  toàn bộ không gian địa chỉ ảo ĐÃ ĐĂNG KÝ\n     gồm cả: vùng cấp phát nhưng chưa chạm tới,\n             thư viện dùng chung, file được ánh xạ\nRSS  số trang THẬT SỰ đang nằm trong RAM   ← con số cần theo dõi\n\n$ ps aux\nUSER  PID  %MEM    VSZ    RSS  COMMAND\napp  4821   2.1  998244  87320  node server.js\n                 ~975MB  ~85MB   ← chênh hơn 11 lần, và đó là bình thường\n```\n\nLý do: Linux cấp phát **lười**. Bạn xin 1 GB, nó ghi vào bảng trang \"đã hứa\" nhưng chưa cấp khung nhớ nào. Chỉ khi bạn **ghi** vào một trang thì mới có RAM thật được cấp — qua một **lỗi trang** (page fault).\n\n```text\nLỗi trang nhẹ  trang có trong RAM, chỉ chưa ánh xạ → rất nhanh\nLỗi trang nặng phải đọc từ ĐĨA                     → chậm ~1000 lần\n```\n\nNhiều lỗi trang nặng là dấu hiệu **thrashing** — hệ thống dành phần lớn thời gian chuyển trang ra vào đĩa thay vì làm việc.\n\n## Cú pháp\n\n**Swap — không phải \"thêm RAM\", và cũng không phải kẻ xấu:**\n\n```text\nSwap là vùng ĐĨA dùng để chứa trang bị đẩy ra khỏi RAM.\nĐĩa chậm hơn RAM ~1000 lần (SSD) tới ~100.000 lần (đĩa quay).\n\nSwap ÍT thì tốt:  đẩy ra những trang lâu không dùng\n                  ⇒ dành RAM cho cache đĩa ⇒ tổng thể NHANH HƠN\nSwap NHIỀU thì tệ: dữ liệu nóng bị đẩy ra và kéo vào liên tục\n                  ⇒ thrashing ⇒ hệ thống gần như đứng\n\n⇒ Chỉ số cần theo dõi là TỐC ĐỘ swap in/out (`vmstat 1`, cột si/so),\n  không phải dung lượng swap đang dùng.\n```\n\n```bash\nvmstat 1\n# si  so   ← swap in / swap out mỗi giây. Liên tục > 0 là dấu hiệu xấu.\ncat /proc/sys/vm/swappiness      # 0–100, mặc định 60\n```\n\nVới máy chủ CSDL, người ta thường hạ `swappiness` xuống 1–10: CSDL tự quản lý bộ đệm của nó và **không muốn** hệ điều hành đẩy bộ đệm đó ra đĩa.\n\n**OOM killer — nó chọn ai:**\n\n```text\nHết RAM và hết swap ⇒ nhân phải giết một tiến trình.\n\nĐiểm số dựa chủ yếu vào LƯỢNG RAM tiến trình đang chiếm.\n⇒ Nạn nhân thường là tiến trình TO NHẤT — hay chính là CSDL của bạn.\n⇒ Một job nhỏ rò rỉ bộ nhớ có thể làm Postgres bị giết.\n\nXem lại sau sự cố:\n  dmesg -T | grep -i 'killed process'\n  journalctl -k | grep -i oom\n```\n\n```text\nCách phòng đúng: GIỚI HẠN TỪNG DỊCH VỤ, đừng dựa vào OOM killer.\n  systemd:  MemoryMax=512M\n  Docker:   mem_limit / deploy.resources.limits.memory\n\n⇒ Container vượt trần thì CHỈ NÓ bị giết, và restart:always bật lại.\n  Sự cố bị nhốt trong ranh giới của nó ([[toi-uu-va-van-hanh-container]]).\n```\n\n**Cấp phát quá tay (overcommit):** Linux cho phép các tiến trình xin tổng cộng nhiều RAM hơn máy có, vì phần lớn không dùng hết phần đã xin. Điều này khiến `malloc` gần như không bao giờ thất bại — và hậu quả là bạn phát hiện hết RAM không phải bằng một lỗi cấp phát, mà bằng **OOM killer**.\n\n## Tại sao cần nó\n\nVì bốn hiểu lầm về bộ nhớ đều tốn thời gian thật:\n\n```text\n① \"free còn ít quá, sắp hết RAM!\"      → nhìn available\n② \"VSZ 1 GB, ứng dụng rò rỉ rồi!\"       → nhìn RSS\n③ \"Tắt swap đi cho nhanh\"               → mất lớp đệm, OOM sớm hơn\n④ \"Thêm RAM là hết chậm\"                → nếu đang thrashing thì có,\n                                          nếu rò rỉ thì chỉ hoãn được vài giờ\n```\n\n**Với runtime có heap tự quản (JVM, Node):**\n\n```text\nNhiều runtime đọc RAM của MÁY CHỦ chứ không đọc giới hạn container,\nrồi tự đặt heap quá lớn ⇒ vượt trần cgroup ⇒ bị giết khi có tải.\n\n⇒ Khai rõ: node --max-old-space-size=384   (cho limit 512M)\n            java -XX:MaxRAMPercentage=75\n```\n\nĐây là nguyên nhân rất phổ biến của \"container bị giết ngẫu nhiên\" mà log ứng dụng không ghi gì.\n\n## So sánh\n\n| Chỉ số | Nghĩa | Dùng để |\n|---|---|---|\n| `free` | RAM chưa dùng | gần như không dùng |\n| `available` | RAM dùng được ngay | **cảnh báo** |\n| `buff/cache` | cache đĩa | hiểu vì sao free thấp |\n| `VSZ` | không gian ảo đã đăng ký | gần như không dùng |\n| `RSS` | RAM vật lý đang chiếm | **theo dõi rò rỉ** |\n| `si`/`so` | tốc độ swap | phát hiện thrashing |\n\n## Dễ nhầm\n\n**1. Hoảng vì `free` thấp.** Nhìn `available`.\n\n**2. Theo dõi `VSZ` thay vì `RSS`.**\n\n**3. Tắt swap hoàn toàn.** Mất lớp đệm; OOM đến sớm hơn.\n\n**4. Theo dõi dung lượng swap thay vì tốc độ swap.**\n\n**5. Dựa vào OOM killer thay vì đặt giới hạn.** Nó giết nhầm dịch vụ quan trọng.\n\n**6. Không khai heap theo giới hạn container.** Bị giết khi có tải.\n\n**7. Thêm RAM cho một chỗ rò rỉ.** Chỉ hoãn.\n\n**8. Không đọc `dmesg` sau khi tiến trình biến mất.** Bỏ qua bằng chứng rõ ràng nhất.\n\n**9. Tưởng `malloc` thất bại khi hết RAM.** Overcommit khiến nó vẫn thành công.\n\n## Mẹo nhớ\n\n> **Nhìn `available`, không nhìn `free`. Nhìn `RSS`, không nhìn `VSZ`.**\n>\n> **Swap ít thì tốt; swap NHIỀU LIÊN TỤC mới là bệnh — đo si/so.**\n>\n> **OOM killer giết tiến trình TO NHẤT — thường là CSDL. Hãy đặt giới hạn từng dịch vụ.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Vì sao `free` gần 0 là bình thường?\n2. `VSZ` khác `RSS` thế nào, vì sao chênh nhiều?\n3. Lỗi trang nhẹ khác nặng ra sao?\n4. Khi nào swap có ích, khi nào nó là bệnh, đo bằng gì?\n5. OOM killer chọn nạn nhân dựa vào gì, và cách phòng đúng?\n\n## Tự viết lại\n\nKhông nhìn lại:\n\n```text\n① Đọc một dòng `free -h` giả định và kết luận máy có đang thiếu RAM không\n② Ba lệnh để xác định một tiến trình có rò rỉ bộ nhớ không\n③ Cấu hình giới hạn RAM cho một dịch vụ Node trong Docker,\n   kèm tham số heap tương ứng\n```\n\nTự kiểm: ở ③, vì sao heap phải nhỏ hơn giới hạn container chứ không bằng?\n\n## Thử sức\n\nContainer Node có `memory: 512M` bị giết ngẫu nhiên vài lần mỗi ngày. Log ứng dụng **không có lỗi gì** trước lúc chết.\n\nBa câu để trả lời: vì sao log ứng dụng im lặng; bạn tìm bằng chứng ở đâu; và hai nguyên nhân khả dĩ nhất cùng cách phân biệt chúng. Câu khó nhất: nếu `RSS` tăng đều rồi tụt về sau mỗi lần restart, đó là rò rỉ hay là heap khai quá lớn — bạn phân biệt bằng phép đo nào?",
+    "tags": [
+      "he-dieu-hanh",
+      "bo-nho",
+      "swap",
+      "van-hanh"
+    ],
+    "order": 3,
+    "level": "trung-cap",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-02T10:00:00.000Z",
+    "updatedAt": "2026-01-02T10:00:00.000Z"
+  },
+  {
+    "id": "note-dong-bo-hoa-va-race-condition",
+    "topicId": "topic-os",
+    "title": "Đồng bộ hoá và race condition",
+    "slug": "dong-bo-hoa-va-race-condition",
+    "summary": "Mutex, semaphore, deadlock — và vì sao bug đồng thời chỉ xuất hiện trên production.",
+    "content": "> **Sau bài này bạn sẽ:** nhận ra một đoạn mã có race condition, và biết bốn điều kiện tạo ra deadlock.\n\n## Ý tưởng chính\n\nRace condition xảy ra khi **kết quả phụ thuộc vào thứ tự thực thi** mà bạn không kiểm soát được.\n\nĐiều làm nó khó chịu hơn mọi loại bug khác: nó **không tái hiện đều**. Chạy 1000 lần đúng, lần 1001 sai. Trên máy dev không bao giờ xảy ra; trên production giờ cao điểm thì có.\n\n## Mental model\n\nHãy nghĩ tới **hai người cùng rút tiền từ một tài khoản ở hai cây ATM**.\n\n> Số dư 1.000.000. Cả hai cùng rút 800.000, cùng lúc.\n>\n> Máy A đọc số dư: 1.000.000 → đủ → chuẩn bị trừ.\n> Máy B đọc số dư: 1.000.000 → đủ → chuẩn bị trừ.\n> Máy A ghi: 200.000.\n> Máy B ghi: 200.000.\n>\n> Ngân hàng mất 600.000. **Không máy nào làm sai cả** — cả hai đều kiểm tra rồi mới trừ.\n\nVấn đề nằm ở khoảng trống giữa **đọc** và **ghi**. Mọi race condition đều có hình dạng này: một chuỗi thao tác đáng lẽ phải **không thể chia cắt** nhưng lại bị chen vào giữa.\n\n## Ví dụ nhỏ\n\n```js\n// ☠️ Kiểm rồi mới hành động — khoảng trống ở giữa là chỗ hỏng\nif (kho.soLuong >= n) {        // ① đọc\n  kho.soLuong -= n             // ② ghi — ai đó có thể đã chen vào giữa ① và ②\n}\n```\n\n## Code chạy thế nào\n\n**Vì sao ngay cả `x++` cũng không an toàn:**\n\n```text\nx++ trông như một thao tác, nhưng thực ra là ba:\n  ① đọc x từ bộ nhớ vào thanh ghi\n  ② tăng thanh ghi\n  ③ ghi thanh ghi về bộ nhớ\n\nHai luồng cùng chạy, x = 5:\n  Luồng A đọc 5\n  Luồng B đọc 5      ← chen vào giữa\n  A tăng → 6, ghi 6\n  B tăng → 6, ghi 6\n\nKết quả 6. Đáng lẽ 7. Một lần tăng biến mất.\n```\n\n**Ba nguyên thuỷ đồng bộ hoá:**\n\n```text\nMUTEX (khoá loại trừ)\n  Đúng MỘT luồng vào vùng găng tại một thời điểm.\n  lock() → làm việc → unlock()\n\nSEMAPHORE (đếm)\n  Cho tối đa N luồng vào cùng lúc.\n  Dùng để giới hạn tài nguyên: \"tối đa 10 kết nối CSDL đồng thời\".\n\nTHAO TÁC NGUYÊN TỬ\n  Đọc-sửa-ghi trong MỘT lệnh CPU không chia cắt được.\n  Nhanh hơn mutex nhiều, nhưng chỉ dùng được cho thao tác đơn giản.\n```\n\n**Deadlock — bốn điều kiện, phá một là hết:**\n\n```text\n① Loại trừ:       tài nguyên chỉ một bên giữ được\n② Giữ và chờ:     đang giữ A, chờ B\n③ Không cướp được: không ai giành được của người khác\n④ Chờ vòng tròn:  A chờ B, B chờ A\n\nCả BỐN cùng đúng ⇒ deadlock. Phá bất kỳ cái nào ⇒ không thể deadlock.\n```\n\n```text\nCách phá dễ áp dụng nhất là ④ — LUÔN LẤY KHOÁ THEO CÙNG MỘT THỨ TỰ:\n\n❌ Luồng A: khoá(taiKhoan1) rồi khoá(taiKhoan2)\n   Luồng B: khoá(taiKhoan2) rồi khoá(taiKhoan1)     ← chờ vòng tròn\n\n✅ Cả hai: khoá theo thứ tự id tăng dần\n   ⇒ không bao giờ tạo được vòng.\n```\n\nCách thứ hai là phá ②: **đặt timeout cho việc lấy khoá**. Không lấy được trong 5 giây thì nhả hết những gì đang giữ và thử lại — biến deadlock vĩnh viễn thành một lần chậm.\n\n## Cú pháp\n\n**JavaScript: một luồng, nhưng vẫn có race condition:**\n\n```js\n// ☠️ Không có luồng nào, vẫn hỏng\nasync function truTien(id, n) {\n  const u = await db.user.find(id)     // ← await: NHƯỜNG quyền cho request khác\n  if (u.soDu >= n) {\n    await db.user.update(id, { soDu: u.soDu - n })   // ghi đè dữ liệu đã cũ\n  }\n}\n```\n\n```text\nĐiểm mấu chốt: MỖI `await` là một chỗ có thể bị chen vào.\nNode không có bộ nhớ dùng chung giữa các luồng, nhưng nó CÓ\ntrạng thái dùng chung: CƠ SỞ DỮ LIỆU.\n\n⇒ \"Một luồng\" không miễn nhiễm race condition.\n  Nó chỉ chuyển vấn đề từ bộ nhớ sang tầng dữ liệu.\n```\n\n**Bốn cách sửa, theo thứ tự nên thử:**\n\n```sql\n-- ① ĐỂ CSDL LÀM PHÉP TÍNH — nguyên tử, không cần khoá gì thêm\nUPDATE tai_khoan SET so_du = so_du - 100\nWHERE id = 1 AND so_du >= 100;\n-- Kiểm số dòng bị ảnh hưởng: 0 nghĩa là không đủ tiền.\n\n-- ② KHOÁ BI QUAN — khi phải đọc rồi mới quyết định\nBEGIN;\nSELECT so_du FROM tai_khoan WHERE id = 1 FOR UPDATE;   -- khoá dòng\nUPDATE tai_khoan SET so_du = so_du - 100 WHERE id = 1;\nCOMMIT;\n\n-- ③ KHOÁ LẠC QUAN — khi xung đột hiếm\nUPDATE tai_khoan SET so_du = 900, version = version + 1\nWHERE id = 1 AND version = 7;   -- 0 dòng ⇒ ai đó đã sửa ⇒ thử lại\n\n-- ④ RÀNG BUỘC CSDL — để CSDL từ chối thay bạn\nALTER TABLE tai_khoan ADD CONSTRAINT so_du_khong_am CHECK (so_du >= 0);\n```\n\nThứ tự này quan trọng: ① đơn giản nhất và đủ cho phần lớn trường hợp; ④ là lưới an toàn cuối cùng nên **luôn có**, kể cả khi ba cách trên đã đúng ([[truy-cap-dong-thoi-va-khoa]]).\n\n**Khoá phân tán — khi có nhiều máy chủ:**\n\n```text\nMutex trong tiến trình chỉ bảo vệ được trong MỘT tiến trình.\nBa máy chủ ⇒ ba mutex độc lập ⇒ không bảo vệ gì cả.\n\n⇒ Cần khoá ở nơi dùng chung: Redis (SET NX PX) hoặc khoá của CSDL.\n⇒ Và khoá phân tán PHẢI có thời hạn — máy giữ khoá chết mà khoá\n  không tự hết hạn thì cả hệ thống kẹt.\n```\n\n## Tại sao cần nó\n\nVì loại bug này có ba đặc điểm khiến nó tốn kém bất thường:\n\n```text\n① Không tái hiện được theo yêu cầu\n   ⇒ \"trên máy tôi chạy đúng mà\" — và đúng thật.\n\n② Chỉ xuất hiện khi có tải\n   ⇒ test đơn luồng không bao giờ bắt được.\n\n③ Hậu quả là DỮ LIỆU SAI, không phải crash\n   ⇒ không có stack trace, không có cảnh báo.\n   ⇒ Phát hiện lúc đối soát, hàng tuần sau.\n```\n\n**Nhận diện sớm — ba dấu hiệu trong mã:**\n\n```text\n□ Kiểm-rồi-hành-động:  if (còn hàng) { trừ hàng }\n□ Đọc-sửa-ghi:         x = đọc(); ghi(x + 1)\n□ Có `await` giữa lúc đọc và lúc ghi cùng một bản ghi\n```\n\nBa mẫu này đủ để soi phần lớn race condition khi review mã — và đó là cách rẻ nhất để bắt chúng, vì test thì rất khó.\n\n**Test race condition:** chạy N thao tác song song rồi kiểm bất biến.\n\n```js\nawait Promise.all(Array.from({ length: 100 }, () => truTien(id, 10)))\n// Bất biến: số dư cuối cùng phải khớp, và không bao giờ âm.\n```\n\n## So sánh\n\n| Cách | Khi nào | Chi phí |\n|---|---|---|\n| CSDL tự tính (`SET x = x - n`) | thao tác đơn giản | thấp nhất |\n| Khoá bi quan (`FOR UPDATE`) | xung đột thường xuyên | giữ khoá, giảm đồng thời |\n| Khoá lạc quan (version) | xung đột hiếm | phải xử lý thử lại |\n| Ràng buộc CHECK | luôn luôn, làm lưới cuối | gần như không |\n\n## Dễ nhầm\n\n**1. Tin rằng một luồng thì không có race condition.** Trạng thái dùng chung nằm ở CSDL.\n\n**2. Kiểm rồi mới hành động.** Khoảng trống ở giữa là chỗ hỏng.\n\n**3. Đọc-sửa-ghi ở tầng ứng dụng** thay vì để CSDL tính.\n\n**4. Lấy khoá theo thứ tự khác nhau ở hai chỗ.** Deadlock.\n\n**5. Khoá phân tán không có thời hạn.** Máy giữ khoá chết là kẹt cả hệ thống.\n\n**6. Dùng mutex trong tiến trình khi có nhiều máy chủ.** Không bảo vệ gì.\n\n**7. Không có ràng buộc CSDL làm lưới cuối.**\n\n**8. Giữ khoá quá lâu** — gọi API bên ngoài trong lúc đang giữ khoá.\n\n**9. Chỉ test đơn luồng.** Không bao giờ bắt được.\n\n**10. Nghĩ `x++` là nguyên tử.** Nó là ba thao tác.\n\n## Mẹo nhớ\n\n> **Race condition = kết quả phụ thuộc THỨ TỰ mà bạn không kiểm soát.**\n>\n> **Mỗi `await` là một chỗ có thể bị chen vào.**\n>\n> **Deadlock cần đủ BỐN điều kiện — phá \"chờ vòng tròn\" bằng cách luôn khoá theo cùng thứ tự.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Vì sao `x++` không an toàn với nhiều luồng?\n2. Bốn điều kiện deadlock, phá cái nào dễ nhất?\n3. Vì sao JavaScript một luồng vẫn có race condition?\n4. Bốn cách sửa, thử theo thứ tự nào?\n5. Ba mẫu mã cần soi khi review để phát hiện race condition?\n\n## Tự viết lại\n\nKhông nhìn lại, viết mã đúng cho: **đặt vé xem phim, mỗi ghế chỉ một người**.\n\n```text\n① chỗ có race condition trong cách viết ngây thơ\n② cách sửa bằng CSDL\n③ ràng buộc làm lưới an toàn\n④ một test chứng minh nó đúng khi có đồng thời\n```\n\nTự kiểm: test ở ④ của bạn chạy bao nhiêu request song song, và nó kiểm **bất biến** gì?\n\n## Thử sức\n\nNgười dùng báo: đôi khi mã giảm giá \"chỉ dùng một lần\" bị dùng được **hai lần** — nhưng chỉ thỉnh thoảng, và chỉ vào các đợt khuyến mãi lớn.\n\nBa câu để trả lời: nguyên nhân, và vì sao **chỉ vào đợt khuyến mãi**; hai cách sửa và đánh đổi; và bạn **chứng minh** đã sửa đúng bằng cách nào. Câu khó nhất: nếu hệ thống chạy trên 5 máy chủ, cách sửa nào trong hai cách của bạn **vẫn còn đúng** — và cách kia hỏng ở đâu?",
+    "tags": [
+      "he-dieu-hanh",
+      "dong-thoi",
+      "khoa",
+      "race-condition"
+    ],
+    "order": 4,
+    "level": "trung-cap",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-02T11:00:00.000Z",
+    "updatedAt": "2026-01-02T11:00:00.000Z"
+  },
+  {
+    "id": "note-file-io-va-he-thong-file",
+    "topicId": "topic-os",
+    "title": "File, I/O và hệ thống file",
+    "slug": "file-io-va-he-thong-file",
+    "summary": "File descriptor, buffer, fsync — và vì sao ghi file \"thành công\" vẫn có thể mất dữ liệu.",
+    "content": "> **Sau bài này bạn sẽ:** biết dữ liệu thật sự nằm ở đâu sau lệnh `write`, và vì sao \"too many open files\" xảy ra.\n\n## Ý tưởng chính\n\nKhi bạn gọi `write()` và nó trả về thành công, dữ liệu **chưa chắc đã nằm trên đĩa**. Nó thường mới nằm trong bộ đệm của hệ điều hành.\n\nMất điện lúc đó là mất dữ liệu — dù chương trình của bạn đã báo \"ghi xong\".\n\nHiểu chuỗi đệm này giải thích cả hiệu năng lẫn độ bền của mọi thứ ghi xuống đĩa.\n\n## Mental model\n\nHãy nghĩ tới **gửi thư qua bưu điện**.\n\n> Bạn bỏ thư vào **thùng thư trước nhà**. Với bạn, \"đã gửi\". Nhưng thư vẫn ở đó cho tới khi nhân viên tới lấy.\n>\n> Rồi nó nằm ở **bưu cục**, chờ chuyến xe. Rồi mới thật sự lên đường.\n>\n> Nhà cháy lúc thư còn trong thùng ⇒ thư mất, dù bạn đã \"gửi\".\n>\n> Muốn chắc chắn thì phải **mang thẳng ra bưu cục và lấy biên nhận** — chậm hơn nhiều, nhưng bạn biết chắc.\n\nCái biên nhận đó là `fsync()`. Và ba tầng đệm là: bộ đệm của ứng dụng → bộ đệm trang của hệ điều hành → bộ đệm của chính ổ đĩa.\n\n## Ví dụ nhỏ\n\n```text\nứng dụng → buffer ứng dụng → page cache của OS → cache của ổ đĩa → đĩa\n                              ↑ write() trả về ở đây\n                                                                  ↑ fsync() đợi tới đây\n```\n\n## Code chạy thế nào\n\n**File descriptor — mọi thứ đều là một con số:**\n\n```text\nMở file ⇒ nhân trả về một SỐ NGUYÊN, gọi là file descriptor (fd).\nTừ đó bạn đọc/ghi bằng con số này, không bằng tên file.\n\nfd 0  stdin\nfd 1  stdout\nfd 2  stderr\nfd 3+ file bạn mở, socket, pipe, kết nối mạng...\n\n⇒ Socket cũng là fd. Kết nối CSDL cũng là fd.\n  Đó là lý do \"everything is a file\" có ý nghĩa thực tế.\n```\n\n**\"Too many open files\" — lỗi phổ biến mà thông báo gây hiểu lầm:**\n\n```bash\nulimit -n                 # giới hạn fd của tiến trình, thường 1024\nls /proc/<pid>/fd | wc -l # tiến trình đang mở bao nhiêu\nlsof -p <pid> | head      # mở những gì\n```\n\n```text\nThủ phạm hiếm khi là \"file\". Thường là:\n  □ Kết nối CSDL không đóng\n  □ HTTP client tạo mới mỗi request, không tái dùng\n  □ Stream đọc file quên đóng khi có lỗi giữa chừng\n  □ Socket ở trạng thái CLOSE_WAIT vì không đóng phía ứng dụng\n\n⇒ Nâng ulimit chỉ HOÃN vấn đề. Rò rỉ fd vẫn tiếp tục.\n```\n\nĐây là loại rò rỉ tăng tuyến tính theo lưu lượng — nên nó luôn nổ vào giờ cao điểm, không nổ lúc bạn đang xem.\n\n**Ba mức độ bền, và cái giá của mỗi mức:**\n\n```text\n① write()            → vào page cache của OS.  ~µs\n   Ứng dụng crash: dữ liệu VẪN AN TOÀN (OS giữ).\n   Mất điện:        MẤT.\n\n② fsync()            → ép xuống đĩa.  ~1–10 ms\n   Mất điện:        an toàn.\n\n③ fsync() + đĩa không nói dối\n   Một số ổ báo \"xong\" khi mới vào cache của chính nó.\n   Máy chủ nghiêm túc dùng ổ có tụ bảo vệ hoặc tắt cache ghi.\n```\n\n```text\nChênh lệch giữa ① và ② là ~1000 lần.\nĐó là lý do CSDL không fsync mỗi lần ghi, mà gom nhiều giao dịch\nlại rồi fsync một lần — và vì sao `synchronous_commit = off`\nlàm Postgres nhanh hơn nhiều nhưng đánh đổi độ bền\n([[transaction-va-acid]]).\n```\n\n## Cú pháp\n\n**Ghi file an toàn — mẫu ghi tạm rồi đổi tên:**\n\n```js\n// ❌ Ghi đè trực tiếp: crash giữa chừng ⇒ file hỏng, mất cả bản cũ\nawait fs.writeFile('config.json', duLieu)\n\n// ✅ Ghi file tạm cùng thư mục → fsync → rename\nconst tam = 'config.json.tmp'\nconst fd = await fs.open(tam, 'w')\nawait fd.writeFile(duLieu)\nawait fd.sync()                    // ép xuống đĩa TRƯỚC khi đổi tên\nawait fd.close()\nawait fs.rename(tam, 'config.json')  // rename là NGUYÊN TỬ trên cùng hệ thống file\n```\n\n```text\nVì sao mẫu này đúng:\n  rename() nguyên tử ⇒ người đọc thấy HOẶC file cũ HOẶC file mới,\n  không bao giờ thấy file dở dang.\n\nHai điều kiện dễ quên:\n  ① File tạm phải nằm CÙNG hệ thống file (rename qua thiết bị khác\n     không nguyên tử — nó là copy + delete)\n  ② Phải fsync TRƯỚC rename, không thì nội dung mới có thể\n     chưa xuống đĩa khi tên đã đổi\n```\n\n**Đọc file lớn — stream, đừng nạp cả file:**\n\n```js\n// ❌ File 2 GB ⇒ 2 GB RAM ⇒ có thể OOM\nconst noiDung = await fs.readFile('lon.log', 'utf8')\n\n// ✅ Xử lý theo dòng, RAM không đổi theo kích thước file\nconst rl = readline.createInterface({ input: fs.createReadStream('lon.log') })\nfor await (const dong of rl) xuLy(dong)\n```\n\n**Đường dẫn, hard link và symlink:**\n\n```text\nINODE   bản ghi thật của file: quyền, kích thước, vị trí dữ liệu\nTÊN     chỉ là một mục trong thư mục, TRỎ tới inode\n\n⇒ Một inode có nhiều tên (hard link).\n⇒ Xoá file = xoá một tên. Dữ liệu chỉ mất khi\n  KHÔNG còn tên nào VÀ không tiến trình nào đang mở nó.\n\n⇒ Đây là lý do `rm` một file log đang được ghi KHÔNG giải phóng đĩa:\n  tên mất rồi, nhưng tiến trình vẫn giữ fd.\n  `df` thấy đầy, `du` cộng lại thì không.  Xem bằng `lsof +L1`.\n```\n\n## Tại sao cần nó\n\nVì bốn sự cố vận hành đều bắt nguồn từ đây:\n\n```text\n① \"Too many open files\"        → rò rỉ fd\n② File cấu hình hỏng sau crash → ghi đè trực tiếp thay vì rename\n③ df đầy mà du không khớp      → file đã xoá, tiến trình còn giữ\n④ Mất dữ liệu sau khi mất điện → không fsync\n```\n\n**Đĩa đầy — hai loại, triệu chứng giống nhau:**\n\n```bash\ndf -h    # hết DUNG LƯỢNG\ndf -i    # hết INODE — nhiều file nhỏ (session, cache, mail queue)\n```\n\nHết inode cho ra đúng thông báo \"No space left on device\" trong khi `df -h` báo còn trống nhiều — một trong những thông báo lỗi gây hiểu lầm nhất ([[go-loi-tren-may-chu]]).\n\n**I/O chặn và không chặn:**\n\n```text\nĐọc file bằng API ĐỒNG BỘ trong Node chặn TOÀN BỘ event loop.\n`fs.readFileSync` chấp nhận được lúc khởi động; trong request thì không.\n\nVà ngay cả API bất đồng bộ của Node cũng chạy trên một pool luồng\nmặc định 4 luồng (UV_THREADPOOL_SIZE) — nên nhiều thao tác file\nsong song vẫn có thể xếp hàng.\n```\n\n## So sánh\n\n| | `write()` | `fsync()` | `O_DIRECT` |\n|---|---|---|---|\n| Độ trễ | ~µs | ~ms | ~ms |\n| An toàn khi app crash | ✅ | ✅ | ✅ |\n| An toàn khi mất điện | ❌ | ✅ | ✅ |\n| Qua page cache | ✅ | ✅ | ❌ bỏ qua |\n| Dùng cho | ghi thông thường | CSDL, file quan trọng | CSDL tự quản đệm |\n\n## Dễ nhầm\n\n**1. Tin rằng `write()` thành công là dữ liệu đã trên đĩa.**\n\n**2. Ghi đè file cấu hình trực tiếp.** Crash giữa chừng là mất cả bản cũ.\n\n**3. `rename` file tạm nằm ở hệ thống file khác.** Không nguyên tử.\n\n**4. Quên `fsync` trước `rename`.**\n\n**5. Không đóng fd khi có lỗi.** Rò rỉ — dùng `finally` hoặc `using`.\n\n**6. Nâng `ulimit` thay vì sửa rò rỉ.** Chỉ hoãn.\n\n**7. `readFile` cho file lớn.** OOM.\n\n**8. Quên `df -i`.** Hết inode báo lỗi như hết dung lượng.\n\n**9. Tưởng `rm` file đang mở là giải phóng đĩa ngay.**\n\n**10. Dùng API đồng bộ trong request handler.** Chặn event loop.\n\n## Mẹo nhớ\n\n> **`write()` xong ≠ đã lên đĩa. Cần `fsync()` mới chắc.**\n>\n> **Ghi file quan trọng: ghi TẠM → fsync → RENAME. Rename là nguyên tử.**\n>\n> **\"Too many open files\" gần như luôn là rò rỉ kết nối, không phải file.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Sau `write()` thành công, dữ liệu nằm ở đâu?\n2. Ba tầng đệm giữa ứng dụng và đĩa?\n3. Mẫu ghi file an toàn gồm mấy bước, hai điều kiện dễ quên là gì?\n4. Vì sao `rm` file log đang ghi không giải phóng đĩa?\n5. Hết inode khác hết dung lượng thế nào, và vì sao dễ nhầm?\n\n## Tự viết lại\n\nKhông nhìn lại, viết:\n\n```text\n① Hàm ghi file cấu hình an toàn, không mất dữ liệu khi crash\n② Hàm đọc và xử lý file log 5 GB mà không tăng RAM\n③ Ba lệnh chẩn đoán \"too many open files\"\n④ Hai lệnh phân biệt hết dung lượng với hết inode\n```\n\nTự kiểm: hàm ① của bạn có đóng fd khi bước ghi ném lỗi giữa chừng không?\n\n## Thử sức\n\nDịch vụ chạy ổn định vài giờ rồi bắt đầu báo `EMFILE: too many open files`, và phải restart mới hết.\n\nBa câu để trả lời: đây là loại vấn đề gì, và vì sao nó **xuất hiện sau vài giờ**; ba lệnh bạn chạy để tìm thủ phạm; và vì sao nâng `ulimit` không phải cách sửa. Câu khó nhất: nếu `lsof` cho thấy hàng nghìn socket ở trạng thái `CLOSE_WAIT`, điều đó chỉ ra lỗi ở phía nào — bạn hay đối tác — và vì sao?",
+    "tags": [
+      "he-dieu-hanh",
+      "file",
+      "io",
+      "du-lieu"
+    ],
+    "order": 5,
+    "level": "trung-cap",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-02T12:00:00.000Z",
+    "updatedAt": "2026-01-02T12:00:00.000Z"
+  },
+  {
+    "id": "note-syscall-va-ranh-gioi-nhan",
+    "topicId": "topic-os",
+    "title": "System call và ranh giới nhân",
+    "slug": "syscall-va-ranh-gioi-nhan",
+    "summary": "Chương trình của bạn không tự làm được gì — mọi thứ ra ngoài đều phải qua nhân, và điều đó có giá.",
+    "content": "> **Sau bài này bạn sẽ:** biết vì sao gộp I/O lại nhanh hơn nhiều, và dùng được `strace` để xem chương trình thật sự làm gì.\n\n## Ý tưởng chính\n\nChương trình của bạn chạy ở **chế độ người dùng**: nó tính toán được, nhưng **không** tự đọc đĩa, mở socket, hay tạo tiến trình được.\n\nMọi việc đó phải nhờ **nhân** làm hộ, qua một **system call**. Và mỗi lần nhờ đều có phí.\n\nHiểu ranh giới này giải thích cả một lớp quyết định về hiệu năng — và cho bạn một công cụ chẩn đoán mạnh khi log im lặng.\n\n## Mental model\n\nHãy nghĩ tới **làm việc trong một toà nhà có bảo vệ**.\n\n> Trong phòng, bạn muốn làm gì thì làm — viết, tính, sắp xếp giấy tờ. Nhanh, không ai hỏi.\n>\n> Nhưng muốn **lấy hồ sơ từ kho**, hay **gửi thư ra ngoài**, bạn phải điền phiếu và đưa bảo vệ. Bảo vệ kiểm tra bạn có quyền không, rồi đi làm hộ.\n>\n> Mỗi lần điền phiếu mất vài phút. Nên người khôn ngoan **gom mười yêu cầu vào một phiếu**, thay vì chạy ra chạy vào mười lần.\n\nCái phiếu đó là system call. Và \"gom vào một phiếu\" là toàn bộ lý do buffer tồn tại.\n\n## Ví dụ nhỏ\n\n```bash\nstrace -c -p 4821        # đếm syscall theo loại\nstrace -f ./chuong-trinh # xem từng syscall\n```\n\n## Code chạy thế nào\n\n**Một syscall diễn ra thế nào:**\n\n```text\n① Chương trình đặt số hiệu syscall và tham số vào thanh ghi\n② Lệnh đặc biệt (syscall) ⇒ CPU chuyển sang CHẾ ĐỘ NHÂN\n③ Nhân kiểm tra quyền và tham số\n④ Nhân làm việc\n⑤ Trả kết quả, quay về chế độ người dùng\n\nChi phí: ~100–500 ns cho phần chuyển chế độ\n         cộng thời gian nhân thật sự làm việc\n         cộng cache CPU bị nguội ([[cache-cpu-va-tinh-cuc-bo]])\n```\n\nCon số 100–500 ns nghe nhỏ, cho tới khi bạn gọi nó một triệu lần.\n\n**Vì sao buffer thay đổi mọi thứ:**\n\n```js\n// ❌ Mỗi dòng một syscall\nfor (const dong of trieuDong) fs.writeSync(fd, dong + '\\n')\n// → 1.000.000 syscall\n\n// ✅ Gom rồi ghi một lần\nconst buf = trieuDong.join('\\n')\nfs.writeSync(fd, buf)\n// → vài chục syscall\n```\n\n```text\nĐo thực tế cho loại việc này: chênh nhau 10–50 lần.\nCùng số byte ghi ra, cùng kết quả — chỉ khác số lần \"điền phiếu\".\n\nĐây là lý do:\n  - stdout được đệm, và chỉ xả khi gặp xuống dòng (hoặc khi đầy)\n  - thư viện log gom nhiều dòng rồi ghi một lượt\n  - CSDL gom nhiều giao dịch rồi fsync một lần\n```\n\nVà nó cũng giải thích một hành vi hay gây bối rối: **`console.log` mất khi tiến trình crash**. Dữ liệu còn trong buffer, chưa kịp xả.\n\n**Gộp ở tầng mạng cũng cùng nguyên lý:**\n\n```text\n100 truy vấn CSDL riêng lẻ  → 100 round-trip\n1 truy vấn với IN (...)      → 1 round-trip\n\nĐây chính là bài toán N+1 nhìn từ góc hệ điều hành:\ncái đắt không phải phép tính, mà là số lần VƯỢT RANH GIỚI.\n```\n\n## Cú pháp\n\n**`strace` — công cụ trả lời \"chương trình đang làm gì\" khi log im lặng:**\n\n```bash\nstrace -c -p <pid>              # thống kê: syscall nào nhiều nhất, tốn nhất\nstrace -f -e trace=network ./app  # chỉ xem syscall mạng\nstrace -f -e trace=openat ./app   # nó đang tìm file ở đâu?\nstrace -T -p <pid>              # kèm thời gian mỗi lời gọi\n```\n\n```text\nBa lúc strace cứu bạn:\n  ① Tiến trình treo, không log gì\n     → đang kẹt ở syscall nào? read? futex? connect?\n  ② \"File not found\" mà không biết nó tìm ở đâu\n     → trace=openat cho thấy từng đường dẫn nó thử\n  ③ Chậm bất thường mà profiler không chỉ ra\n     → -c cho thấy hàng triệu lời gọi write hoặc stat\n```\n\nTrên macOS công cụ tương đương là `dtruss`; trong container cần thêm quyền `SYS_PTRACE`.\n\n**Vì sao `strace` làm chương trình chậm hẳn:** nó dừng tiến trình ở **mỗi** syscall để ghi lại. Chậm 10–100 lần là bình thường. Nên dùng nó để **chẩn đoán**, không dùng để đo hiệu năng — và không để chạy lâu trên production.\n\n**epoll — cách một tiến trình phục vụ vạn kết nối:**\n\n```text\nCách ngây thơ: mỗi kết nối một luồng, mỗi luồng gọi read() và CHỜ.\n  10.000 kết nối ⇒ 10.000 luồng ⇒ 10 GB stack, và chuyển ngữ cảnh liên tục.\n\nepoll: một syscall hỏi \"trong 10.000 fd này, cái nào SẴN SÀNG?\"\n  ⇒ Một luồng, một lời gọi, danh sách fd có dữ liệu.\n  ⇒ Chi phí không tăng theo số kết nối ĐANG CHỜ.\n```\n\nĐây là cơ chế bên dưới event loop của Node, của nginx, và của gần như mọi máy chủ hiện đại ([[tien-trinh-va-luong]]).\n\n## Tại sao cần nó\n\nVì nó cho một quy tắc thiết kế áp dụng được ở mọi tầng:\n\n```text\nCái đắt không phải LƯỢNG dữ liệu, mà là SỐ LẦN vượt ranh giới.\n\nRanh giới nào cũng vậy:\n  ứng dụng ↔ nhân        → gom vào buffer\n  ứng dụng ↔ CSDL        → gom truy vấn, tránh N+1\n  trình duyệt ↔ máy chủ  → gom request, dùng HTTP/2\n  service ↔ service      → gom lời gọi, hoặc gộp API\n```\n\nNhận ra đây là **cùng một bài toán** ở bốn tầng khác nhau là điều đáng mang đi từ bài này.\n\n**Và nó giải thích một số con số vận hành:**\n\n```text\n`%sy` (CPU cho nhân) cao bất thường\n  ⇒ chương trình đang gọi syscall quá nhiều\n  ⇒ strace -c để tìm loại nào\n\nContext switch cao trong `vmstat`\n  ⇒ quá nhiều luồng, hoặc quá nhiều syscall chặn\n```\n\n## So sánh\n\n| Thao tác | Có phải syscall | Chi phí |\n|---|---|---|\n| Cộng hai số | ❌ | ~1 ns |\n| Cấp phát trong heap | thường ❌ (thư viện tự quản) | ~10 ns |\n| `write()` vào file | ✅ | ~1 µs |\n| `read()` từ đĩa | ✅ + chờ I/O | ~100 µs |\n| Gọi mạng | ✅ + chờ mạng | ~ms |\n\n## Dễ nhầm\n\n**1. Ghi từng dòng một ra file.** Một triệu syscall.\n\n**2. Không hiểu vì sao log mất khi crash.** Còn trong buffer.\n\n**3. Dùng `strace` để đo hiệu năng.** Nó làm chậm 10–100 lần.\n\n**4. Để `strace` chạy lâu trên production.**\n\n**5. Bỏ qua `%sy` cao.** Dấu hiệu gọi syscall quá nhiều.\n\n**6. Mỗi kết nối một luồng ở quy mô lớn.** Đó là lý do epoll ra đời.\n\n**7. Gọi API bên ngoài trong vòng lặp.** Cùng bài toán N+1, ở tầng mạng.\n\n**8. Tin rằng bộ nhớ dùng chung giữa các tiến trình là đơn giản.** Nó cần syscall và cần đồng bộ hoá.\n\n## Mẹo nhớ\n\n> **Mọi việc ra ngoài chương trình đều phải qua NHÂN, và mỗi lần qua đều có phí.**\n>\n> **Cái đắt là SỐ LẦN vượt ranh giới, không phải lượng dữ liệu.**\n>\n> **`strace -c` trả lời \"chương trình đang làm gì\" khi log im lặng.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Một system call diễn ra qua mấy bước, tốn gì?\n2. Vì sao gộp ghi vào buffer nhanh hơn nhiều lần?\n3. Ba tình huống `strace` cứu bạn?\n4. epoll giải quyết vấn đề gì?\n5. Quy tắc \"số lần vượt ranh giới\" áp dụng ở những tầng nào?\n\n## Tự viết lại\n\nKhông nhìn lại:\n\n```text\n① Viết lại một vòng lặp ghi log từng dòng thành phiên bản gom buffer\n② Kể ba tầng khác trong hệ thống của bạn có cùng bài toán \"quá nhiều lần vượt ranh giới\"\n③ Lệnh strace để tìm xem một tiến trình đang treo ở đâu\n```\n\nTự kiểm: phiên bản gom buffer ở ① của bạn xử lý thế nào khi tiến trình bị dừng giữa chừng — có mất log không?\n\n## Thử sức\n\nDịch vụ chậm bất thường. `top` cho thấy `%sy` (CPU cho nhân) là 45%, trong khi `%us` chỉ 12%.\n\nBa câu để trả lời: con số này gợi ý điều gì; bạn dùng lệnh nào để tìm nguyên nhân và đọc kết quả ra sao; và ba nguyên nhân khả dĩ nhất. Câu khó nhất: nếu `strace -c` cho thấy hàng triệu lời gọi `stat()`, thủ phạm thường là loại mã nào — và vì sao nó hay xuất hiện trong ứng dụng Node?",
+    "tags": [
+      "he-dieu-hanh",
+      "syscall",
+      "hieu-nang",
+      "go-loi"
+    ],
+    "order": 6,
+    "level": "trung-cap",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-02T13:00:00.000Z",
+    "updatedAt": "2026-01-02T13:00:00.000Z"
+  },
+  {
+    "id": "note-cac-tang-mang-va-goi-tin",
+    "topicId": "topic-network",
+    "title": "Các tầng mạng và hành trình một gói tin",
+    "slug": "cac-tang-mang-va-goi-tin",
+    "summary": "Từ lúc bạn bấm Enter tới khi byte tới máy chủ — mỗi tầng thêm gì và giải quyết vấn đề gì.",
+    "content": "> **Sau bài này bạn sẽ:** nói được mỗi tầng mạng giải quyết vấn đề gì, và định vị được một sự cố mạng thuộc tầng nào.\n\n## Ý tưởng chính\n\nMạng được chia thành các **tầng**, mỗi tầng giải quyết đúng một vấn đề và **giả định tầng dưới đã xong việc của nó**.\n\nGiá trị của cách chia này rất cụ thể: khi có sự cố, bạn không hỏi \"mạng hỏng ở đâu\" — bạn hỏi **\"hỏng ở tầng nào\"**, và mỗi tầng có một bộ công cụ chẩn đoán riêng.\n\n## Mental model\n\nHãy nghĩ tới **gửi một kiện hàng quốc tế**.\n\n> Bạn viết **nội dung** lá thư — đó là tầng ứng dụng (HTTP).\n>\n> Bạn cho vào **phong bì có địa chỉ người nhận và số thứ tự** (thư 2/5) — đó là tầng giao vận (TCP): đảm bảo đủ và đúng thứ tự.\n>\n> Bưu điện dán **nhãn định tuyến quốc gia** — đó là tầng mạng (IP): đưa nó tới đúng thành phố.\n>\n> Xe tải, máy bay, xe máy giao hàng — đó là tầng liên kết: đi được đoạn đường trước mắt.\n>\n> Mỗi tầng **chỉ cần biết việc của mình**. Người viết thư không cần biết chuyến bay nào; phi công không đọc lá thư.\n\nVà điểm quan trọng: **mỗi tầng bọc thêm một lớp** rồi bóc ra theo thứ tự ngược lại ở đầu kia.\n\n## Ví dụ nhỏ\n\n```text\n[ HTTP: GET /api/users              ]  tầng ứng dụng\n[ TCP | HTTP...                     ]  + cổng, số thứ tự\n[ IP | TCP | HTTP...                ]  + địa chỉ IP nguồn/đích\n[ Ethernet | IP | TCP | HTTP... |CRC]  + địa chỉ MAC\n```\n\n## Code chạy thế nào\n\n**Bốn tầng, và mỗi tầng hỏng thì triệu chứng gì:**\n\n```text\n④ ỨNG DỤNG   HTTP, DNS, TLS, WebSocket\n   Hỏng: 404, 500, lỗi chứng chỉ, JSON sai\n   Công cụ: curl -v, log ứng dụng\n\n③ GIAO VẬN   TCP (tin cậy, có thứ tự) / UDP (nhanh, không đảm bảo)\n   Hỏng: connection refused, connection reset, timeout\n   Công cụ: ss -tn, nc -zv, telnet\n\n② MẠNG       IP — định tuyến giữa các mạng\n   Hỏng: no route to host, network unreachable\n   Công cụ: ping, traceroute, ip route\n\n① LIÊN KẾT   Ethernet, Wi-Fi — đi một chặng vật lý\n   Hỏng: mất kết nối hoàn toàn\n   Công cụ: ip link, ip addr\n```\n\nBảng này là giá trị thực dụng lớn nhất của mô hình tầng: đọc thông báo lỗi ⇒ biết ngay tầng nào ⇒ biết dùng công cụ nào.\n\n**Hành trình một request, đầy đủ:**\n\n```text\n① Trình duyệt: cần IP của api.example.com\n   → hỏi DNS (nếu chưa có trong cache)              ~20–100 ms lần đầu\n② Có IP → mở kết nối TCP: bắt tay 3 bước           1 round-trip\n③ Nếu HTTPS → bắt tay TLS                          1–2 round-trip\n④ Gửi request HTTP                                 1 round-trip\n⑤ Máy chủ xử lý\n⑥ Phản hồi về, đi ngược lại đúng đường\n```\n\n```text\nVới round-trip 50 ms, một request HTTPS \"nguội\" mất:\n  DNS 50 + TCP 50 + TLS 100 + HTTP 50 = 250 ms\n  — trước khi máy chủ làm bất cứ việc gì.\n\n⇒ Đây là lý do TÁI DÙNG KẾT NỐI quan trọng đến vậy:\n  request thứ hai trên cùng kết nối chỉ tốn 50 ms.\n```\n\nBa trong bốn bước đó là chi phí **thiết lập**, và chúng biến mất khi dùng lại kết nối — đó là toàn bộ lý do tồn tại của keep-alive và connection pool ([[reverse-proxy-voi-nginx]]).\n\n## Cú pháp\n\n**Địa chỉ IP, cổng, và cách chúng kết hợp:**\n\n```text\nMột kết nối được định danh bởi BỐN thứ:\n  (IP nguồn, cổng nguồn, IP đích, cổng đích)\n\n⇒ Cùng một máy chủ, cùng cổng 443, phục vụ được hàng vạn kết nối:\n  mỗi client có cặp (IP, cổng) nguồn khác nhau.\n\nCổng quen thuộc:\n  22 SSH   53 DNS   80 HTTP   443 HTTPS\n  3306 MySQL   5432 Postgres   6379 Redis\n```\n\n```text\nRiêng tư (không định tuyến ra Internet):\n  10.0.0.0/8        172.16.0.0/12        192.168.0.0/16\n  127.0.0.1         chính máy này\n\n⇒ Đó là lý do container/VM dùng dải riêng và cần NAT để ra ngoài\n  ([[mang-va-ket-noi]]).\n```\n\n**Ký hiệu CIDR — đọc cho nhanh:**\n\n```text\n10.0.0.0/24   → 24 bit đầu cố định, 8 bit cuối tự do → 256 địa chỉ\n10.0.0.0/16   → 65.536 địa chỉ\n10.0.0.0/8    → ~16,7 triệu\n\nSố sau dấu / càng LỚN thì mạng càng NHỎ.\n```\n\nBạn gặp CIDR mỗi khi cấu hình security group, firewall, hay VPC — và đọc sai một chữ số là mở cổng cho cả Internet.\n\n**Ba lệnh chẩn đoán, theo thứ tự tầng:**\n\n```bash\nping api.example.com          # ② IP tới được không?\nnc -zv api.example.com 443    # ③ cổng có mở không?\ncurl -v https://api.example.com/health   # ④ ứng dụng trả lời gì?\n```\n\n```text\nping được nhưng nc không được   ⇒ tường lửa chặn cổng, hoặc dịch vụ không chạy\nnc được nhưng curl lỗi           ⇒ vấn đề TLS hoặc tầng ứng dụng\nping không được                  ⇒ định tuyến, hoặc ICMP bị chặn (rất thường gặp)\n```\n\nLưu ý cuối quan trọng: **nhiều máy chủ chặn ICMP**, nên `ping` thất bại **không** chứng minh máy chủ chết. Luôn kiểm bằng `nc` trước khi kết luận.\n\n## Tại sao cần nó\n\nVì nó đổi cách bạn đọc một sự cố mạng từ đoán mò thành thu hẹp có hệ thống:\n\n```text\n\"API không gọi được\"\n\nKhông có mô hình tầng: thử lại, restart, đổi URL, đoán.\nCó mô hình tầng:\n  ① DNS phân giải được không?    dig api.example.com\n  ② IP tới được không?           ping / traceroute\n  ③ Cổng mở không?               nc -zv\n  ④ TLS bắt tay được không?      openssl s_client\n  ⑤ Ứng dụng trả lời gì?         curl -v\n\n⇒ Mỗi bước loại bỏ một nửa khả năng.\n```\n\n**Và nó giải thích các con số hiệu năng:**\n\n```text\nĐộ trễ có SÀN VẬT LÝ: ánh sáng trong cáp quang ~200.000 km/s.\n  Hà Nội ↔ TP.HCM  (~1.100 km)  → ~11 ms khứ hồi, lý thuyết\n  Việt Nam ↔ Mỹ    (~13.000 km) → ~130 ms khứ hồi, lý thuyết\n  Thực tế gấp 1,5–2 lần vì đi vòng và qua nhiều thiết bị.\n\n⇒ Không tối ưu mã nào phá được sàn này.\n  Cách duy nhất là ĐẶT DỮ LIỆU GẦN NGƯỜI DÙNG HƠN — đó là CDN.\n```\n\n## So sánh\n\n| Tầng | Đơn vị | Địa chỉ | Hỏng thì thấy |\n|---|---|---|---|\n| Ứng dụng | message | URL | 4xx, 5xx, lỗi TLS |\n| Giao vận | segment | cổng | refused, reset, timeout |\n| Mạng | packet | IP | unreachable |\n| Liên kết | frame | MAC | mất mạng hoàn toàn |\n\n## Dễ nhầm\n\n**1. Kết luận \"máy chủ chết\" khi `ping` không được.** ICMP thường bị chặn.\n\n**2. Không phân biệt refused với timeout.** Refused = có máy, không có dịch vụ. Timeout = gói tin bị nuốt, thường là tường lửa.\n\n**3. Quên chi phí thiết lập kết nối.** Ba round-trip trước khi có byte dữ liệu đầu tiên.\n\n**4. Không tái dùng kết nối.** Trả phí bắt tay mỗi lần.\n\n**5. Đọc sai CIDR.** `/0` là cả Internet.\n\n**6. Tưởng độ trễ tối ưu được bằng mã.** Nó có sàn vật lý.\n\n**7. Nhầm cổng với địa chỉ.** IP đưa tới máy; cổng đưa tới tiến trình.\n\n**8. Debug từ tầng ứng dụng xuống.** Bắt đầu từ tầng thấp thì thu hẹp nhanh hơn.\n\n## Mẹo nhớ\n\n> **Mỗi tầng giải một vấn đề và tin tầng dưới đã xong việc của nó.**\n>\n> **Thông báo lỗi cho biết TẦNG nào — và tầng nào có công cụ của tầng đó.**\n>\n> **Một HTTPS request nguội tốn 3–4 round-trip TRƯỚC khi máy chủ làm gì.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Bốn tầng, mỗi tầng giải quyết vấn đề gì?\n2. Kể lại hành trình một request HTTPS từ lúc bấm Enter.\n3. Bốn thứ định danh một kết nối TCP?\n4. `connection refused` khác `timeout` thế nào về nguyên nhân?\n5. Vì sao độ trễ có sàn không phá được, và giải pháp là gì?\n\n## Tự viết lại\n\nKhông nhìn lại:\n\n```text\n① Vẽ lại các lớp bọc của một gói tin HTTPS\n② Viết năm lệnh chẩn đoán theo thứ tự tầng, kèm ý nghĩa từng kết quả\n③ 10.0.1.0/24 có bao nhiêu địa chỉ? 0.0.0.0/0 nghĩa là gì?\n```\n\nTự kiểm: ở ②, nếu lệnh thứ ba thành công mà lệnh thứ năm thất bại, bạn đã loại trừ được những gì?\n\n## Thử sức\n\nỨng dụng gọi API đối tác, thỉnh thoảng báo `ETIMEDOUT`. Từ máy chủ, `curl` tới URL đó thì luôn thành công.\n\nBa câu để trả lời: ba giả thuyết khác nhau cho hiện tượng \"thỉnh thoảng\"; với mỗi cái, cách kiểm chứng; và bạn xử lý ở phía mình thế nào trong lúc chưa rõ nguyên nhân. Câu khó nhất: nếu `curl` thủ công luôn thành công còn ứng dụng thì không, khác biệt nào giữa hai đường đi có thể giải thích điều đó?",
+    "tags": [
+      "mang",
+      "tcp-ip",
+      "giao-thuc",
+      "nen-tang"
+    ],
+    "order": 1,
+    "level": "co-ban",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-02T14:00:00.000Z",
+    "updatedAt": "2026-01-02T14:00:00.000Z"
+  },
+  {
+    "id": "note-tcp-va-udp",
+    "topicId": "topic-network",
+    "title": "TCP và UDP",
+    "slug": "tcp-va-udp",
+    "summary": "Bắt tay ba bước, kiểm soát tắc nghẽn, và vì sao \"TCP đảm bảo tin cậy\" không có nghĩa dữ liệu chắc chắn tới.",
+    "content": "> **Sau bài này bạn sẽ:** chọn được TCP hay UDP cho một bài toán, và hiểu vì sao mạng chậm làm TCP chậm theo cấp số.\n\n## Ý tưởng chính\n\n**TCP** đảm bảo dữ liệu tới **đủ và đúng thứ tự** — bằng cách xác nhận, đánh số, và gửi lại khi mất.\n\n**UDP** gửi và quên. Không xác nhận, không sắp xếp, không gửi lại.\n\nTCP không \"tốt hơn\". Nó **đắt hơn**, và với một số bài toán, cái nó đảm bảo lại chính là thứ gây hại.\n\n## Mental model\n\nHãy nghĩ tới **thư bảo đảm và bưu thiếp**.\n\n> **Thư bảo đảm (TCP)**: người nhận ký nhận, bạn biết chắc thư tới. Không có hồi báo thì bưu điện gửi lại. Thư số 3 chưa tới thì người nhận **giữ lại thư 4 và 5, chưa đọc**, chờ cho đủ bộ.\n>\n> **Bưu thiếp (UDP)**: bỏ vào thùng, xong. Không biết có tới không. Nhưng rẻ và nhanh.\n\nChi tiết \"giữ lại thư 4 và 5\" là điều quan trọng nhất và ít được nói tới: TCP đảm bảo **thứ tự**, nên một gói mất làm **mọi gói sau nó phải nằm chờ**. Với một cuộc gọi video, chờ như vậy tệ hơn là mất hẳn một khung hình.\n\n## Ví dụ nhỏ\n\n```text\nTCP: bắt tay → gửi có đánh số → nhận xác nhận → mất thì gửi lại → đóng\nUDP: gửi. Hết.\n```\n\n## Code chạy thế nào\n\n**Bắt tay ba bước, và vì sao nó tồn tại:**\n\n```text\nClient                     Server\n   │──── SYN ────────────────▶│   \"tôi muốn kết nối, số bắt đầu của tôi là X\"\n   │◀─── SYN-ACK ─────────────│   \"đồng ý, số của tôi là Y, tôi nhận được X\"\n   │──── ACK ────────────────▶│   \"tôi nhận được Y\"\n   │        (kết nối mở)       │\n\n⇒ Sau ba bước, HAI BÊN cùng biết bên kia sẵn sàng và cùng thống nhất\n  số thứ tự khởi đầu. Đó là điều một bước không làm được.\n⇒ Giá: MỘT round-trip trước khi gửi được byte dữ liệu nào.\n```\n\n**Ba thông báo lỗi, ba nguyên nhân khác hẳn:**\n\n```text\nconnection refused   Gói SYN tới nơi, máy chủ trả lời RST.\n                     ⇒ CÓ máy, KHÔNG có ai nghe cổng đó.\n                     ⇒ Dịch vụ chết, hoặc sai cổng.\n\ntimeout              Gói SYN đi mà không có hồi âm nào.\n                     ⇒ Tường lửa NUỐT gói, hoặc sai IP, hoặc máy chết.\n\nconnection reset     Đang kết nối thì nhận RST.\n                     ⇒ Bên kia đóng đột ngột: tiến trình chết,\n                       proxy hết thời gian chờ, hoặc load balancer\n                       gỡ máy khỏi pool.\n```\n\nPhân biệt được ba cái này là công cụ chẩn đoán mạnh nhất ở tầng giao vận: mỗi thông báo loại bỏ một nhóm giả thuyết ngay lập tức.\n\n**Kiểm soát tắc nghẽn — vì sao mạng xấu làm mọi thứ chậm hơn nhiều lần:**\n\n```text\nTCP không biết đường truyền chịu được bao nhiêu, nên nó DÒ:\n  ① Bắt đầu chậm: gửi ít, mỗi lần nhận đủ ACK thì GẤP ĐÔI\n  ② Mất gói ⇒ coi là tắc nghẽn ⇒ GIẢM MẠNH tốc độ rồi tăng lại từ từ\n\n⇒ Kết nối mới luôn khởi động chậm — đó là \"slow start\".\n⇒ Mất 1% gói không làm chậm 1%; nó có thể làm chậm NHIỀU LẦN,\n  vì mỗi lần mất gói là một lần giảm mạnh.\n```\n\nĐây là lý do một mạng \"chỉ mất vài phần trăm gói\" lại cho cảm giác gần như không dùng được — và là lý do nên đo **tỉ lệ mất gói**, không chỉ đo độ trễ.\n\n## Cú pháp\n\n**Chọn TCP hay UDP:**\n\n```text\nTCP khi: dữ liệu phải ĐỦ và ĐÚNG THỨ TỰ\n  → HTTP, CSDL, SSH, gửi file, hầu hết mọi thứ bạn viết\n\nUDP khi: MUỘN cũng vô dụng, thà mất còn hơn chờ\n  → gọi thoại/video, game thời gian thực, DNS, đo lường\n  → và khi tự xây cơ chế tin cậy riêng ở tầng trên (QUIC)\n```\n\n```text\nDNS dùng UDP vì: một câu hỏi, một câu trả lời, vừa trong một gói.\nBắt tay ba bước cho một lần hỏi tên miền là quá đắt.\nMất gói? Hỏi lại — rẻ hơn nhiều so với duy trì kết nối.\n```\n\n**Trạng thái kết nối — đọc `ss` để chẩn đoán:**\n\n```bash\nss -tn state established | wc -l    # đang mở bao nhiêu\nss -tn state time-wait | wc -l      # vừa đóng, còn giữ chỗ\nss -s                                # tổng hợp theo trạng thái\n```\n\n```text\nTIME_WAIT   Bên ĐÓNG TRƯỚC phải giữ 2×MSL (~60s) để nuốt gói đến muộn.\n            Hàng chục nghìn TIME_WAIT là bình thường với máy chủ bận.\n            Nhưng nếu chính máy chủ của bạn đóng trước ở mỗi request\n            ⇒ cạn cổng nguồn ⇒ dùng keep-alive để sửa gốc.\n\nCLOSE_WAIT  Bên kia đã đóng, CHƯƠNG TRÌNH CỦA BẠN chưa gọi close().\n            ⇒ Đây là LỖI Ở PHÍA BẠN — rò rỉ kết nối.\n            ⇒ Tăng dần rồi \"too many open files\"\n              ([[file-io-va-he-thong-file]]).\n```\n\nPhân biệt TIME_WAIT với CLOSE_WAIT rất đáng nhớ: cái đầu thường vô hại, cái sau luôn là bug của bạn.\n\n**Nagle và độ trễ nhỏ:** TCP gom các gói tin nhỏ lại để đỡ phí băng thông. Với ứng dụng cần phản hồi tức thì (game, terminal, trao đổi request nhỏ), điều đó thêm tới ~40 ms độ trễ — nên chúng bật `TCP_NODELAY`.\n\n## Tại sao cần nó\n\nVì \"TCP đảm bảo tin cậy\" là một câu **dễ hiểu sai**:\n\n```text\nTCP đảm bảo: nếu dữ liệu tới, nó ĐỦ và ĐÚNG THỨ TỰ.\nTCP KHÔNG đảm bảo: dữ liệu chắc chắn tới.\n\nKết nối đứt giữa chừng ⇒ bạn KHÔNG BIẾT bên kia đã nhận được\nbao nhiêu, và đã xử lý tới đâu.\n\n⇒ Đây chính là lý do cần idempotency ở tầng ứng dụng:\n  timeout không phân biệt được \"chưa tới\" với \"đã xử lý,\n  phản hồi bị mất\" ([[idempotency-va-thu-lai]]).\n```\n\n**Và nó giải thích vì sao tái dùng kết nối quan trọng:**\n\n```text\nMỗi kết nối TCP mới phải trả:\n  1 round-trip bắt tay\n  + giai đoạn slow start (vài round-trip nữa mới đạt tốc độ)\n  + (nếu HTTPS) 1–2 round-trip bắt tay TLS\n\nKeep-alive / connection pool bỏ được TẤT CẢ phần đó\ntừ request thứ hai trở đi.\n```\n\nĐây là cùng một nguyên lý với việc gộp syscall và tránh N+1: **giảm số lần thiết lập, không giảm lượng dữ liệu** ([[syscall-va-ranh-gioi-nhan]]).\n\n## So sánh\n\n| | TCP | UDP |\n|---|---|---|\n| Bắt tay | 3 bước | không |\n| Đảm bảo tới | ✅ (gửi lại) | ❌ |\n| Đúng thứ tự | ✅ | ❌ |\n| Kiểm soát tắc nghẽn | ✅ | ❌ (tự lo) |\n| Độ trễ khi mất gói | cao — chờ gói thiếu | không đổi |\n| Dùng cho | HTTP, CSDL, SSH | DNS, thoại, game |\n\n## Dễ nhầm\n\n**1. Hiểu \"TCP tin cậy\" là dữ liệu chắc chắn tới.** Đứt kết nối là không biết gì.\n\n**2. Không phân biệt refused / timeout / reset.** Ba nguyên nhân khác hẳn nhau.\n\n**3. Hoảng vì nhiều TIME_WAIT.** Thường bình thường.\n\n**4. Bỏ qua CLOSE_WAIT.** Luôn là rò rỉ ở phía bạn.\n\n**5. Không dùng keep-alive.** Trả phí bắt tay mỗi request.\n\n**6. Tưởng mất 1% gói thì chậm 1%.** Kiểm soát tắc nghẽn làm nó tệ hơn nhiều.\n\n**7. Chỉ đo độ trễ, không đo tỉ lệ mất gói.**\n\n**8. Dùng UDP mà không tự lo tin cậy** cho dữ liệu thật sự cần đủ.\n\n**9. Quên `TCP_NODELAY`** cho ứng dụng cần độ trễ thấp.\n\n## Mẹo nhớ\n\n> **TCP = thư bảo đảm (đủ, đúng thứ tự, đắt). UDP = bưu thiếp (nhanh, không hứa gì).**\n>\n> **refused = có máy không có dịch vụ. timeout = gói bị nuốt. reset = bên kia đóng đột ngột.**\n>\n> **CLOSE_WAIT nhiều = LỖI CỦA BẠN, chưa gọi close().**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Bắt tay ba bước giải quyết vấn đề gì mà một bước không giải được?\n2. Ba thông báo lỗi TCP và nguyên nhân từng cái?\n3. Vì sao mất 1% gói làm chậm hơn 1% rất nhiều?\n4. TIME_WAIT khác CLOSE_WAIT thế nào?\n5. \"TCP tin cậy\" **không** đảm bảo điều gì, và hệ quả với thiết kế API?\n\n## Tự viết lại\n\nKhông nhìn lại, chọn TCP hay UDP và giải thích:\n\n```text\n① Đồng bộ tin nhắn chat\n② Truyền hình ảnh cuộc gọi video\n③ Gửi số liệu đo mỗi giây từ 10.000 thiết bị IoT\n④ Tải file 2 GB\n⑤ Tra cứu tên miền\n```\n\nTự kiểm: ở ③, nếu mất 5% số liệu thì có sao không — và câu trả lời đó quyết định lựa chọn của bạn thế nào?\n\n## Thử sức\n\nDịch vụ của bạn gọi API đối tác. Log đầy `ECONNRESET`, khoảng 2% số request, và không theo quy luật thời gian nào.\n\nBa câu để trả lời: `ECONNRESET` nghĩa là gì và ai gây ra nó; ba nguyên nhân khả dĩ, kèm cách kiểm; và bạn xử lý ở phía mình thế nào. Câu khó nhất: nếu retry những request bị reset, rủi ro gì xuất hiện — và bạn cần gì ở phía đối tác để retry an toàn?",
+    "tags": [
+      "mang",
+      "tcp-ip",
+      "giao-thuc",
+      "nen-tang"
+    ],
+    "order": 2,
+    "level": "co-ban",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-02T15:00:00.000Z",
+    "updatedAt": "2026-01-02T15:00:00.000Z"
+  },
+  {
+    "id": "note-dns-va-phan-giai-ten",
+    "topicId": "topic-network",
+    "title": "DNS và phân giải tên miền",
+    "slug": "dns-va-phan-giai-ten",
+    "summary": "Từ tên miền tới IP, vì sao TTL quyết định tốc độ chuyển đổi, và các sự cố DNS kinh điển.",
+    "content": "> **Sau bài này bạn sẽ:** đọc được bản ghi DNS, biết TTL ảnh hưởng gì khi chuyển máy chủ, và chẩn đoán được sự cố DNS.\n\n## Ý tưởng chính\n\nMáy tính định tuyến bằng **địa chỉ IP**. Con người nhớ bằng **tên**. DNS là hệ thống dịch giữa hai thứ đó.\n\nĐiều làm DNS trở thành nguồn sự cố thường xuyên: nó được **cache ở rất nhiều tầng**, và bạn không kiểm soát được phần lớn các tầng đó.\n\n## Mental model\n\nHãy nghĩ tới **danh bạ điện thoại có nhiều bản sao**.\n\n> Bạn tra số của một cửa hàng. Bạn nhìn **sổ tay của mình** trước; không có thì hỏi **tổng đài công ty**; tổng đài không biết thì hỏi **tổng đài quốc gia**.\n>\n> Cửa hàng đổi số. Tổng đài quốc gia cập nhật ngay. Nhưng **sổ tay của bạn** và **tổng đài công ty** vẫn giữ số cũ — cho tới khi bản sao của họ hết hạn.\n>\n> Và bạn **không có cách nào** bắt sổ tay của người khác cập nhật sớm hơn.\n\nThời hạn đó là **TTL**. Nó là lý do đổi DNS không có hiệu lực ngay, và là thứ bạn phải chuẩn bị **trước** khi cần chuyển máy chủ.\n\n## Ví dụ nhỏ\n\n```bash\n$ dig api.example.com +short\n203.0.113.42\n\n$ dig api.example.com\n;; ANSWER SECTION:\napi.example.com.  300  IN  A  203.0.113.42\n#                 ↑ TTL: cache 300 giây\n```\n\n## Code chạy thế nào\n\n**Chuỗi phân giải, và mỗi tầng cache ở đâu:**\n\n```text\n① Cache của trình duyệt          (vài phút, không xoá từ xa được)\n② Cache của hệ điều hành         (systemd-resolved, dnsmasq)\n③ Cache của ứng dụng             ← JVM từng cache VĨNH VIỄN theo mặc định\n④ DNS resolver (ISP / 8.8.8.8)   ← tôn trọng TTL, nhưng không phải luôn luôn\n⑤ Root server → TLD (.com) → name server của tên miền\n⑥ Bản ghi thật\n\nTrả lời tìm thấy ở tầng nào thì dừng ở đó.\nLần đầu: ~20–100 ms. Các lần sau: gần như 0.\n```\n\nTầng ③ là cái bẫy đặc thù cho lập trình viên: nhiều runtime và thư viện HTTP cache DNS **theo vòng đời tiến trình**. Máy chủ đổi IP, DNS đã cập nhật, nhưng ứng dụng của bạn vẫn gọi IP cũ cho tới khi restart.\n\n**Các loại bản ghi cần biết:**\n\n```text\nA       tên → địa chỉ IPv4\nAAAA    tên → địa chỉ IPv6\nCNAME   tên → TÊN KHÁC  (bí danh)\nMX      máy chủ nhận email\nTXT     văn bản tự do — xác minh sở hữu, SPF, DKIM\nNS      name server có thẩm quyền cho tên miền\n```\n\n```text\nCNAME có hai ràng buộc hay bị vấp:\n  ① KHÔNG đặt CNAME ở gốc tên miền (example.com) — chuẩn không cho,\n     vì gốc phải có NS và SOA. Dùng ALIAS/ANAME của nhà cung cấp.\n  ② CNAME thêm một lượt tra cứu nữa ⇒ chậm hơn A một chút.\n```\n\n## Cú pháp\n\n**TTL — chuẩn bị trước khi chuyển:**\n\n```text\nMuốn đổi IP máy chủ mà không gián đoạn:\n\n  ① 24–48 giờ TRƯỚC: hạ TTL từ 3600 xuống 60\n     ⇒ chờ TTL CŨ hết hạn ở mọi cache\n  ② Đổi bản ghi sang IP mới\n  ③ Trong ~60 giây, traffic chuyển hết sang máy mới\n  ④ GIỮ máy cũ chạy thêm vài giờ — luôn có cache không tôn trọng TTL\n  ⑤ Vài ngày sau, nâng TTL trở lại\n\nKhông làm bước ①: một phần người dùng đi vào máy cũ tới một giờ,\nvà bạn không có cách nào ép họ cập nhật.\n```\n\nBước ④ là bước dễ bỏ và tốn kém nhất: một số resolver, và một số ứng dụng, giữ bản ghi lâu hơn TTL đã khai.\n\n**Chẩn đoán DNS:**\n\n```bash\ndig api.example.com                    # tra qua resolver mặc định\ndig @8.8.8.8 api.example.com           # tra qua resolver khác → so sánh\ndig api.example.com +trace             # đi từ root, xem tầng nào trả lời\ndig api.example.com NS                 # name server nào có thẩm quyền\ngetent hosts api.example.com           # cách HỆ ĐIỀU HÀNH phân giải\n```\n\n```text\nKỹ thuật quan trọng nhất: SO SÁNH hai resolver.\n  Kết quả khác nhau ⇒ vấn đề là CACHE, chờ TTL hoặc xoá cache.\n  Kết quả giống nhau ⇒ bản ghi thật sự sai, sửa ở nhà cung cấp DNS.\n```\n\nVà `getent hosts` khác `dig` ở một điểm hữu ích: nó đi qua toàn bộ cơ chế phân giải của hệ điều hành, kể cả `/etc/hosts` — nên nó bắt được trường hợp một dòng trong `/etc/hosts` đang ghi đè mọi thứ.\n\n**Round-robin DNS không phải cân bằng tải:**\n\n```text\nMột tên → nhiều bản ghi A ⇒ client tự chọn một cái.\n\nNhưng DNS KHÔNG BIẾT máy nào đang chết.\n⇒ Một máy sập, DNS vẫn trả IP của nó ⇒ một phần người dùng gặp lỗi\n  cho tới khi bạn sửa bản ghi VÀ cache hết hạn.\n\n⇒ Cân bằng tải thật phải có health check\n  ([[mo-rong-va-can-bang-tai]]).\n```\n\n## Tại sao cần nó\n\nVì DNS là **điểm hỏng chung** đứng trước mọi thứ khác:\n\n```text\nDNS hỏng ⇒ mọi dịch vụ đều \"không truy cập được\"\n        ⇒ và log ứng dụng của bạn không ghi gì cả,\n          vì request chưa bao giờ tới nơi.\n```\n\n**Ba sự cố DNS kinh điển:**\n\n```text\n① Quên gia hạn tên miền\n   Toàn bộ dịch vụ biến mất. Bật TỰ ĐỘNG GIA HẠN và\n   đặt cảnh báo 60 ngày trước hạn.\n\n② Đổi IP mà không hạ TTL trước\n   Một phần người dùng đi vào máy cũ hàng giờ.\n\n③ Ứng dụng cache DNS vĩnh viễn\n   Chuyển đổi dự phòng của CSDL không có tác dụng\n   cho tới khi restart ứng dụng.\n```\n\n**DNS trong nội bộ:** trong Docker và Kubernetes, DNS là cơ chế **service discovery** — `db:5432` phân giải được là nhờ một DNS server nội bộ. Nên khi hai container \"không thấy nhau\", một trong những việc đầu tiên là kiểm tra phân giải tên từ **bên trong** container ([[mang-va-ket-noi]]).\n\n## So sánh\n\n| Bản ghi | Trỏ tới | Ghi chú |\n|---|---|---|\n| `A` | IPv4 | dùng được ở gốc tên miền |\n| `AAAA` | IPv6 | — |\n| `CNAME` | tên khác | **không** đặt ở gốc |\n| `TXT` | văn bản | xác minh sở hữu, SPF |\n| `NS` | name server | uỷ quyền tên miền |\n\n## Dễ nhầm\n\n**1. Đổi IP mà không hạ TTL trước.** Một phần người dùng kẹt ở máy cũ.\n\n**2. Tắt máy cũ ngay sau khi đổi DNS.** Luôn có cache đến muộn.\n\n**3. Đặt CNAME ở gốc tên miền.** Chuẩn không cho.\n\n**4. Không biết ứng dụng đang cache DNS.** Chuyển đổi dự phòng không có tác dụng.\n\n**5. Coi round-robin DNS là cân bằng tải.** Không có health check.\n\n**6. Quên gia hạn tên miền.**\n\n**7. Chỉ tra bằng một resolver.** So sánh hai cái mới biết là cache hay bản ghi.\n\n**8. Quên `/etc/hosts` đang ghi đè.** Dùng `getent hosts` để phát hiện.\n\n**9. Không theo dõi thời gian phân giải DNS.** Nó nằm trong độ trễ người dùng cảm nhận.\n\n## Mẹo nhớ\n\n> **TTL quyết định bạn chuyển máy chủ nhanh được tới đâu — hạ nó TRƯỚC vài ngày.**\n>\n> **So sánh hai resolver: khác nhau = cache, giống nhau = bản ghi sai.**\n>\n> **Giữ máy cũ chạy thêm sau khi đổi DNS. Luôn có cache đến muộn.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Chuỗi phân giải DNS đi qua những tầng cache nào?\n2. TTL làm gì, và nó ảnh hưởng thế nào khi bạn đổi IP?\n3. Quy trình chuyển máy chủ không gián đoạn gồm mấy bước?\n4. Vì sao round-robin DNS không phải cân bằng tải?\n5. So sánh hai resolver cho biết điều gì?\n\n## Tự viết lại\n\nKhông nhìn lại, viết kế hoạch chuyển toàn bộ hệ thống sang nhà cung cấp mới:\n\n```text\n① làm gì trước 48 giờ\n② thứ tự các bước lúc chuyển\n③ giữ hạ tầng cũ bao lâu, vì sao\n④ ba lệnh kiểm chứng đã chuyển xong\n```\n\nTự kiểm: bước ③ của bạn dựa vào TTL nào — TTL cũ hay TTL mới?\n\n## Thử sức\n\nSau khi chuyển máy chủ, khoảng 30% người dùng vẫn báo lỗi, số còn lại bình thường. Bạn đã đổi bản ghi A từ hai giờ trước.\n\nBa câu để trả lời: nguyên nhân khả dĩ nhất; bạn xác nhận bằng lệnh nào; và bạn xử lý **ngay bây giờ** thế nào cho 30% kia. Câu khó nhất: nếu TTL của bản ghi cũ là 86400 (một ngày) và bạn không hạ trước, có cách nào rút ngắn thời gian chờ không — hay chỉ còn cách giữ máy cũ chạy?",
+    "tags": [
+      "mang",
+      "dns",
+      "ten-mien",
+      "van-hanh"
+    ],
+    "order": 3,
+    "level": "co-ban",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-02T16:00:00.000Z",
+    "updatedAt": "2026-01-02T16:00:00.000Z"
+  },
+  {
+    "id": "note-tls-va-bat-tay-ma-hoa",
+    "topicId": "topic-network",
+    "title": "TLS và bắt tay mã hoá",
+    "slug": "tls-va-bat-tay-ma-hoa",
+    "summary": "Cái gì thực sự xảy ra trong 100ms bắt tay, SNI, ALPN, và cách đọc lỗi chứng chỉ.",
+    "content": "> **Sau bài này bạn sẽ:** đọc được đầu ra của `openssl s_client`, và chẩn đoán được lỗi TLS thay vì đoán.\n\n## Ý tưởng chính\n\nTLS giải một bài toán nghe như không thể: **hai bên chưa từng gặp nhau, đang nói chuyện qua một đường ai cũng nghe được, làm sao thống nhất một bí mật chung?**\n\nLời giải dùng mật mã bất đối xứng cho phần **thoả thuận**, rồi chuyển sang mật mã đối xứng cho phần **truyền dữ liệu** — vì cái đầu an toàn nhưng chậm, cái sau nhanh nhưng cần bí mật chung.\n\n## Mental model\n\nHãy nghĩ tới **hộp có ổ khoá và chìa**.\n\n> Bạn muốn gửi bí mật cho một người lạ. Bạn không thể gửi chìa khoá qua đường — ai cũng chặn được.\n>\n> Nên người đó gửi cho bạn một **ổ khoá đang mở** (khoá công khai). Ai lấy cũng được, không sao. Bạn bỏ bí mật vào hộp, **bấm ổ khoá đó lại**, gửi đi. Chỉ người giữ **chìa** (khoá riêng) mở được.\n>\n> Nhưng còn một câu hỏi: **ổ khoá này có đúng của người bạn muốn không?** Nên trên ổ có **con dấu của một cơ quan chứng thực** mà bạn tin.\n\nCon dấu đó là chứng chỉ. Và chi tiết cuối cùng: sau khi trao đổi xong bí mật, hai bên **bỏ hộp khoá đi** và dùng một mã đơn giản hơn nhiều — vì nó nhanh hơn hàng trăm lần.\n\n## Ví dụ nhỏ\n\n```bash\nopenssl s_client -connect api.example.com:443 -servername api.example.com\n```\n\n## Code chạy thế nào\n\n**Bắt tay TLS 1.3 — một round-trip:**\n\n```text\nClient                                    Server\n  │─ ClientHello ─────────────────────────▶│\n  │   phiên bản, bộ mã hoá hỗ trợ,          │\n  │   SNI (tên miền muốn nói chuyện),       │\n  │   ALPN (h2? http/1.1?),                 │\n  │   key share (đã đoán trước)             │\n  │                                          │\n  │◀─ ServerHello + chứng chỉ + Finished ───│\n  │   chọn bộ mã, key share của server       │\n  │                                          │\n  │─ Finished ─────────────────────────────▶│\n  │        (đã mã hoá từ đây)                │\n\nTLS 1.2 cần HAI round-trip. TLS 1.3 gộp còn MỘT.\n⇒ Với round-trip 50ms, đó là tiết kiệm 50ms cho MỌI kết nối mới.\n```\n\n**Ba trường trong ClientHello đáng nhớ vì chúng gây sự cố thật:**\n\n```text\nSNI — tên miền, gửi ở dạng RÕ, TRƯỚC khi mã hoá\n  Vì sao cần: một IP phục vụ nhiều tên miền, server phải biết\n  chọn chứng chỉ nào TRƯỚC khi mã hoá.\n  ⇒ Quên `-servername` khi test bằng openssl ⇒ nhận chứng chỉ SAI\n    và tưởng máy chủ cấu hình hỏng.\n\nALPN — thoả thuận giao thức tầng trên (h2 / http/1.1)\n  ⇒ HTTP/2 được chọn Ở ĐÂY, không phải sau khi kết nối xong.\n\nBộ mã hoá — danh sách thuật toán client hỗ trợ\n  ⇒ Không giao nhau với danh sách của server ⇒ handshake failure.\n    Đây là lỗi khi client rất cũ gặp server đã tắt giao thức cũ.\n```\n\n## Cú pháp\n\n**Đọc lỗi chứng chỉ — mỗi thông báo một nguyên nhân:**\n\n```text\nunable to get local issuer certificate\n  ⇒ THIẾU CHỨNG CHỈ TRUNG GIAN ở phía server.\n  ⇒ Trình duyệt thường tự tải được nên vẫn vào được;\n    curl và app di động thì KHÔNG.\n  ⇒ Sửa: dùng fullchain.pem ([[https-va-chung-chi]]).\n\ncertificate has expired\n  ⇒ Hết hạn. Kiểm tự động gia hạn CÓ reload máy chủ không.\n\nhostname mismatch\n  ⇒ Tên trong chứng chỉ không khớp tên đang gọi.\n  ⇒ Thường do thiếu tên trong SAN, hoặc gọi bằng IP.\n\nself signed certificate\n  ⇒ Chứng chỉ không do CA nào bạn tin ký.\n  ⇒ Thường gặp khi có proxy chặn giữa (thiết bị của công ty).\n\nhandshake failure\n  ⇒ Không thống nhất được phiên bản hoặc bộ mã hoá.\n```\n\n**Kiểm tra thực tế:**\n\n```bash\n# Chứng chỉ còn hạn tới bao giờ, và có chuỗi đầy đủ không\nopenssl s_client -connect example.com:443 -servername example.com < /dev/null 2>/dev/null \\\n  | openssl x509 -noout -dates -subject -issuer\n\n# Xem chuỗi chứng chỉ (thiếu trung gian sẽ lộ ra ở đây)\nopenssl s_client -connect example.com:443 -servername example.com -showcerts < /dev/null\n\n# ALPN có thoả thuận được h2 không\nopenssl s_client -connect example.com:443 -alpn h2 < /dev/null 2>/dev/null | grep ALPN\n```\n\nLệnh đầu là thứ nên đưa vào một job kiểm tra định kỳ: nó trả lời \"chứng chỉ còn bao nhiêu ngày\" mà không cần chờ trình duyệt báo lỗi.\n\n**Bí mật chuyển tiếp — vì sao nó đáng quan tâm:**\n\n```text\nKhông có forward secrecy:\n  Kẻ tấn công ghi lại toàn bộ traffic mã hoá hôm nay.\n  Ba năm sau lấy được khoá riêng của server\n  ⇒ giải mã được TOÀN BỘ dữ liệu đã ghi.\n\nCó forward secrecy (ECDHE — mặc định của TLS 1.3):\n  Mỗi phiên dùng một khoá tạm, vứt đi sau khi xong.\n  Lộ khoá riêng của server ⇒ KHÔNG giải mã được các phiên cũ.\n```\n\nTLS 1.3 bắt buộc điều này, nên đây là một lý do nữa để tắt TLS 1.0/1.1.\n\n**mTLS — cả hai bên cùng xuất trình chứng chỉ:**\n\n```text\nTLS thường:  client xác minh server.\nmTLS:        server cũng xác minh CLIENT bằng chứng chỉ.\n\nDùng cho: giao tiếp giữa các service nội bộ, thiết bị IoT, API ngân hàng.\nĐánh đổi: phải cấp phát, phân phối và XOAY chứng chỉ cho mọi client\n— chi phí vận hành thật, đừng chọn nếu chưa cần.\n```\n\n## Tại sao cần nó\n\nVì TLS thêm độ trễ vào **mọi kết nối mới**, và có ba cách giảm:\n\n```text\n① TLS 1.3            2 round-trip → 1\n② Tái dùng kết nối    request thứ hai: 0 round-trip bắt tay\n③ Session resumption  kết nối lại nhanh hơn nhờ vé phiên\n④ Kết thúc TLS ở BIÊN (CDN/load balancer)\n   ⇒ bắt tay diễn ra gần người dùng ⇒ round-trip ngắn hơn nhiều\n   ⇒ bên trong chạy HTTP thuần\n```\n\nCách ④ thường cho cải thiện lớn nhất với người dùng ở xa, vì nó rút ngắn chính cái **khoảng cách vật lý** của các round-trip bắt tay.\n\n**Và cần nhắc lại giới hạn của TLS:** nó bảo vệ **đường truyền**, không bảo vệ ứng dụng. Một API có lỗ hổng phân quyền thì bật HTTPS xong vẫn có lỗ hổng đó — chỉ là kẻ tấn công khai thác qua kênh đã mã hoá ([[tong-quan-owasp-top-10]]).\n\n## So sánh\n\n| | TLS 1.2 | TLS 1.3 |\n|---|---|---|\n| Round-trip bắt tay | 2 | **1** |\n| Bộ mã hoá yếu | còn cho phép | đã loại bỏ |\n| Forward secrecy | tuỳ chọn | **bắt buộc** |\n| Kết nối lại | session ID/ticket | 0-RTT (có rủi ro lặp lại) |\n\n## Dễ nhầm\n\n**1. Quên `-servername` khi test bằng openssl.** Nhận chứng chỉ sai và chẩn đoán nhầm.\n\n**2. Dùng `cert.pem` thay `fullchain.pem`.** Trình duyệt vào được, app thì không.\n\n**3. Gia hạn chứng chỉ mà không reload máy chủ.**\n\n**4. Không cảnh báo trước hạn.** Sự cố toàn phần, không báo trước.\n\n**5. Còn bật TLS 1.0/1.1.**\n\n**6. Gọi API bằng IP** rồi ngạc nhiên vì hostname mismatch.\n\n**7. Tắt xác minh chứng chỉ cho nhanh** (`rejectUnauthorized: false`) rồi để nguyên khi lên production.\n\n**8. Tưởng HTTPS làm ứng dụng an toàn.**\n\n**9. Dùng mTLS khi chưa cần.** Chi phí vận hành xoay chứng chỉ là thật.\n\n## Mẹo nhớ\n\n> **Bất đối xứng để THOẢ THUẬN bí mật, đối xứng để TRUYỀN dữ liệu.**\n>\n> **SNI đi ở dạng RÕ — nên test bằng openssl phải có `-servername`.**\n>\n> **`unable to get local issuer certificate` = thiếu chứng chỉ trung gian.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. Vì sao TLS dùng cả mật mã bất đối xứng lẫn đối xứng?\n2. SNI là gì, vì sao nó phải đi ở dạng rõ, và nó gây nhầm lẫn gì khi test?\n3. Bốn thông báo lỗi chứng chỉ và nguyên nhân từng cái?\n4. Forward secrecy bảo vệ khỏi kịch bản nào?\n5. Bốn cách giảm chi phí bắt tay, cái nào hiệu quả nhất với người dùng ở xa?\n\n## Tự viết lại\n\nKhông nhìn lại, viết:\n\n```text\n① Lệnh kiểm tra chứng chỉ của một tên miền còn hạn bao lâu\n② Lệnh xác minh chuỗi chứng chỉ đầy đủ\n③ Một job kiểm tra định kỳ và cảnh báo trước 21 ngày\n④ Ba lỗi TLS thường gặp và cách sửa từng cái\n```\n\nTự kiểm: lệnh ① của bạn có `-servername` không, và nếu thiếu thì kết quả sai thế nào?\n\n## Thử sức\n\nỨng dụng di động báo lỗi SSL khi gọi API. Mở cùng URL đó trên trình duyệt máy tính thì **hoàn toàn bình thường**.\n\nBa câu để trả lời: nguyên nhân khả dĩ nhất và vì sao hai môi trường khác nhau; bạn xác nhận bằng lệnh nào; và cách sửa. Câu khó nhất: nếu chuỗi chứng chỉ đã đầy đủ mà app vẫn lỗi, hai nguyên nhân nào còn lại — và một trong chúng liên quan tới mạng của chính người dùng?",
+    "tags": [
+      "mang",
+      "tls",
+      "https",
+      "bao-mat"
+    ],
+    "order": 4,
+    "level": "trung-cap",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-02T17:00:00.000Z",
+    "updatedAt": "2026-01-02T17:00:00.000Z"
+  },
+  {
+    "id": "note-http1-http2-http3",
+    "topicId": "topic-network",
+    "title": "HTTP/1.1, HTTP/2 và HTTP/3",
+    "slug": "http1-http2-http3",
+    "summary": "Vì sao gộp file từng là tối ưu và giờ thì không, và HTTP/3 giải quyết vấn đề nào mà HTTP/2 không giải được.",
+    "content": "> **Sau bài này bạn sẽ:** biết mỗi phiên bản giải quyết vấn đề gì, và vì sao vài lời khuyên tối ưu web đã lỗi thời.\n\n## Ý tưởng chính\n\nBa phiên bản HTTP giải quyết cùng một vấn đề ở ba tầng khác nhau: **làm sao gửi nhiều thứ cùng lúc trên một kết nối mà không cái nào phải chờ cái nào**.\n\nHTTP/1.1 không giải được. HTTP/2 giải ở tầng ứng dụng nhưng vướng TCP. HTTP/3 đổi luôn tầng giao vận.\n\n## Mental model\n\nHãy nghĩ tới **quầy thanh toán ở siêu thị**.\n\n> **HTTP/1.1** — một quầy, phục vụ **hết người này mới tới người sau**. Người trước mua nhiều thì cả hàng chờ. Cách chữa duy nhất: **mở thêm quầy** (mở thêm kết nối), nhưng siêu thị chỉ cho mở 6 quầy.\n>\n> **HTTP/2** — một quầy nhưng nhân viên xử lý **xen kẽ**: quét vài món của người này, vài món của người kia. Không ai phải chờ hết hàng của người trước.\n>\n> Nhưng cả siêu thị dùng **chung một băng chuyền**. Băng chuyền kẹt một chỗ ⇒ **tất cả** dừng, dù nhân viên vẫn rảnh.\n>\n> **HTTP/3** — thay băng chuyền bằng nhiều đường ray độc lập. Một đường kẹt, các đường khác vẫn chạy.\n\nBăng chuyền chung đó là TCP. Và \"một chỗ kẹt làm tất cả dừng\" là **head-of-line blocking** — khái niệm trung tâm của bài này.\n\n## Ví dụ nhỏ\n\n```text\nHTTP/1.1  6 kết nối × 1 request tại một thời điểm\nHTTP/2    1 kết nối × nhiều stream song song  (nhưng chung 1 TCP)\nHTTP/3    1 kết nối QUIC/UDP × nhiều stream ĐỘC LẬP THẬT SỰ\n```\n\n## Code chạy thế nào\n\n**HTTP/1.1 và giới hạn của nó:**\n\n```text\nMột kết nối phục vụ MỘT request tại một thời điểm.\nTrình duyệt bù bằng cách mở ~6 kết nối song song mỗi tên miền.\n\n⇒ Trang có 60 tài nguyên: xếp thành 10 đợt, mỗi đợt 6 cái.\n⇒ Và mỗi kết nối phải trả phí bắt tay TCP + TLS riêng.\n\nCác \"mẹo tối ưu\" ra đời từ chính giới hạn này:\n  gộp file JS/CSS, sprite ảnh, chia nhỏ ra nhiều tên miền (domain sharding)\n```\n\n**HTTP/2 làm ba việc:**\n\n```text\n① GHÉP KÊNH   nhiều stream trên MỘT kết nối, xen kẽ nhau\n   ⇒ 60 tài nguyên đi cùng lúc, không xếp hàng ở tầng HTTP\n\n② NÉN HEADER (HPACK)\n   Header HTTP lặp lại rất nhiều giữa các request (cookie, user-agent).\n   HTTP/2 gửi bảng chỉ mục thay vì lặp lại toàn văn.\n\n③ NHỊ PHÂN thay vì văn bản\n   Phân tích nhanh hơn, ít lỗi mơ hồ hơn.\n```\n\nHệ quả trực tiếp: **các mẹo tối ưu cũ trở thành phản tác dụng.**\n\n```text\nGộp toàn bộ JS thành một file:\n  HTTP/1.1 → tốt (ít request)\n  HTTP/2   → XẤU: đổi một dòng ⇒ người dùng tải lại CẢ gói,\n             thay vì chỉ tải lại một mảnh nhỏ.\n\nDomain sharding:\n  HTTP/1.1 → tốt (nhiều kết nối hơn)\n  HTTP/2   → XẤU: mỗi tên miền là một kết nối và một bắt tay TLS riêng,\n             phá đúng lợi ích của ghép kênh.\n```\n\nĐây là ví dụ điển hình của **lời khuyên tối ưu gắn với một ràng buộc đã biến mất** — và là lý do nên hiểu *vì sao* một mẹo tồn tại, không chỉ nhớ mẹo đó.\n\n## Cú pháp\n\n**Head-of-line blocking — hai tầng, đừng lẫn:**\n\n```text\nỞ TẦNG HTTP (HTTP/1.1):\n  request 2 phải chờ request 1 xong.\n  ⇒ HTTP/2 GIẢI QUYẾT XONG.\n\nỞ TẦNG TCP (vẫn còn trong HTTP/2):\n  TCP đảm bảo đúng thứ tự BYTE trên toàn kết nối.\n  Một gói mất ⇒ TCP giữ lại MỌI byte sau nó, kể cả byte\n  thuộc stream khác hoàn toàn.\n  ⇒ 10 stream song song, mất một gói ⇒ CẢ 10 cùng dừng.\n\n⇒ HTTP/2 trên mạng mất gói có thể CHẬM HƠN HTTP/1.1,\n  vì HTTP/1.1 dùng 6 kết nối độc lập — một cái kẹt,\n  năm cái kia vẫn chạy.\n```\n\n**HTTP/3 giải quyết bằng cách bỏ TCP:**\n\n```text\nQUIC chạy trên UDP và tự cài đặt lại phần tin cậy —\nnhưng THEO TỪNG STREAM, không theo cả kết nối.\n\n⇒ Mất gói của stream 3 ⇒ chỉ stream 3 chờ. Stream 1, 2, 4 chạy tiếp.\n\nHai lợi ích nữa:\n  ① Bắt tay gộp: kết nối + mã hoá trong 1 round-trip (TLS 1.3 nằm trong QUIC)\n  ② DI CHUYỂN KẾT NỐI: đổi Wi-Fi sang 4G, kết nối KHÔNG đứt\n     — vì QUIC định danh bằng connection ID, không bằng cặp (IP, cổng).\n```\n\nLợi ích ② là thứ người dùng di động cảm nhận rõ nhất, và không có cách nào đạt được bằng TCP.\n\n**Kiểm tra đang dùng phiên bản nào:**\n\n```bash\ncurl -I --http2 https://example.com      # xem có \"HTTP/2\" trong phản hồi\ncurl -I --http3 https://example.com\n```\n\n```nginx\n# Bật HTTP/2 trong Nginx\nlisten 443 ssl;\nhttp2 on;\n```\n\n## Tại sao cần nó\n\nVì nó cho một danh sách rõ ràng những gì **nên** và **không nên** làm hôm nay:\n\n```text\nCÒN ĐÚNG:\n  □ Nén (gzip/brotli)\n  □ Cache tốt, đặt tên file có hash nội dung\n  □ Ảnh đúng kích thước và định dạng\n  □ Giảm tổng lượng byte gửi xuống\n\nĐÃ LỖI THỜI (với HTTP/2 trở lên):\n  ✗ Gộp mọi thứ thành một file khổng lồ\n  ✗ Domain sharding\n  ✗ Sprite ảnh\n  ✗ Nhét ảnh nhỏ vào CSS dưới dạng base64\n```\n\n**Một tính năng đã bị loại bỏ, đáng nhớ vì sao:** HTTP/2 Server Push cho phép server chủ động gửi tài nguyên trước khi client hỏi. Nghe hợp lý, nhưng server **không biết** client đã có thứ đó trong cache chưa — nên nó thường gửi thừa. Trình duyệt đã bỏ hỗ trợ; thay thế là `<link rel=\"preload\">`, để client tự quyết định.\n\n**Và một lưu ý vận hành:** HTTP/3 chạy trên UDP cổng 443. Một số tường lửa doanh nghiệp chặn UDP ra ngoài — nên client sẽ tự lùi về HTTP/2. Điều đó bình thường, nhưng nó có nghĩa là **bạn không thể giả định mọi người dùng đều được hưởng HTTP/3**.\n\n## So sánh\n\n| | HTTP/1.1 | HTTP/2 | HTTP/3 |\n|---|---|---|---|\n| Tầng giao vận | TCP | TCP | **QUIC/UDP** |\n| Ghép kênh | ❌ | ✅ | ✅ |\n| HOL blocking ở HTTP | có | không | không |\n| HOL blocking ở giao vận | có | **vẫn có** | không |\n| Round-trip thiết lập | 2–3 | 2–3 | **1** |\n| Đổi mạng không đứt | ❌ | ❌ | ✅ |\n\n## Dễ nhầm\n\n**1. Gộp file khổng lồ trên HTTP/2.** Đổi một dòng, tải lại cả gói.\n\n**2. Domain sharding trên HTTP/2.** Phá đúng lợi ích ghép kênh.\n\n**3. Tưởng HTTP/2 xoá hết head-of-line blocking.** Nó chỉ xoá ở tầng HTTP.\n\n**4. Chờ HTTP/3 sửa một hệ thống chậm vì backend.** Nó không liên quan.\n\n**5. Dùng Server Push.** Đã bị loại bỏ; dùng `preload`.\n\n**6. Giả định mọi client đều dùng HTTP/3.** UDP có thể bị chặn.\n\n**7. Bật HTTP/2 mà không có HTTPS.** Trình duyệt chỉ hỗ trợ HTTP/2 trên TLS.\n\n**8. Nhớ mẹo tối ưu mà không nhớ ràng buộc sinh ra nó.** Mẹo hết đúng khi ràng buộc biến mất.\n\n## Mẹo nhớ\n\n> **HTTP/2 xoá head-of-line ở tầng HTTP. HTTP/3 xoá nốt ở tầng giao vận.**\n>\n> **Gộp file và domain sharding đã thành PHẢN TÁC DỤNG.**\n>\n> **QUIC định danh bằng connection ID ⇒ đổi Wi-Fi sang 4G không đứt kết nối.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. HTTP/1.1 hạn chế ở đâu, và trình duyệt bù bằng cách nào?\n2. HTTP/2 làm ba việc gì?\n3. Head-of-line blocking ở hai tầng — HTTP/2 xoá được cái nào?\n4. Vì sao HTTP/2 có thể chậm hơn HTTP/1.1 trên mạng mất gói?\n5. Ba lợi ích của QUIC, cái nào người dùng di động cảm nhận rõ nhất?\n\n## Tự viết lại\n\nKhông nhìn lại:\n\n```text\n① Bốn mẹo tối ưu web CÒN đúng và bốn mẹo ĐÃ lỗi thời, kèm lý do\n② Cấu hình Nginx bật HTTP/2\n③ Lệnh kiểm tra một trang đang phục vụ bằng phiên bản nào\n④ Giải thích cho đồng nghiệp vì sao không nên gộp hết JS thành một file\n```\n\nTự kiểm: lời giải thích ở ④ của bạn có nêu được **cái gì đã thay đổi** so với thời mẹo đó đúng không?\n\n## Thử sức\n\nĐội bạn vừa bật HTTP/2. Đo lại: người dùng ở thành phố lớn nhanh hơn 15%, nhưng người dùng ở vùng mạng yếu **chậm hơn** so với trước.\n\nBa câu để trả lời: giải thích vì sao hai nhóm cho kết quả ngược nhau; bạn xác nhận giả thuyết bằng số liệu nào; và hai hướng xử lý. Câu khó nhất: nếu bật HTTP/3 cho nhóm mạng yếu, điều gì cải thiện và điều gì **vẫn không** cải thiện?",
+    "tags": [
+      "mang",
+      "http",
+      "hieu-nang",
+      "giao-thuc"
+    ],
+    "order": 5,
+    "level": "trung-cap",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-02T18:00:00.000Z",
+    "updatedAt": "2026-01-02T18:00:00.000Z"
+  },
+  {
+    "id": "note-tuong-lua-nat-va-vpn",
+    "topicId": "topic-network",
+    "title": "Tường lửa, NAT và mạng riêng",
+    "slug": "tuong-lua-nat-va-vpn",
+    "summary": "Vì sao container có IP mà Internet không gọi vào được, security group hoạt động ra sao, và bastion để làm gì.",
+    "content": "> **Sau bài này bạn sẽ:** thiết kế được một mạng nhiều tầng, và chẩn đoán được \"gói tin biến mất ở đâu\".\n\n## Ý tưởng chính\n\nTrong một hệ thống thật, **phần lớn máy không nên nói chuyện trực tiếp với Internet**. Chúng nằm sau nhiều lớp: tường lửa, NAT, mạng riêng.\n\nMỗi lớp là một chỗ gói tin có thể bị chặn — và cũng là một chỗ cần kiểm khi có sự cố kết nối.\n\n## Mental model\n\nHãy nghĩ tới **một toà nhà văn phòng có nhiều vòng bảo vệ**.\n\n> **Sảnh ngoài** — ai vào cũng được. Đó là load balancer, khu vực công cộng.\n>\n> **Cửa có thẻ từ** — chỉ nhân viên. Đó là tường lửa: kiểm ai được qua, đi hướng nào.\n>\n> **Phòng máy chủ trong cùng** — không có cửa ra ngoài trực tiếp. Muốn vào phải qua sảnh, qua cửa thẻ, rồi mới tới. Đó là mạng riêng.\n>\n> Và nhân viên trong phòng máy chủ vẫn **gọi điện ra ngoài được**, qua tổng đài chung của toà nhà — số hiện lên là số tổng đài, không phải số bàn của họ. Đó là **NAT**.\n\nÝ cuối là điều quan trọng nhất: NAT cho phép **đi ra** mà không cho phép **gọi vào**. Đó là lý do container tải được thư viện từ Internet nhưng Internet không gọi thẳng vào container được.\n\n## Ví dụ nhỏ\n\n```text\nInternet\n   │\n[ Load balancer ]  ← chỉ cái này có IP công khai\n   │\n[ Ứng dụng ]       ← mạng riêng, ra ngoài qua NAT\n   │\n[ CSDL ]           ← mạng riêng, KHÔNG ra Internet\n```\n\n## Code chạy thế nào\n\n**NAT — một IP công khai cho nhiều máy:**\n\n```text\nMáy nội bộ 10.0.1.5:54321 gửi ra Internet.\nThiết bị NAT:\n  ① Đổi nguồn thành 203.0.113.7:61000  (IP công khai của nó)\n  ② GHI VÀO BẢNG: 61000 ↔ 10.0.1.5:54321\n  ③ Phản hồi về cổng 61000 ⇒ tra bảng ⇒ chuyển về đúng máy\n\n⇒ Đi ra: được. Vào từ ngoài: KHÔNG, vì không có mục nào trong bảng.\n⇒ Muốn cho vào phải khai TRƯỚC: port forwarding / publish port.\n```\n\nĐây chính xác là cơ chế `-p 8080:80` của Docker: nó tạo một mục ánh xạ để gói tin từ ngoài biết đường vào ([[mang-va-ket-noi]]).\n\nVà nó giải thích một hành vi hay gây bối rối: **kết nối NAT có thời hạn**. Bảng ánh xạ bị dọn sau vài phút không có lưu lượng — nên kết nối nhàn rỗi lâu (WebSocket, kết nối CSDL trong pool) có thể \"chết im lặng\". Cách chữa là **keep-alive định kỳ**.\n\n**Tường lửa — hai kiểu từ chối, hai triệu chứng:**\n\n```text\nDROP    nuốt gói, không trả lời gì\n        ⇒ client thấy TIMEOUT\n        ⇒ dùng ở biên: không tiết lộ cổng nào tồn tại\n\nREJECT  trả lời \"không được\"\n        ⇒ client thấy CONNECTION REFUSED ngay\n        ⇒ dùng trong mạng nội bộ: hỏng thì biết ngay,\n          không phải chờ hết timeout\n```\n\nPhân biệt được hai cái này giúp bạn đọc lỗi ngược lại: **timeout thường là tường lửa; refused thường là dịch vụ không chạy** ([[tcp-va-udp]]).\n\n## Cú pháp\n\n**Security group — tường lửa theo nhóm, không theo IP:**\n\n```text\n❌ Theo IP: \"cho 10.0.1.5 vào cổng 5432\"\n   ⇒ Thêm máy ứng dụng ⇒ phải sửa quy tắc. Máy đổi IP ⇒ hỏng.\n\n✅ Theo nhóm: \"cho MỌI máy trong nhóm sg-app vào cổng 5432\"\n   ⇒ Thêm máy vào nhóm là xong. Quy tắc mô tả VAI TRÒ, không mô tả địa chỉ.\n```\n\n```text\nNguyên tắc:\n  □ Mặc định TỪ CHỐI hết, chỉ mở đúng cái cần\n  □ Nói rõ hướng: vào (inbound) và ra (outbound) là hai chuyện khác nhau\n  □ Đừng bỏ qua chiều RA — nhiều cuộc tấn công lộ ra ở đó\n    (máy chủ bị chiếm cố gọi ra máy chủ điều khiển)\n```\n\n**Ba tầng mạng điển hình:**\n\n```text\nCÔNG KHAI    load balancer, bastion\n             có IP công khai, vào từ Internet được\n\nRIÊNG        ứng dụng, worker\n             KHÔNG có IP công khai\n             ra Internet qua NAT gateway\n             vào chỉ từ load balancer\n\nRIÊNG SÂU    CSDL, cache\n             không ra Internet, không vào từ Internet\n             chỉ nhận từ tầng ứng dụng\n```\n\nĐiều làm cấu trúc này có giá trị: **một máy ứng dụng bị chiếm cũng không mở được đường thẳng từ Internet vào CSDL** — kẻ tấn công phải đi qua đúng con đường bạn đã kiểm soát và ghi log.\n\n**Bastion — điểm vào duy nhất cho quản trị:**\n\n```bash\n# Đi xuyên qua bastion, không cần đăng nhập vào nó\nssh -J bastion.example.com app@10.0.1.5\n\n# Chuyển tiếp cổng CSDL về máy mình để dùng công cụ đồ hoạ\nssh -L 5432:db.internal:5432 bastion.example.com\n```\n\n```text\nVì sao có bastion:\n  □ Một chỗ duy nhất để ghi log truy cập quản trị\n  □ Một chỗ duy nhất để thu hồi quyền khi ai đó rời đội\n  □ CSDL và ứng dụng không cần mở cổng SSH ra Internet\n\nCấu hình bastion nghiêm túc: chỉ đăng nhập bằng khoá,\ngiới hạn IP nguồn, bật MFA, và ghi log phiên.\n```\n\nNhiều nền tảng nay thay bastion bằng dịch vụ truy cập qua tác nhân (SSM Session Manager, IAP) — cùng mục đích, nhưng không cần mở cổng SSH nào cả.\n\n## Tại sao cần nó\n\nVì \"không kết nối được\" có bốn nguyên nhân ở bốn tầng khác nhau, và bạn cần loại trừ theo thứ tự:\n\n```text\n① DNS         dig ten-mien\n② Định tuyến  ping / traceroute        (nhớ: ICMP hay bị chặn)\n③ Tường lửa   nc -zv host port  → timeout = chặn, refused = không có dịch vụ\n④ Dịch vụ     ss -tlnp trên chính máy đó → có nghe cổng đó không?\n              và nghe ở 0.0.0.0 hay chỉ 127.0.0.1?\n```\n\nBước ④ đáng nhấn: một dịch vụ nghe ở `127.0.0.1` sẽ **từ chối mọi kết nối từ ngoài** dù tường lửa đã mở — và triệu chứng giống hệt như bị chặn.\n\n**Sai lầm cấu hình phổ biến nhất, và hậu quả:**\n\n```text\n0.0.0.0/0 vào cổng 22    ⇒ SSH mở cho cả Internet\n                            → bot dò mật khẩu liên tục trong vài phút\n0.0.0.0/0 vào cổng 5432  ⇒ CSDL mở cho cả Internet\n                            → đây là nguyên nhân của rất nhiều vụ rò rỉ dữ liệu\n\n⇒ Rà soát định kỳ: quy tắc nào đang mở 0.0.0.0/0, và nó có cần không?\n```\n\nNhiều quy tắc kiểu này được thêm \"tạm thời để debug\" rồi không ai gỡ ([[quan-ly-secret-va-cau-hinh]]).\n\n## So sánh\n\n| | DROP | REJECT |\n|---|---|---|\n| Trả lời | không | có (RST/ICMP) |\n| Client thấy | timeout | refused |\n| Lộ thông tin | ít | có |\n| Dùng ở | biên Internet | mạng nội bộ |\n\n## Dễ nhầm\n\n**1. Mở `0.0.0.0/0` cho cổng quản trị hoặc CSDL.**\n\n**2. Quy tắc theo IP thay vì theo nhóm.** Vỡ khi mở rộng.\n\n**3. Bỏ qua chiều ra.** Bỏ mất tín hiệu của máy đã bị chiếm.\n\n**4. Quên NAT có thời hạn.** Kết nối nhàn rỗi chết im lặng.\n\n**5. Kết luận \"bị chặn\" khi dịch vụ nghe ở `127.0.0.1`.**\n\n**6. Kết luận \"máy chết\" vì `ping` không được.** ICMP thường bị chặn.\n\n**7. Mở cổng \"tạm thời để debug\" rồi quên gỡ.**\n\n**8. Không có bastion.** Mở SSH trên mọi máy.\n\n**9. Đặt CSDL ở mạng công khai cho tiện.**\n\n## Mẹo nhớ\n\n> **NAT cho ĐI RA, không cho GỌI VÀO — trừ khi khai trước.**\n>\n> **timeout = tường lửa DROP. refused = không có dịch vụ nghe.**\n>\n> **Quy tắc tường lửa mô tả VAI TRÒ (nhóm), không mô tả địa chỉ.**\n\n## Tự nhớ\n\nKhông nhìn lên, trả lời bằng lời của bạn:\n\n1. NAT hoạt động thế nào, và vì sao nó chặn kết nối từ ngoài vào?\n2. DROP khác REJECT thế nào, dùng cái nào ở đâu?\n3. Ba tầng mạng điển hình, mỗi tầng chứa gì?\n4. Bốn bước loại trừ khi \"không kết nối được\"?\n5. Vì sao security group nên theo nhóm chứ không theo IP?\n\n## Tự viết lại\n\nKhông nhìn lại, thiết kế mạng cho: web + API + Postgres + Redis + worker.\n\n```text\n① máy nào ở tầng nào\n② các quy tắc tường lửa, ghi rõ hướng\n③ quản trị viên vào bằng đường nào\n④ worker gọi API bên ngoài bằng đường nào\n```\n\nTự kiểm: trong thiết kế của bạn, nếu một máy ứng dụng bị chiếm quyền, kẻ tấn công **chạm được tới những gì** — và không chạm được tới gì?\n\n## Thử sức\n\nỨng dụng trên máy chủ A không gọi được CSDL trên máy chủ B. Từ A, `ping B` thành công, nhưng `nc -zv B 5432` thì **treo rồi timeout**.\n\nBa câu để trả lời: kết quả đó loại trừ được những gì và chỉ ra điều gì; ba nguyên nhân còn lại, kèm cách kiểm từng cái; và bạn kiểm tra ở phía B bằng lệnh nào. Câu khó nhất: nếu trên B, `ss -tlnp` cho thấy Postgres đang nghe ở `127.0.0.1:5432`, vì sao triệu chứng lại là **timeout** chứ không phải **refused**?",
+    "tags": [
+      "mang",
+      "tuong-lua",
+      "nat",
+      "bao-mat",
+      "van-hanh"
+    ],
+    "order": 6,
+    "level": "trung-cap",
+    "khung": "v2",
+    "starred": false,
+    "createdAt": "2026-01-02T19:00:00.000Z",
+    "updatedAt": "2026-01-02T19:00:00.000Z"
+  },
+  {
     "id": "note-kieu-du-lieu-va-bien",
     "topicId": "topic-typescript",
     "title": "Kiểu dữ liệu và cách khai báo biến",
@@ -537,8 +900,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-02T02:00:00.000Z",
-    "updatedAt": "2026-01-02T02:00:00.000Z"
+    "createdAt": "2026-01-02T20:00:00.000Z",
+    "updatedAt": "2026-01-02T20:00:00.000Z"
   },
   {
     "id": "note-ham-closure-va-this",
@@ -557,8 +920,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-02T03:00:00.000Z",
-    "updatedAt": "2026-01-02T03:00:00.000Z"
+    "createdAt": "2026-01-02T21:00:00.000Z",
+    "updatedAt": "2026-01-02T21:00:00.000Z"
   },
   {
     "id": "note-mang-object-va-bat-bien",
@@ -577,8 +940,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-02T04:00:00.000Z",
-    "updatedAt": "2026-01-02T04:00:00.000Z"
+    "createdAt": "2026-01-02T22:00:00.000Z",
+    "updatedAt": "2026-01-02T22:00:00.000Z"
   },
   {
     "id": "note-typescript-nhap-mon",
@@ -596,8 +959,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-02T05:00:00.000Z",
-    "updatedAt": "2026-01-02T05:00:00.000Z"
+    "createdAt": "2026-01-02T23:00:00.000Z",
+    "updatedAt": "2026-01-02T23:00:00.000Z"
   },
   {
     "id": "note-async-await-va-event-loop",
@@ -616,8 +979,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": true,
-    "createdAt": "2026-01-02T06:00:00.000Z",
-    "updatedAt": "2026-01-02T06:00:00.000Z"
+    "createdAt": "2026-01-03T00:00:00.000Z",
+    "updatedAt": "2026-01-03T00:00:00.000Z"
   },
   {
     "id": "note-module-va-package-json",
@@ -636,8 +999,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-02T07:00:00.000Z",
-    "updatedAt": "2026-01-02T07:00:00.000Z"
+    "createdAt": "2026-01-03T01:00:00.000Z",
+    "updatedAt": "2026-01-03T01:00:00.000Z"
   },
   {
     "id": "note-generic-trong-typescript",
@@ -654,8 +1017,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-02T08:00:00.000Z",
-    "updatedAt": "2026-01-02T08:00:00.000Z"
+    "createdAt": "2026-01-03T02:00:00.000Z",
+    "updatedAt": "2026-01-03T02:00:00.000Z"
   },
   {
     "id": "note-thu-hep-kieu-va-unknown",
@@ -674,8 +1037,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-02T09:00:00.000Z",
-    "updatedAt": "2026-01-02T09:00:00.000Z"
+    "createdAt": "2026-01-03T03:00:00.000Z",
+    "updatedAt": "2026-01-03T03:00:00.000Z"
   },
   {
     "id": "note-tu-duy-khai-bao-va-jsx",
@@ -693,8 +1056,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-02T10:00:00.000Z",
-    "updatedAt": "2026-01-02T10:00:00.000Z"
+    "createdAt": "2026-01-03T04:00:00.000Z",
+    "updatedAt": "2026-01-03T04:00:00.000Z"
   },
   {
     "id": "note-state-va-vong-doi-render",
@@ -712,8 +1075,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-02T11:00:00.000Z",
-    "updatedAt": "2026-01-02T11:00:00.000Z"
+    "createdAt": "2026-01-03T05:00:00.000Z",
+    "updatedAt": "2026-01-03T05:00:00.000Z"
   },
   {
     "id": "note-useeffect-dung-cach",
@@ -731,8 +1094,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-02T12:00:00.000Z",
-    "updatedAt": "2026-01-02T12:00:00.000Z"
+    "createdAt": "2026-01-03T06:00:00.000Z",
+    "updatedAt": "2026-01-03T06:00:00.000Z"
   },
   {
     "id": "note-hook-tuy-chinh-va-quy-tac-hook",
@@ -750,8 +1113,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-02T13:00:00.000Z",
-    "updatedAt": "2026-01-02T13:00:00.000Z"
+    "createdAt": "2026-01-03T07:00:00.000Z",
+    "updatedAt": "2026-01-03T07:00:00.000Z"
   },
   {
     "id": "note-context-va-quan-ly-state",
@@ -769,8 +1132,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-02T14:00:00.000Z",
-    "updatedAt": "2026-01-02T14:00:00.000Z"
+    "createdAt": "2026-01-03T08:00:00.000Z",
+    "updatedAt": "2026-01-03T08:00:00.000Z"
   },
   {
     "id": "note-hieu-nang-va-render-lai",
@@ -788,8 +1151,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-02T15:00:00.000Z",
-    "updatedAt": "2026-01-02T15:00:00.000Z"
+    "createdAt": "2026-01-03T09:00:00.000Z",
+    "updatedAt": "2026-01-03T09:00:00.000Z"
   },
   {
     "id": "note-form-va-xu-ly-loi",
@@ -808,8 +1171,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-02T16:00:00.000Z",
-    "updatedAt": "2026-01-02T16:00:00.000Z"
+    "createdAt": "2026-01-03T10:00:00.000Z",
+    "updatedAt": "2026-01-03T10:00:00.000Z"
   },
   {
     "id": "note-app-router-va-cau-truc-file",
@@ -827,8 +1190,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-02T17:00:00.000Z",
-    "updatedAt": "2026-01-02T17:00:00.000Z"
+    "createdAt": "2026-01-03T11:00:00.000Z",
+    "updatedAt": "2026-01-03T11:00:00.000Z"
   },
   {
     "id": "note-server-component-va-client-component",
@@ -846,8 +1209,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": true,
-    "createdAt": "2026-01-02T18:00:00.000Z",
-    "updatedAt": "2026-01-02T18:00:00.000Z"
+    "createdAt": "2026-01-03T12:00:00.000Z",
+    "updatedAt": "2026-01-03T12:00:00.000Z"
   },
   {
     "id": "note-tai-du-lieu-va-streaming",
@@ -866,8 +1229,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-02T19:00:00.000Z",
-    "updatedAt": "2026-01-02T19:00:00.000Z"
+    "createdAt": "2026-01-03T13:00:00.000Z",
+    "updatedAt": "2026-01-03T13:00:00.000Z"
   },
   {
     "id": "note-server-actions",
@@ -885,8 +1248,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": true,
-    "createdAt": "2026-01-02T20:00:00.000Z",
-    "updatedAt": "2026-01-02T20:00:00.000Z"
+    "createdAt": "2026-01-03T14:00:00.000Z",
+    "updatedAt": "2026-01-03T14:00:00.000Z"
   },
   {
     "id": "note-route-handler-va-middleware",
@@ -904,8 +1267,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-02T21:00:00.000Z",
-    "updatedAt": "2026-01-02T21:00:00.000Z"
+    "createdAt": "2026-01-03T15:00:00.000Z",
+    "updatedAt": "2026-01-03T15:00:00.000Z"
   },
   {
     "id": "note-toi-uu-anh-font-va-metadata",
@@ -924,8 +1287,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-02T22:00:00.000Z",
-    "updatedAt": "2026-01-02T22:00:00.000Z"
+    "createdAt": "2026-01-03T16:00:00.000Z",
+    "updatedAt": "2026-01-03T16:00:00.000Z"
   },
   {
     "id": "note-caching-va-revalidate",
@@ -944,8 +1307,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-02T23:00:00.000Z",
-    "updatedAt": "2026-01-02T23:00:00.000Z"
+    "createdAt": "2026-01-03T17:00:00.000Z",
+    "updatedAt": "2026-01-03T17:00:00.000Z"
   },
   {
     "id": "note-cu-phap-va-kieu-du-lieu-python",
@@ -963,8 +1326,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T00:00:00.000Z",
-    "updatedAt": "2026-01-03T00:00:00.000Z"
+    "createdAt": "2026-01-03T18:00:00.000Z",
+    "updatedAt": "2026-01-03T18:00:00.000Z"
   },
   {
     "id": "note-list-dict-va-comprehension",
@@ -982,8 +1345,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T01:00:00.000Z",
-    "updatedAt": "2026-01-03T01:00:00.000Z"
+    "createdAt": "2026-01-03T19:00:00.000Z",
+    "updatedAt": "2026-01-03T19:00:00.000Z"
   },
   {
     "id": "note-ham-va-module-python",
@@ -1001,8 +1364,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T02:00:00.000Z",
-    "updatedAt": "2026-01-03T02:00:00.000Z"
+    "createdAt": "2026-01-03T20:00:00.000Z",
+    "updatedAt": "2026-01-03T20:00:00.000Z"
   },
   {
     "id": "note-xu-ly-loi-va-doc-ghi-file",
@@ -1021,8 +1384,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T03:00:00.000Z",
-    "updatedAt": "2026-01-03T03:00:00.000Z"
+    "createdAt": "2026-01-03T21:00:00.000Z",
+    "updatedAt": "2026-01-03T21:00:00.000Z"
   },
   {
     "id": "note-moi-truong-ao-va-quan-ly-goi",
@@ -1041,8 +1404,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T04:00:00.000Z",
-    "updatedAt": "2026-01-03T04:00:00.000Z"
+    "createdAt": "2026-01-03T22:00:00.000Z",
+    "updatedAt": "2026-01-03T22:00:00.000Z"
   },
   {
     "id": "note-class-dataclass-va-oop",
@@ -1061,8 +1424,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T05:00:00.000Z",
-    "updatedAt": "2026-01-03T05:00:00.000Z"
+    "createdAt": "2026-01-03T23:00:00.000Z",
+    "updatedAt": "2026-01-03T23:00:00.000Z"
   },
   {
     "id": "note-type-hint-trong-python",
@@ -1080,8 +1443,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T06:00:00.000Z",
-    "updatedAt": "2026-01-03T06:00:00.000Z"
+    "createdAt": "2026-01-04T00:00:00.000Z",
+    "updatedAt": "2026-01-04T00:00:00.000Z"
   },
   {
     "id": "note-async-trong-python",
@@ -1100,8 +1463,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T07:00:00.000Z",
-    "updatedAt": "2026-01-03T07:00:00.000Z"
+    "createdAt": "2026-01-04T01:00:00.000Z",
+    "updatedAt": "2026-01-04T01:00:00.000Z"
   },
   {
     "id": "note-mo-hinh-ba-vung-cua-git",
@@ -1119,8 +1482,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T08:00:00.000Z",
-    "updatedAt": "2026-01-03T08:00:00.000Z"
+    "createdAt": "2026-01-04T02:00:00.000Z",
+    "updatedAt": "2026-01-04T02:00:00.000Z"
   },
   {
     "id": "note-nhanh-va-merge",
@@ -1139,8 +1502,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T09:00:00.000Z",
-    "updatedAt": "2026-01-03T09:00:00.000Z"
+    "createdAt": "2026-01-04T03:00:00.000Z",
+    "updatedAt": "2026-01-04T03:00:00.000Z"
   },
   {
     "id": "note-rebase-va-lich-su-sach",
@@ -1158,8 +1521,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T10:00:00.000Z",
-    "updatedAt": "2026-01-03T10:00:00.000Z"
+    "createdAt": "2026-01-04T04:00:00.000Z",
+    "updatedAt": "2026-01-04T04:00:00.000Z"
   },
   {
     "id": "note-go-roi-khi-lo-tay",
@@ -1178,8 +1541,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T11:00:00.000Z",
-    "updatedAt": "2026-01-03T11:00:00.000Z"
+    "createdAt": "2026-01-04T05:00:00.000Z",
+    "updatedAt": "2026-01-04T05:00:00.000Z"
   },
   {
     "id": "note-quy-trinh-lam-viec-nhom",
@@ -1198,8 +1561,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T12:00:00.000Z",
-    "updatedAt": "2026-01-03T12:00:00.000Z"
+    "createdAt": "2026-01-04T06:00:00.000Z",
+    "updatedAt": "2026-01-04T06:00:00.000Z"
   },
   {
     "id": "note-stash-cherry-pick-va-worktree",
@@ -1218,8 +1581,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T13:00:00.000Z",
-    "updatedAt": "2026-01-03T13:00:00.000Z"
+    "createdAt": "2026-01-04T07:00:00.000Z",
+    "updatedAt": "2026-01-04T07:00:00.000Z"
   },
   {
     "id": "note-tag-release-va-danh-phien-ban",
@@ -1238,8 +1601,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T14:00:00.000Z",
-    "updatedAt": "2026-01-03T14:00:00.000Z"
+    "createdAt": "2026-01-04T08:00:00.000Z",
+    "updatedAt": "2026-01-04T08:00:00.000Z"
   },
   {
     "id": "note-cau-hinh-git-cho-du-an",
@@ -1258,8 +1621,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T15:00:00.000Z",
-    "updatedAt": "2026-01-03T15:00:00.000Z"
+    "createdAt": "2026-01-04T09:00:00.000Z",
+    "updatedAt": "2026-01-04T09:00:00.000Z"
   },
   {
     "id": "note-vong-doi-mot-lan-goi-http",
@@ -1278,8 +1641,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T16:00:00.000Z",
-    "updatedAt": "2026-01-03T16:00:00.000Z"
+    "createdAt": "2026-01-04T10:00:00.000Z",
+    "updatedAt": "2026-01-04T10:00:00.000Z"
   },
   {
     "id": "note-phuong-thuc-va-ma-trang-thai",
@@ -1298,8 +1661,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T17:00:00.000Z",
-    "updatedAt": "2026-01-03T17:00:00.000Z"
+    "createdAt": "2026-01-04T11:00:00.000Z",
+    "updatedAt": "2026-01-04T11:00:00.000Z"
   },
   {
     "id": "note-thiet-ke-endpoint-rest",
@@ -1317,8 +1680,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T18:00:00.000Z",
-    "updatedAt": "2026-01-03T18:00:00.000Z"
+    "createdAt": "2026-01-04T12:00:00.000Z",
+    "updatedAt": "2026-01-04T12:00:00.000Z"
   },
   {
     "id": "note-idempotency-va-thu-lai",
@@ -1337,8 +1700,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T19:00:00.000Z",
-    "updatedAt": "2026-01-03T19:00:00.000Z"
+    "createdAt": "2026-01-04T13:00:00.000Z",
+    "updatedAt": "2026-01-04T13:00:00.000Z"
   },
   {
     "id": "note-phan-trang-loc-va-sap-xep",
@@ -1357,8 +1720,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T20:00:00.000Z",
-    "updatedAt": "2026-01-03T20:00:00.000Z"
+    "createdAt": "2026-01-04T14:00:00.000Z",
+    "updatedAt": "2026-01-04T14:00:00.000Z"
   },
   {
     "id": "note-loi-versioning-va-tai-lieu",
@@ -1377,8 +1740,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T21:00:00.000Z",
-    "updatedAt": "2026-01-03T21:00:00.000Z"
+    "createdAt": "2026-01-04T15:00:00.000Z",
+    "updatedAt": "2026-01-04T15:00:00.000Z"
   },
   {
     "id": "note-test-de-lam-gi-va-test-cai-gi",
@@ -1395,8 +1758,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T22:00:00.000Z",
-    "updatedAt": "2026-01-03T22:00:00.000Z"
+    "createdAt": "2026-01-04T16:00:00.000Z",
+    "updatedAt": "2026-01-04T16:00:00.000Z"
   },
   {
     "id": "note-unit-test-dau-tien",
@@ -1414,8 +1777,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-03T23:00:00.000Z",
-    "updatedAt": "2026-01-03T23:00:00.000Z"
+    "createdAt": "2026-01-04T17:00:00.000Z",
+    "updatedAt": "2026-01-04T17:00:00.000Z"
   },
   {
     "id": "note-test-double-stub-mock-fake",
@@ -1434,8 +1797,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T00:00:00.000Z",
-    "updatedAt": "2026-01-04T00:00:00.000Z"
+    "createdAt": "2026-01-04T18:00:00.000Z",
+    "updatedAt": "2026-01-04T18:00:00.000Z"
   },
   {
     "id": "note-integration-test-va-tang-du-lieu",
@@ -1453,8 +1816,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T01:00:00.000Z",
-    "updatedAt": "2026-01-04T01:00:00.000Z"
+    "createdAt": "2026-01-04T19:00:00.000Z",
+    "updatedAt": "2026-01-04T19:00:00.000Z"
   },
   {
     "id": "note-e2e-va-kim-tu-thap-kiem-thu",
@@ -1472,8 +1835,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T02:00:00.000Z",
-    "updatedAt": "2026-01-04T02:00:00.000Z"
+    "createdAt": "2026-01-04T20:00:00.000Z",
+    "updatedAt": "2026-01-04T20:00:00.000Z"
   },
   {
     "id": "note-tdd-trong-thuc-te",
@@ -1491,8 +1854,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T03:00:00.000Z",
-    "updatedAt": "2026-01-04T03:00:00.000Z"
+    "createdAt": "2026-01-04T21:00:00.000Z",
+    "updatedAt": "2026-01-04T21:00:00.000Z"
   },
   {
     "id": "note-select-loc-va-sap-xep",
@@ -1511,8 +1874,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T04:00:00.000Z",
-    "updatedAt": "2026-01-04T04:00:00.000Z"
+    "createdAt": "2026-01-04T22:00:00.000Z",
+    "updatedAt": "2026-01-04T22:00:00.000Z"
   },
   {
     "id": "note-join-cac-loai",
@@ -1529,8 +1892,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": true,
-    "createdAt": "2026-01-04T05:00:00.000Z",
-    "updatedAt": "2026-01-04T05:00:00.000Z"
+    "createdAt": "2026-01-04T23:00:00.000Z",
+    "updatedAt": "2026-01-04T23:00:00.000Z"
   },
   {
     "id": "note-group-by-va-ham-tong-hop",
@@ -1548,8 +1911,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T06:00:00.000Z",
-    "updatedAt": "2026-01-04T06:00:00.000Z"
+    "createdAt": "2026-01-05T00:00:00.000Z",
+    "updatedAt": "2026-01-05T00:00:00.000Z"
   },
   {
     "id": "note-subquery-va-cte",
@@ -1567,8 +1930,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T07:00:00.000Z",
-    "updatedAt": "2026-01-04T07:00:00.000Z"
+    "createdAt": "2026-01-05T01:00:00.000Z",
+    "updatedAt": "2026-01-05T01:00:00.000Z"
   },
   {
     "id": "note-transaction-va-acid",
@@ -1587,8 +1950,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T08:00:00.000Z",
-    "updatedAt": "2026-01-04T08:00:00.000Z"
+    "createdAt": "2026-01-05T02:00:00.000Z",
+    "updatedAt": "2026-01-05T02:00:00.000Z"
   },
   {
     "id": "note-index-va-hieu-nang-truy-van",
@@ -1607,8 +1970,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T09:00:00.000Z",
-    "updatedAt": "2026-01-04T09:00:00.000Z"
+    "createdAt": "2026-01-05T03:00:00.000Z",
+    "updatedAt": "2026-01-05T03:00:00.000Z"
   },
   {
     "id": "note-thay-doi-cau-truc-va-migration",
@@ -1626,8 +1989,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T10:00:00.000Z",
-    "updatedAt": "2026-01-04T10:00:00.000Z"
+    "createdAt": "2026-01-05T04:00:00.000Z",
+    "updatedAt": "2026-01-05T04:00:00.000Z"
   },
   {
     "id": "note-tu-yeu-cau-toi-bang",
@@ -1645,8 +2008,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T11:00:00.000Z",
-    "updatedAt": "2026-01-04T11:00:00.000Z"
+    "createdAt": "2026-01-05T05:00:00.000Z",
+    "updatedAt": "2026-01-05T05:00:00.000Z"
   },
   {
     "id": "note-chuan-hoa-va-khi-nao-pha-vo",
@@ -1664,8 +2027,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T12:00:00.000Z",
-    "updatedAt": "2026-01-04T12:00:00.000Z"
+    "createdAt": "2026-01-05T06:00:00.000Z",
+    "updatedAt": "2026-01-05T06:00:00.000Z"
   },
   {
     "id": "note-rang-buoc-va-toan-ven-du-lieu",
@@ -1683,8 +2046,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T13:00:00.000Z",
-    "updatedAt": "2026-01-04T13:00:00.000Z"
+    "createdAt": "2026-01-05T07:00:00.000Z",
+    "updatedAt": "2026-01-05T07:00:00.000Z"
   },
   {
     "id": "note-chon-kieu-du-lieu",
@@ -1702,8 +2065,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T14:00:00.000Z",
-    "updatedAt": "2026-01-04T14:00:00.000Z"
+    "createdAt": "2026-01-05T08:00:00.000Z",
+    "updatedAt": "2026-01-05T08:00:00.000Z"
   },
   {
     "id": "note-xoa-mem-va-vong-doi-ban-ghi",
@@ -1722,8 +2085,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T15:00:00.000Z",
-    "updatedAt": "2026-01-04T15:00:00.000Z"
+    "createdAt": "2026-01-05T09:00:00.000Z",
+    "updatedAt": "2026-01-05T09:00:00.000Z"
   },
   {
     "id": "note-mo-hinh-hoa-cac-tinh-huong-thuc-te",
@@ -1741,8 +2104,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T16:00:00.000Z",
-    "updatedAt": "2026-01-04T16:00:00.000Z"
+    "createdAt": "2026-01-05T10:00:00.000Z",
+    "updatedAt": "2026-01-05T10:00:00.000Z"
   },
   {
     "id": "note-truy-cap-dong-thoi-va-khoa",
@@ -1761,8 +2124,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T17:00:00.000Z",
-    "updatedAt": "2026-01-04T17:00:00.000Z"
+    "createdAt": "2026-01-05T11:00:00.000Z",
+    "updatedAt": "2026-01-05T11:00:00.000Z"
   },
   {
     "id": "note-vi-sao-chon-postgresql",
@@ -1779,8 +2142,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T18:00:00.000Z",
-    "updatedAt": "2026-01-04T18:00:00.000Z"
+    "createdAt": "2026-01-05T12:00:00.000Z",
+    "updatedAt": "2026-01-05T12:00:00.000Z"
   },
   {
     "id": "note-index-trong-postgresql",
@@ -1798,8 +2161,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": true,
-    "createdAt": "2026-01-04T19:00:00.000Z",
-    "updatedAt": "2026-01-04T19:00:00.000Z"
+    "createdAt": "2026-01-05T13:00:00.000Z",
+    "updatedAt": "2026-01-05T13:00:00.000Z"
   },
   {
     "id": "note-doc-explain-analyze",
@@ -1817,8 +2180,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T20:00:00.000Z",
-    "updatedAt": "2026-01-04T20:00:00.000Z"
+    "createdAt": "2026-01-05T14:00:00.000Z",
+    "updatedAt": "2026-01-05T14:00:00.000Z"
   },
   {
     "id": "note-jsonb-va-tim-kiem-toan-van",
@@ -1836,8 +2199,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T21:00:00.000Z",
-    "updatedAt": "2026-01-04T21:00:00.000Z"
+    "createdAt": "2026-01-05T15:00:00.000Z",
+    "updatedAt": "2026-01-05T15:00:00.000Z"
   },
   {
     "id": "note-transaction-va-khoa-trong-postgres",
@@ -1856,8 +2219,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T22:00:00.000Z",
-    "updatedAt": "2026-01-04T22:00:00.000Z"
+    "createdAt": "2026-01-05T16:00:00.000Z",
+    "updatedAt": "2026-01-05T16:00:00.000Z"
   },
   {
     "id": "note-sao-luu-va-van-hanh-postgres",
@@ -1875,8 +2238,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-04T23:00:00.000Z",
-    "updatedAt": "2026-01-04T23:00:00.000Z"
+    "createdAt": "2026-01-05T17:00:00.000Z",
+    "updatedAt": "2026-01-05T17:00:00.000Z"
   },
   {
     "id": "note-nosql-va-mo-hinh-document",
@@ -1894,8 +2257,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T00:00:00.000Z",
-    "updatedAt": "2026-01-05T00:00:00.000Z"
+    "createdAt": "2026-01-05T18:00:00.000Z",
+    "updatedAt": "2026-01-05T18:00:00.000Z"
   },
   {
     "id": "note-document-collection-va-kieu-bson",
@@ -1913,8 +2276,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T01:00:00.000Z",
-    "updatedAt": "2026-01-05T01:00:00.000Z"
+    "createdAt": "2026-01-05T19:00:00.000Z",
+    "updatedAt": "2026-01-05T19:00:00.000Z"
   },
   {
     "id": "note-truy-van-va-cap-nhat",
@@ -1932,8 +2295,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T02:00:00.000Z",
-    "updatedAt": "2026-01-05T02:00:00.000Z"
+    "createdAt": "2026-01-05T20:00:00.000Z",
+    "updatedAt": "2026-01-05T20:00:00.000Z"
   },
   {
     "id": "note-thiet-ke-lang-nhau-hay-tham-chieu",
@@ -1951,8 +2314,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T03:00:00.000Z",
-    "updatedAt": "2026-01-05T03:00:00.000Z"
+    "createdAt": "2026-01-05T21:00:00.000Z",
+    "updatedAt": "2026-01-05T21:00:00.000Z"
   },
   {
     "id": "note-index-va-doc-explain",
@@ -1971,8 +2334,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T04:00:00.000Z",
-    "updatedAt": "2026-01-05T04:00:00.000Z"
+    "createdAt": "2026-01-05T22:00:00.000Z",
+    "updatedAt": "2026-01-05T22:00:00.000Z"
   },
   {
     "id": "note-aggregation-pipeline",
@@ -1990,8 +2353,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T05:00:00.000Z",
-    "updatedAt": "2026-01-05T05:00:00.000Z"
+    "createdAt": "2026-01-05T23:00:00.000Z",
+    "updatedAt": "2026-01-05T23:00:00.000Z"
   },
   {
     "id": "note-transaction-write-concern-va-van-hanh",
@@ -2010,8 +2373,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T06:00:00.000Z",
-    "updatedAt": "2026-01-05T06:00:00.000Z"
+    "createdAt": "2026-01-06T00:00:00.000Z",
+    "updatedAt": "2026-01-06T00:00:00.000Z"
   },
   {
     "id": "note-tong-quan-owasp-top-10",
@@ -2029,8 +2392,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T07:00:00.000Z",
-    "updatedAt": "2026-01-05T07:00:00.000Z"
+    "createdAt": "2026-01-06T01:00:00.000Z",
+    "updatedAt": "2026-01-06T01:00:00.000Z"
   },
   {
     "id": "note-broken-access-control",
@@ -2048,8 +2411,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T08:00:00.000Z",
-    "updatedAt": "2026-01-05T08:00:00.000Z"
+    "createdAt": "2026-01-06T02:00:00.000Z",
+    "updatedAt": "2026-01-06T02:00:00.000Z"
   },
   {
     "id": "note-sql-injection",
@@ -2067,8 +2430,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": true,
-    "createdAt": "2026-01-05T09:00:00.000Z",
-    "updatedAt": "2026-01-05T09:00:00.000Z"
+    "createdAt": "2026-01-06T03:00:00.000Z",
+    "updatedAt": "2026-01-06T03:00:00.000Z"
   },
   {
     "id": "note-xss-cross-site-scripting",
@@ -2086,8 +2449,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T10:00:00.000Z",
-    "updatedAt": "2026-01-05T10:00:00.000Z"
+    "createdAt": "2026-01-06T04:00:00.000Z",
+    "updatedAt": "2026-01-06T04:00:00.000Z"
   },
   {
     "id": "note-csrf-va-clickjacking",
@@ -2105,8 +2468,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T11:00:00.000Z",
-    "updatedAt": "2026-01-05T11:00:00.000Z"
+    "createdAt": "2026-01-06T05:00:00.000Z",
+    "updatedAt": "2026-01-06T05:00:00.000Z"
   },
   {
     "id": "note-luu-mat-khau-va-ma-hoa",
@@ -2125,8 +2488,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T12:00:00.000Z",
-    "updatedAt": "2026-01-05T12:00:00.000Z"
+    "createdAt": "2026-01-06T06:00:00.000Z",
+    "updatedAt": "2026-01-06T06:00:00.000Z"
   },
   {
     "id": "note-quan-ly-secret-va-cau-hinh",
@@ -2145,8 +2508,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T13:00:00.000Z",
-    "updatedAt": "2026-01-05T13:00:00.000Z"
+    "createdAt": "2026-01-06T07:00:00.000Z",
+    "updatedAt": "2026-01-06T07:00:00.000Z"
   },
   {
     "id": "note-thu-vien-log-va-ssrf",
@@ -2165,8 +2528,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T14:00:00.000Z",
-    "updatedAt": "2026-01-05T14:00:00.000Z"
+    "createdAt": "2026-01-06T08:00:00.000Z",
+    "updatedAt": "2026-01-06T08:00:00.000Z"
   },
   {
     "id": "note-xac-thuc-va-phan-quyen-khac-nhau",
@@ -2184,8 +2547,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T15:00:00.000Z",
-    "updatedAt": "2026-01-05T15:00:00.000Z"
+    "createdAt": "2026-01-06T09:00:00.000Z",
+    "updatedAt": "2026-01-06T09:00:00.000Z"
   },
   {
     "id": "note-phien-dang-nhap-va-cookie",
@@ -2203,8 +2566,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T16:00:00.000Z",
-    "updatedAt": "2026-01-05T16:00:00.000Z"
+    "createdAt": "2026-01-06T10:00:00.000Z",
+    "updatedAt": "2026-01-06T10:00:00.000Z"
   },
   {
     "id": "note-gioi-han-tan-suat-va-chong-lam-dung",
@@ -2222,8 +2585,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T17:00:00.000Z",
-    "updatedAt": "2026-01-05T17:00:00.000Z"
+    "createdAt": "2026-01-06T11:00:00.000Z",
+    "updatedAt": "2026-01-06T11:00:00.000Z"
   },
   {
     "id": "note-dat-lai-mat-khau-va-xac-minh-email",
@@ -2242,8 +2605,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T18:00:00.000Z",
-    "updatedAt": "2026-01-05T18:00:00.000Z"
+    "createdAt": "2026-01-06T12:00:00.000Z",
+    "updatedAt": "2026-01-06T12:00:00.000Z"
   },
   {
     "id": "note-oauth-va-dang-nhap-mang-xa-hoi",
@@ -2261,8 +2624,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T19:00:00.000Z",
-    "updatedAt": "2026-01-05T19:00:00.000Z"
+    "createdAt": "2026-01-06T13:00:00.000Z",
+    "updatedAt": "2026-01-06T13:00:00.000Z"
   },
   {
     "id": "note-kiem-thu-va-danh-gia-bao-mat",
@@ -2281,8 +2644,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T20:00:00.000Z",
-    "updatedAt": "2026-01-05T20:00:00.000Z"
+    "createdAt": "2026-01-06T14:00:00.000Z",
+    "updatedAt": "2026-01-06T14:00:00.000Z"
   },
   {
     "id": "note-phan-quyen-theo-ban-ghi",
@@ -2301,8 +2664,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T21:00:00.000Z",
-    "updatedAt": "2026-01-05T21:00:00.000Z"
+    "createdAt": "2026-01-06T15:00:00.000Z",
+    "updatedAt": "2026-01-06T15:00:00.000Z"
   },
   {
     "id": "note-he-thong-file-va-duong-dan",
@@ -2320,8 +2683,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T22:00:00.000Z",
-    "updatedAt": "2026-01-05T22:00:00.000Z"
+    "createdAt": "2026-01-06T16:00:00.000Z",
+    "updatedAt": "2026-01-06T16:00:00.000Z"
   },
   {
     "id": "note-quyen-va-nguoi-dung",
@@ -2339,8 +2702,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-05T23:00:00.000Z",
-    "updatedAt": "2026-01-05T23:00:00.000Z"
+    "createdAt": "2026-01-06T17:00:00.000Z",
+    "updatedAt": "2026-01-06T17:00:00.000Z"
   },
   {
     "id": "note-tien-trinh-va-dich-vu",
@@ -2358,8 +2721,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T00:00:00.000Z",
-    "updatedAt": "2026-01-06T00:00:00.000Z"
+    "createdAt": "2026-01-06T18:00:00.000Z",
+    "updatedAt": "2026-01-06T18:00:00.000Z"
   },
   {
     "id": "note-viet-script-bash",
@@ -2377,8 +2740,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T01:00:00.000Z",
-    "updatedAt": "2026-01-06T01:00:00.000Z"
+    "createdAt": "2026-01-06T19:00:00.000Z",
+    "updatedAt": "2026-01-06T19:00:00.000Z"
   },
   {
     "id": "note-go-loi-tren-may-chu",
@@ -2396,8 +2759,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T02:00:00.000Z",
-    "updatedAt": "2026-01-06T02:00:00.000Z"
+    "createdAt": "2026-01-06T20:00:00.000Z",
+    "updatedAt": "2026-01-06T20:00:00.000Z"
   },
   {
     "id": "note-container-va-image",
@@ -2415,8 +2778,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T03:00:00.000Z",
-    "updatedAt": "2026-01-06T03:00:00.000Z"
+    "createdAt": "2026-01-06T21:00:00.000Z",
+    "updatedAt": "2026-01-06T21:00:00.000Z"
   },
   {
     "id": "note-viet-dockerfile",
@@ -2433,8 +2796,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": true,
-    "createdAt": "2026-01-06T04:00:00.000Z",
-    "updatedAt": "2026-01-06T04:00:00.000Z"
+    "createdAt": "2026-01-06T22:00:00.000Z",
+    "updatedAt": "2026-01-06T22:00:00.000Z"
   },
   {
     "id": "note-volume-va-du-lieu",
@@ -2452,8 +2815,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T05:00:00.000Z",
-    "updatedAt": "2026-01-06T05:00:00.000Z"
+    "createdAt": "2026-01-06T23:00:00.000Z",
+    "updatedAt": "2026-01-06T23:00:00.000Z"
   },
   {
     "id": "note-mang-va-ket-noi",
@@ -2471,8 +2834,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T06:00:00.000Z",
-    "updatedAt": "2026-01-06T06:00:00.000Z"
+    "createdAt": "2026-01-07T00:00:00.000Z",
+    "updatedAt": "2026-01-07T00:00:00.000Z"
   },
   {
     "id": "note-docker-compose",
@@ -2490,8 +2853,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T07:00:00.000Z",
-    "updatedAt": "2026-01-06T07:00:00.000Z"
+    "createdAt": "2026-01-07T01:00:00.000Z",
+    "updatedAt": "2026-01-07T01:00:00.000Z"
   },
   {
     "id": "note-toi-uu-va-van-hanh-container",
@@ -2510,8 +2873,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T08:00:00.000Z",
-    "updatedAt": "2026-01-06T08:00:00.000Z"
+    "createdAt": "2026-01-07T02:00:00.000Z",
+    "updatedAt": "2026-01-07T02:00:00.000Z"
   },
   {
     "id": "note-cau-truc-mot-workflow",
@@ -2529,8 +2892,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T09:00:00.000Z",
-    "updatedAt": "2026-01-06T09:00:00.000Z"
+    "createdAt": "2026-01-07T03:00:00.000Z",
+    "updatedAt": "2026-01-07T03:00:00.000Z"
   },
   {
     "id": "note-cache-va-toc-do-ci",
@@ -2548,8 +2911,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T10:00:00.000Z",
-    "updatedAt": "2026-01-06T10:00:00.000Z"
+    "createdAt": "2026-01-07T04:00:00.000Z",
+    "updatedAt": "2026-01-07T04:00:00.000Z"
   },
   {
     "id": "note-secret-va-quyen-trong-ci",
@@ -2567,8 +2930,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T11:00:00.000Z",
-    "updatedAt": "2026-01-06T11:00:00.000Z"
+    "createdAt": "2026-01-07T05:00:00.000Z",
+    "updatedAt": "2026-01-07T05:00:00.000Z"
   },
   {
     "id": "note-kiem-thu-tu-dong-trong-ci",
@@ -2586,8 +2949,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T12:00:00.000Z",
-    "updatedAt": "2026-01-06T12:00:00.000Z"
+    "createdAt": "2026-01-07T06:00:00.000Z",
+    "updatedAt": "2026-01-07T06:00:00.000Z"
   },
   {
     "id": "note-trien-khai-tu-dong",
@@ -2605,8 +2968,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T13:00:00.000Z",
-    "updatedAt": "2026-01-06T13:00:00.000Z"
+    "createdAt": "2026-01-07T07:00:00.000Z",
+    "updatedAt": "2026-01-07T07:00:00.000Z"
   },
   {
     "id": "note-reverse-proxy-voi-nginx",
@@ -2624,8 +2987,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T14:00:00.000Z",
-    "updatedAt": "2026-01-06T14:00:00.000Z"
+    "createdAt": "2026-01-07T08:00:00.000Z",
+    "updatedAt": "2026-01-07T08:00:00.000Z"
   },
   {
     "id": "note-https-va-chung-chi",
@@ -2644,8 +3007,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T15:00:00.000Z",
-    "updatedAt": "2026-01-06T15:00:00.000Z"
+    "createdAt": "2026-01-07T09:00:00.000Z",
+    "updatedAt": "2026-01-07T09:00:00.000Z"
   },
   {
     "id": "note-bien-moi-truong-va-cau-hinh",
@@ -2663,8 +3026,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T16:00:00.000Z",
-    "updatedAt": "2026-01-06T16:00:00.000Z"
+    "createdAt": "2026-01-07T10:00:00.000Z",
+    "updatedAt": "2026-01-07T10:00:00.000Z"
   },
   {
     "id": "note-giam-sat-va-sao-luu",
@@ -2683,8 +3046,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T17:00:00.000Z",
-    "updatedAt": "2026-01-06T17:00:00.000Z"
+    "createdAt": "2026-01-07T11:00:00.000Z",
+    "updatedAt": "2026-01-07T11:00:00.000Z"
   },
   {
     "id": "note-uoc-luong-va-tim-diem-nghen",
@@ -2703,8 +3066,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T18:00:00.000Z",
-    "updatedAt": "2026-01-06T18:00:00.000Z"
+    "createdAt": "2026-01-07T12:00:00.000Z",
+    "updatedAt": "2026-01-07T12:00:00.000Z"
   },
   {
     "id": "note-mo-rong-va-can-bang-tai",
@@ -2723,8 +3086,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T19:00:00.000Z",
-    "updatedAt": "2026-01-06T19:00:00.000Z"
+    "createdAt": "2026-01-07T13:00:00.000Z",
+    "updatedAt": "2026-01-07T13:00:00.000Z"
   },
   {
     "id": "note-cache-nhieu-tang",
@@ -2743,8 +3106,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T20:00:00.000Z",
-    "updatedAt": "2026-01-06T20:00:00.000Z"
+    "createdAt": "2026-01-07T14:00:00.000Z",
+    "updatedAt": "2026-01-07T14:00:00.000Z"
   },
   {
     "id": "note-hang-doi-va-xu-ly-bat-dong-bo",
@@ -2763,8 +3126,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T21:00:00.000Z",
-    "updatedAt": "2026-01-06T21:00:00.000Z"
+    "createdAt": "2026-01-07T15:00:00.000Z",
+    "updatedAt": "2026-01-07T15:00:00.000Z"
   },
   {
     "id": "note-thiet-ke-cho-that-bai",
@@ -2783,8 +3146,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T22:00:00.000Z",
-    "updatedAt": "2026-01-06T22:00:00.000Z"
+    "createdAt": "2026-01-07T16:00:00.000Z",
+    "updatedAt": "2026-01-07T16:00:00.000Z"
   },
   {
     "id": "note-du-lieu-o-quy-mo",
@@ -2803,8 +3166,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-06T23:00:00.000Z",
-    "updatedAt": "2026-01-06T23:00:00.000Z"
+    "createdAt": "2026-01-07T17:00:00.000Z",
+    "updatedAt": "2026-01-07T17:00:00.000Z"
   },
   {
     "id": "note-ranh-gioi-service",
@@ -2823,8 +3186,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T00:00:00.000Z",
-    "updatedAt": "2026-01-07T00:00:00.000Z"
+    "createdAt": "2026-01-07T18:00:00.000Z",
+    "updatedAt": "2026-01-07T18:00:00.000Z"
   },
   {
     "id": "note-quan-sat-he-thong",
@@ -2844,8 +3207,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T01:00:00.000Z",
-    "updatedAt": "2026-01-07T01:00:00.000Z"
+    "createdAt": "2026-01-07T19:00:00.000Z",
+    "updatedAt": "2026-01-07T19:00:00.000Z"
   },
   {
     "id": "note-slo-va-error-budget",
@@ -2865,8 +3228,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T02:00:00.000Z",
-    "updatedAt": "2026-01-07T02:00:00.000Z"
+    "createdAt": "2026-01-07T20:00:00.000Z",
+    "updatedAt": "2026-01-07T20:00:00.000Z"
   },
   {
     "id": "note-su-co-va-hau-kiem",
@@ -2885,8 +3248,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T03:00:00.000Z",
-    "updatedAt": "2026-01-07T03:00:00.000Z"
+    "createdAt": "2026-01-07T21:00:00.000Z",
+    "updatedAt": "2026-01-07T21:00:00.000Z"
   },
   {
     "id": "note-trien-khai-an-toan",
@@ -2906,8 +3269,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T04:00:00.000Z",
-    "updatedAt": "2026-01-07T04:00:00.000Z"
+    "createdAt": "2026-01-07T22:00:00.000Z",
+    "updatedAt": "2026-01-07T22:00:00.000Z"
   },
   {
     "id": "note-hieu-nang-va-do-luong",
@@ -2927,8 +3290,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T05:00:00.000Z",
-    "updatedAt": "2026-01-07T05:00:00.000Z"
+    "createdAt": "2026-01-07T23:00:00.000Z",
+    "updatedAt": "2026-01-07T23:00:00.000Z"
   },
   {
     "id": "note-chi-phi-ha-tang",
@@ -2947,8 +3310,8 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T06:00:00.000Z",
-    "updatedAt": "2026-01-07T06:00:00.000Z"
+    "createdAt": "2026-01-08T00:00:00.000Z",
+    "updatedAt": "2026-01-08T00:00:00.000Z"
   },
   {
     "id": "note-ra-quyet-dinh-ky-thuat",
@@ -2967,8 +3330,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T07:00:00.000Z",
-    "updatedAt": "2026-01-07T07:00:00.000Z"
+    "createdAt": "2026-01-08T01:00:00.000Z",
+    "updatedAt": "2026-01-08T01:00:00.000Z"
   },
   {
     "id": "note-review-code-va-nang-nguoi",
@@ -2987,8 +3350,8 @@
     "level": "co-ban",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T08:00:00.000Z",
-    "updatedAt": "2026-01-07T08:00:00.000Z"
+    "createdAt": "2026-01-08T02:00:00.000Z",
+    "updatedAt": "2026-01-08T02:00:00.000Z"
   },
   {
     "id": "note-no-ky-thuat-va-refactor",
@@ -3007,8 +3370,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T09:00:00.000Z",
-    "updatedAt": "2026-01-07T09:00:00.000Z"
+    "createdAt": "2026-01-08T03:00:00.000Z",
+    "updatedAt": "2026-01-08T03:00:00.000Z"
   },
   {
     "id": "note-uoc-luong-va-pham-vi",
@@ -3027,8 +3390,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T10:00:00.000Z",
-    "updatedAt": "2026-01-07T10:00:00.000Z"
+    "createdAt": "2026-01-08T04:00:00.000Z",
+    "updatedAt": "2026-01-08T04:00:00.000Z"
   },
   {
     "id": "note-giao-tiep-va-anh-huong",
@@ -3047,8 +3410,8 @@
     "level": "trung-cap",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T11:00:00.000Z",
-    "updatedAt": "2026-01-07T11:00:00.000Z"
+    "createdAt": "2026-01-08T05:00:00.000Z",
+    "updatedAt": "2026-01-08T05:00:00.000Z"
   },
   {
     "id": "note-uy-quyen-va-dan-dat-nhom",
@@ -3068,7 +3431,7 @@
     "level": "nang-cao",
     "khung": "v2",
     "starred": false,
-    "createdAt": "2026-01-07T12:00:00.000Z",
-    "updatedAt": "2026-01-07T12:00:00.000Z"
+    "createdAt": "2026-01-08T06:00:00.000Z",
+    "updatedAt": "2026-01-08T06:00:00.000Z"
   }
 ]

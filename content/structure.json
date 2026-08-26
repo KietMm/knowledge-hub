@@ -35,6 +35,34 @@
       ]
     },
     {
+      "id": "cat-may-tinh",
+      "name": "Nền tảng máy tính",
+      "slug": "nen-tang-may-tinh",
+      "description": "Tầng bên dưới ngôn ngữ: máy tính biểu diễn dữ liệu ra sao, hệ điều hành chia tài nguyên thế nào, và gói tin đi qua mạng bằng cách nào.",
+      "icon": "Cpu",
+      "color": "indigo",
+      "topics": [
+        {
+          "id": "topic-cs",
+          "name": "Khoa học máy tính nền tảng",
+          "slug": "khoa-hoc-may-tinh",
+          "description": "Bit, byte, số thực, encoding, bộ nhớ và cái giá thật của một phép truy cập."
+        },
+        {
+          "id": "topic-os",
+          "name": "Hệ điều hành",
+          "slug": "he-dieu-hanh",
+          "description": "Tiến trình, luồng, lập lịch, bộ nhớ ảo và các nguyên thuỷ đồng bộ hoá."
+        },
+        {
+          "id": "topic-network",
+          "name": "Mạng máy tính",
+          "slug": "mang-may-tinh",
+          "description": "TCP, UDP, DNS, TLS và HTTP/2 — cái gì thật sự xảy ra giữa hai máy."
+        }
+      ]
+    },
+    {
       "id": "cat-dev",
       "name": "Lập trình",
       "slug": "dev",

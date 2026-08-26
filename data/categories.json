@@ -9,13 +9,22 @@
     "order": 1
   },
   {
+    "id": "cat-may-tinh",
+    "name": "Nền tảng máy tính",
+    "slug": "nen-tang-may-tinh",
+    "description": "Tầng bên dưới ngôn ngữ: máy tính biểu diễn dữ liệu ra sao, hệ điều hành chia tài nguyên thế nào, và gói tin đi qua mạng bằng cách nào.",
+    "icon": "Cpu",
+    "color": "indigo",
+    "order": 2
+  },
+  {
     "id": "cat-dev",
     "name": "Lập trình",
     "slug": "dev",
     "description": "Ngôn ngữ, framework và công cụ để viết ứng dụng.",
     "icon": "Code2",
     "color": "sky",
-    "order": 2
+    "order": 3
   },
   {
     "id": "cat-database",
@@ -24,7 +33,7 @@
     "description": "Thiết kế, truy vấn và tối ưu dữ liệu.",
     "icon": "Database",
     "color": "emerald",
-    "order": 3
+    "order": 4
   },
   {
     "id": "cat-security",
@@ -33,7 +42,7 @@
     "description": "Lỗ hổng thường gặp và cách phòng tránh khi viết ứng dụng web.",
     "icon": "ShieldCheck",
     "color": "rose",
-    "order": 4
+    "order": 5
   },
   {
     "id": "cat-devops",
@@ -42,7 +51,7 @@
     "description": "Đóng gói, triển khai, tự động hoá và vận hành.",
     "icon": "Server",
     "color": "amber",
-    "order": 5
+    "order": 6
   },
   {
     "id": "cat-architecture",
@@ -51,7 +60,7 @@
     "description": "Thiết kế hệ thống chịu tải, chịu lỗi, và còn sửa được sau ba năm.",
     "icon": "Network",
     "color": "violet",
-    "order": 6
+    "order": 7
   },
   {
     "id": "cat-operations",
@@ -60,7 +69,7 @@
     "description": "Biết hệ thống đang sống thế nào, và xử lý khi nó không sống.",
     "icon": "Activity",
     "color": "cyan",
-    "order": 7
+    "order": 8
   },
   {
     "id": "cat-leadership",
@@ -69,6 +78,6 @@
     "description": "Phần việc của tech lead mà trình biên dịch không kiểm được.",
     "icon": "Users",
     "color": "fuchsia",
-    "order": 8
+    "order": 9
   }
 ]
