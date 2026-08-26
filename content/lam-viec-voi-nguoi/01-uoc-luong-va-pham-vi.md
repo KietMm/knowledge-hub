@@ -4,142 +4,230 @@ slug: uoc-luong-va-pham-vi
 summary: Vì sao ước lượng luôn sai, cách nói con số mà không hứa sai, và cắt phạm vi thay vì cắt chất lượng.
 level: trung-cap
 tags: [dan-dat, uoc-luong, pham-vi, ke-hoach]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** trả lời "bao lâu?" theo cách trung thực và vẫn dùng được để lập kế hoạch, và biết cắt gì khi hết thời gian.
+> **Sau bài này bạn sẽ:** đưa được con số kèm mức không chắc chắn, và biết cắt phạm vi thay vì cắt chất lượng khi bị ép.
 
-## Vì sao ước lượng luôn thấp
+## Ý tưởng chính
 
-Không phải vì kỹ sư lạc quan — mà vì bốn thứ có cấu trúc:
+Ước lượng là **dự báo**, không phải cam kết. Nhưng người nghe hầu như luôn hiểu nó là cam kết.
 
-**1. Ước lượng cho phần đã hiểu.** Bạn hình dung được code chính, không hình dung được ba trường hợp biên chưa ai nghĩ tới. Phần chưa biết luôn tồn tại và luôn không được tính.
+Nên phần khó nhất của ước lượng không phải tính toán — mà là **truyền đạt mức không chắc chắn** sao cho nó không bị mất đi trên đường truyền.
 
-**2. Bỏ qua phần không phải viết code.** Với một tính năng "3 ngày":
+## Mental model
 
-```
-Viết code chính        3 ngày   ← phần được ước lượng
-Trường hợp biên        1 ngày
-Test                   1 ngày
-Review + sửa           1 ngày
-Migration              0,5 ngày
-Đúng ở mobile          0,5 ngày
-Trạng thái lỗi/rỗng    0,5 ngày
-Tài liệu               0,5 ngày
-                     ────────
-                       8 ngày
-```
+Hãy nghĩ tới **dự báo thời tiết**.
 
-**3. Bỏ qua thời gian bị ngắt.** Một ngày làm việc thực tế có ~5 giờ tập trung, không phải 8. Có on-call, họp, review PR người khác, sự cố.
+> Không ai nói "ngày mai mưa lúc 14:32". Họ nói **"70% khả năng có mưa chiều mai"**.
+>
+> Và điều đó vẫn ra quyết định được: mang ô hay không. Nó không kém hữu ích vì có xác suất — nó **hữu ích hơn**, vì bạn biết mức tin cậy để mà cân nhắc.
+>
+> Dự báo càng xa, khoảng càng rộng. Không ai chờ đợi độ chính xác của dự báo 10 ngày bằng dự báo ngày mai.
 
-**4. Ngộ nhận kế hoạch.** Con người ước lượng dựa trên **kịch bản diễn ra tốt nhất**, kể cả khi biết rõ lịch sử của mình không như vậy.
+Ước lượng phần mềm cũng vậy — và cũng vì cùng một lý do: bạn đang dự báo một hệ thống có quá nhiều biến chưa biết.
 
-## Nói khoảng, không nói điểm
+## Ví dụ nhỏ
 
-```
-❌ "3 ngày."                    ← nghe thành lời hứa
-✅ "3 đến 8 ngày. Chỗ không rõ nhất là tích hợp cổng thanh toán —
-   nếu tài liệu của họ đúng thì gần 3, nếu phải dò thì gần 8."
+```text
+❌ "Ba ngày."
+✅ "Nếu API của đối tác đúng như tài liệu: 3 ngày.
+    Nếu phải xử lý các trường hợp lạ: 5–7 ngày.
+    Tôi sẽ biết chắc hơn sau khi thử tích hợp — cho tôi nửa ngày."
 ```
 
-Câu thứ hai trung thực hơn **và** hữu ích hơn: nó nói cho người nghe biết **rủi ro nằm ở đâu**, nên họ có thể hành động (đi hỏi cổng thanh toán trước, hoặc chấp nhận rủi ro).
+## Code chạy thế nào
 
-Khi bị ép một con số duy nhất, đưa mức tin cậy:
+**Vì sao ước lượng luôn thấp hơn thực tế:**
 
-> "50% khả năng xong trong 4 ngày, 90% trong 9 ngày. Cần cam kết thì tôi cam kết 9."
+```text
+① Ta hình dung ĐƯỜNG ĐI SUÔN SẺ
+   Không tính: review, sửa theo góp ý, họp, hỗ trợ người khác,
+   sự cố production, môi trường hỏng.
+   → Thời gian "làm việc thật" thường chỉ ~60% ngày làm việc.
 
-Đây là cách nói đúng bản chất: ước lượng là **phân bố xác suất**, không phải một điểm. Người quản lý cần một ngày để lập kế hoạch — cho họ con số 90% để cam kết, và con số 50% để họ biết trường hợp tốt.
+② Cái chưa biết chỉ lộ ra khi bắt đầu làm
+   "Tưởng chỉ thêm một trường" → hoá ra chạm 12 chỗ.
 
-## Giảm phần chưa biết trước khi ước lượng
+③ Quên phần không phải viết mã
+   Test, tài liệu, migration, triển khai, theo dõi sau khi lên.
 
-Không rõ tới mức không ước lượng nổi thì **đừng ước lượng** — đề nghị một spike:
-
-> "Chưa ước lượng được vì chưa biết API của họ có hỗ trợ hoàn tiền một phần không. Cho tôi một ngày để thử, sau đó tôi ước lượng có cơ sở."
-
-Một ngày spike đổi lấy một ước lượng đáng tin là giao dịch rất tốt, và nó cũng là cách hợp lệ để từ chối bị ép con số. Xem [[ra-quyet-dinh-ky-thuat]].
-
-Chia nhỏ cũng làm ước lượng chính xác hơn: sai số của những phần nhỏ triệt tiêu lẫn nhau, còn sai số của một khối lớn thì chỉ lệch về một phía. Chia tới mức mỗi phần **dưới hai ngày** — phần nào không chia được nghĩa là bạn chưa hiểu nó.
-
-## Bốn đòn bẩy, và chỉ một cái an toàn
-
-Khi hạn không đủ, chỉ có bốn thứ đổi được:
-
-| Đòn bẩy | Hệ quả |
-|---|---|
-| **Phạm vi** | ✅ An toàn nhất — làm ít việc hơn |
-| **Thời gian** | ⚠️ Đôi khi được, nhưng thường là cái đang cố định |
-| **Người** | ❌ Thêm người vào dự án muộn làm nó chậm hơn (onboarding + giao tiếp) |
-| **Chất lượng** | ❌ Vay có lãi rất cao — xem [[no-ky-thuat-va-refactor]] |
-
-**Cắt phạm vi là đòn bẩy duy nhất không có hoá đơn trả sau.** Việc của tech lead là làm cho việc cắt phạm vi trở nên dễ đối với người ra quyết định — nghĩa là đưa ra lựa chọn cụ thể, không phải nói "không đủ thời gian".
-
-```
-❌ "Không kịp đâu."
-
-✅ "Đủ thời gian cho một trong hai:
-   (a) Xuất báo cáo PDF đầy đủ, không có bộ lọc nâng cao
-   (b) Xuất CSV đơn giản + bộ lọc nâng cao
-   Người dùng hỏi về (b) nhiều hơn. Tôi đề nghị (b), và PDF vào sprint sau."
+④ Áp lực xã hội
+   Ai cũng đoán rằng con số thấp thì được đánh giá cao hơn.
 ```
 
-Câu thứ hai chuyển cuộc trò chuyện từ "kỹ sư nói không" sang "chọn phương án nào" — và người ra quyết định thường chọn đúng nếu được cho lựa chọn thật.
+Nguyên nhân ① và ③ có thể sửa bằng thói quen. Nguyên nhân ② thì không sửa được — chỉ có thể **thừa nhận** nó bằng cách đưa khoảng thay vì một điểm.
 
-## Cái không được cắt
+**Ba cách ước lượng, chọn theo mức không chắc chắn:**
 
-Cắt phạm vi không có nghĩa cắt chất lượng. Bốn thứ không nằm trong phần cắt được, vì cắt chúng tạo ra hoá đơn lớn hơn phần tiết kiệm:
+```text
+① KHOẢNG BA ĐIỂM
+   Lạc quan 2 ngày | Khả dĩ 4 ngày | Bi quan 10 ngày
+   ⇒ (2 + 4×4 + 10) / 6 ≈ 4,7 ngày
+   Giá trị thật không nằm ở con số cuối, mà ở việc KHOẢNG RỘNG
+   tự nói lên "chỗ này nhiều rủi ro".
 
-- **Kiểm tra quyền** — bỏ nó là lỗ hổng, xem [[phan-quyen-theo-ban-ghi]]
-- **Xử lý lỗi** — không có nó thì lỗi hiện ra dưới dạng trang trắng
-- **Migration đúng cách** — sửa dữ liệu sai đắt hơn nhiều lần, xem [[trien-khai-an-toan]]
-- **Test cho logic nghiệp vụ cốt lõi**
+② SO SÁNH TƯƠNG ĐỐI
+   "Việc này giống việc X đã làm, nhưng phức tạp gấp rưỡi."
+   ⇒ Con người ước lượng SO SÁNH tốt hơn ước lượng tuyệt đối.
 
-Cái **cắt được**: tính năng phụ, tối ưu hoá, trường hợp biên hiếm, giao diện admin (làm bằng SQL trước), phân trang (giới hạn 100 bản ghi trước), và làm đẹp.
-
-## Khi đã rõ là trượt hạn
-
-Nguyên tắc duy nhất: **báo sớm**. Trượt hạn báo trước hai tuần là một vấn đề lập kế hoạch; báo trước một ngày là một cuộc khủng hoảng — mà thông tin thì bạn đã có từ hai tuần trước.
-
-```
-✅ "Đến hôm nay xong 60% trong khi kế hoạch là 80%. Nguyên nhân: tích hợp
-   thanh toán mất 4 ngày thay vì 1 (webhook của họ không có retry, phải tự
-   làm hàng đợi). Ba lựa chọn:
-   (a) Lùi 3 ngày
-   (b) Phát hành không có hoàn tiền tự động, làm thủ công trong 2 tuần đầu
-   (c) Bỏ báo cáo khỏi bản này
-   Tôi đề nghị (b)."
+③ SPIKE CÓ GIỚI HẠN THỜI GIAN
+   "Cho tôi một ngày tìm hiểu, sau đó tôi ước lượng được."
+   ⇒ Dùng khi quá nhiều thứ chưa biết. Đây là câu trả lời TRUNG THỰC,
+     không phải câu trả lời né tránh.
 ```
 
-Cấu trúc: **hiện trạng bằng số → nguyên nhân → lựa chọn → đề nghị**. Đừng chỉ báo tin xấu; báo tin xấu kèm lựa chọn.
+**Kể cả khi phải đưa một con số**, hãy kèm điều kiện:
 
-## Vận tốc là để dự báo, không phải để đo năng suất
+```text
+"4 ngày, VỚI ĐIỀU KIỆN thiết kế đã chốt và API đối tác hoạt động
+ như tài liệu. Nếu một trong hai không đúng, tôi báo lại ngay."
+```
 
-Đo bao nhiêu việc nhóm thực sự hoàn thành mỗi sprint, dùng nó để dự báo sprint sau. Không dùng nó để so sánh giữa các nhóm hay để đánh giá cá nhân — làm thế thì con số bị thổi phồng và mất giá trị dự báo.
+Câu cuối là phần quan trọng nhất: nó biến ước lượng thành một thoả thuận có cơ chế cập nhật, thay vì một lời hứa cố định.
 
-Con số hữu ích hơn cho tech lead là **thời gian từ bắt đầu tới lên production** (cycle time). Nó gồm cả thời gian chờ review, chờ deploy, chờ QA — và phần chờ thường lớn hơn phần làm.
+## Cú pháp
 
-## Lỗi hay gặp
+**Cắt phạm vi, đừng cắt chất lượng:**
 
-| Lỗi | Hậu quả | Sửa thế nào |
+```text
+Bốn thứ có thể điều chỉnh:  phạm vi | thời gian | người | chất lượng
+
+Thêm người vào dự án trễ hạn ⇒ THƯỜNG LÀM CHẬM THÊM
+  (người mới cần được hướng dẫn, bởi chính người đang bận nhất)
+
+Cắt chất lượng ⇒ vay nợ với lãi suất cao, trả trong vài tuần tới
+  ([[no-ky-thuat-va-refactor]])
+
+⇒ PHẠM VI là biến nên điều chỉnh.
+```
+
+```text
+❌ "Làm nhanh hơn được không?"     → chỉ có thể cắt chất lượng
+✅ "Trong 2 tuần, ta làm được A và B, chưa có C.
+    Hay bạn muốn có C và lùi B sang đợt sau?"
+   ⇒ Chuyển câu hỏi từ "nhanh hơn" sang "cái gì trước" —
+     và đó là câu hỏi người quyết định trả lời được.
+```
+
+**Báo trễ sớm:**
+
+```text
+Biết sẽ trễ ⇒ nói NGAY, đừng đợi tới hạn.
+
+Sớm 1 tuần:  còn xoay được — cắt phạm vi, đổi thứ tự, thêm người sớm.
+Đúng ngày:   không còn lựa chọn nào cho ai cả.
+
+Nói kèm ba phần:
+  ① tình hình      "sẽ trễ khoảng 3 ngày"
+  ② vì sao         "API đối tác thiếu 2 endpoint ta cần"
+  ③ phương án      "hoặc lùi 3 ngày, hoặc bỏ phần X ra đợt sau"
+```
+
+Phần ③ là thứ phân biệt một báo cáo trễ với một lời than phiền.
+
+**Đệm — công khai, đừng giấu:**
+
+```text
+❌ Giấu đệm trong từng việc (mỗi việc ×2)
+   → Không ai tin con số, và ai cũng nhân thêm hệ số của riêng mình.
+   → Định luật Parkinson: việc giãn ra cho vừa thời gian được cấp.
+
+✅ Đệm chung, công khai ở cấp dự án
+   "Ước lượng 6 tuần, cộng 2 tuần dự phòng cho rủi ro đã biết."
+```
+
+## Tại sao cần nó
+
+Vì ước lượng phục vụ một mục đích cụ thể — và biết mục đích đó thay đổi cách trả lời:
+
+```text
+"Có kịp cho chiến dịch tháng 10 không?"
+  → Cần biết ĐỦ hay KHÔNG ĐỦ. Không cần con số chính xác.
+
+"Nên làm A hay B trước?"
+  → Cần so sánh tương đối. Không cần con số tuyệt đối.
+
+"Tôi phải hứa gì với khách hàng?"
+  → Cần con số AN TOÀN, có đệm, có điều kiện rõ ràng.
+```
+
+Nên câu hỏi nên hỏi trước khi ước lượng là: *"Con số này dùng để làm gì?"*
+
+**Theo dõi độ chính xác của chính mình:**
+
+```text
+Ghi lại ước lượng và thời gian thực tế.
+Sau vài tháng, bạn có một HỆ SỐ cá nhân — thường 1,5–2×.
+
+Đó là dữ liệu, không phải sự tự trách.
+Và nó làm ước lượng của bạn tốt lên nhanh hơn mọi lời khuyên.
+```
+
+## So sánh
+
+| | Ước lượng | Cam kết |
 |---|---|---|
-| Đưa một con số điểm | Nghe thành lời hứa | Nói khoảng + chỗ rủi ro |
-| Chỉ ước lượng phần viết code | Thiếu 60% công việc thật | Tính cả test, review, migration |
-| Tính 8 giờ làm việc mỗi ngày | Trượt hạn có hệ thống | Tính ~5 giờ tập trung |
-| Ước lượng khi chưa hiểu | Con số vô nghĩa | Đề nghị spike |
-| Khối việc lớn không chia | Sai số chỉ lệch một phía | Chia dưới 2 ngày mỗi phần |
-| Thêm người khi gấp | Chậm hơn vì onboarding | Cắt phạm vi |
-| Cắt chất lượng để kịp | Vay lãi cao, trả nhiều lần | Cắt phạm vi |
-| Nói "không kịp" mà không có lựa chọn | Bị coi là cản trở | Đưa 2–3 phương án + đề nghị |
-| Báo trượt hạn vào phút cuối | Khủng hoảng thay vì điều chỉnh | Báo ngay khi biết |
-| Dùng vận tốc để đánh giá người | Con số bị thổi, mất giá trị dự báo | Chỉ dùng để dự báo |
+| Bản chất | dự báo | lời hứa |
+| Có mức không chắc chắn | ✅ | ❌ |
+| Đổi khi có thông tin mới | ✅ | khó |
+| Nên nói bằng | khoảng + điều kiện | một ngày cụ thể |
 
-## Ghi nhớ
+## Dễ nhầm
 
-- Ước lượng là phân bố, không phải một điểm — nói khoảng và nói chỗ rủi ro.
-- Chưa hiểu thì đừng ước lượng; đổi một ngày spike lấy một con số đáng tin.
-- Phạm vi là đòn bẩy duy nhất không có hoá đơn trả sau.
-- Báo trượt hạn kèm lựa chọn, và báo ngay khi biết.
+**1. Đưa một con số không kèm khoảng.** Nghe như cam kết.
 
-## Tự kiểm tra
+**2. Quên phần không phải viết mã.** Test, review, triển khai chiếm phần lớn.
 
-1. Bốn nguyên nhân có cấu trúc làm ước lượng luôn thấp?
-2. Bị ép một con số duy nhất thì trả lời thế nào cho vừa trung thực vừa dùng được?
-3. Bốn đòn bẩy khi hết thời gian, và vì sao chỉ một cái an toàn?
+**3. Ước lượng khi chưa hiểu yêu cầu.** Xin một spike có giới hạn thời gian.
+
+**4. Giấu đệm trong từng việc.** Không ai tin con số nữa.
+
+**5. Báo trễ vào đúng ngày hạn.** Không còn lựa chọn cho ai.
+
+**6. Cắt chất lượng thay vì cắt phạm vi.** Trả lãi trong vài tuần tới.
+
+**7. Thêm người vào dự án đang trễ.** Thường chậm thêm.
+
+**8. Không theo dõi độ chính xác của mình.** Lặp lại cùng sai số mãi.
+
+**9. Nhận ước lượng do người khác đưa cho việc của mình.**
+
+**10. Không hỏi con số dùng để làm gì.** Trả lời sai loại câu hỏi.
+
+## Mẹo nhớ
+
+> **Ước lượng là DỰ BÁO. Luôn kèm khoảng và điều kiện.**
+>
+> **Bị ép thì cắt PHẠM VI, không cắt chất lượng.**
+>
+> **Báo trễ SỚM — muộn thì không còn lựa chọn cho ai.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Bốn lý do khiến ước lượng luôn thấp hơn thực tế?
+2. Ba cách ước lượng, dùng khi nào?
+3. Vì sao cắt phạm vi tốt hơn cắt chất lượng?
+4. Báo trễ nên gồm ba phần nào?
+5. Vì sao đệm nên công khai thay vì giấu?
+
+## Tự viết lại
+
+Sếp hỏi: *"Làm tính năng đăng nhập bằng Google mất bao lâu?"* Bạn chưa từng làm OAuth ở dự án này. Không nhìn lại, viết:
+
+```text
+① câu trả lời đầy đủ của bạn
+② những gì bạn cần biết thêm
+③ ước lượng ba điểm sau khi đã tìm hiểu
+④ điều kiện kèm theo
+```
+
+Tự kiểm: câu trả lời ① của bạn có nêu rõ **mức không chắc chắn** không, hay chỉ là một con số kèm lời rào đón?
+
+## Thử sức
+
+Bạn ước lượng 4 tuần. Sếp nói: *"Chỉ có 2 tuần thôi."*
+
+Ba câu để trả lời: bạn phản hồi thế nào; bạn đề xuất **cắt gì** và trình bày ra sao; và nếu sếp vẫn giữ 2 tuần, bạn làm gì tiếp theo. Câu khó nhất: nếu bạn nhận 2 tuần và không kịp, ai chịu hậu quả — và điều đó thay đổi cách bạn trả lời ngay từ đầu ra sao?

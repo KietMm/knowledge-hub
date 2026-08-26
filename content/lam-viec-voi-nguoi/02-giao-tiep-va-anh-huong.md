@@ -4,152 +4,223 @@ slug: giao-tiep-va-anh-huong
 summary: Viết cho người không phải dev, báo tin xấu, và thuyết phục khi bạn không có quyền ra lệnh.
 level: trung-cap
 tags: [dan-dat, giao-tiep, viet, thuyet-phuc]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** viết một đề xuất kỹ thuật mà người ngoài nhóm đọc và đồng ý, và xử lý bất đồng mà không cần thắng.
+> **Sau bài này bạn sẽ:** viết được thông điệp mà người bận đọc hết, và thuyết phục mà không cần quyền ra lệnh.
 
-## Kết luận đứng trước
+## Ý tưởng chính
 
-Kỹ sư được huấn luyện để trình bày theo thứ tự **suy luận**: bối cảnh → phân tích → kết luận. Người đọc bận cần thứ tự **ngược lại**.
+Kỹ sư quen trình bày theo trình tự **khám phá**: bối cảnh → phân tích → kết luận. Đó là trình tự suy nghĩ.
 
-```
-❌ "Tôi đã xem 4 phương án cho tầng cache. Redis thì... Memcached thì...
-   Tuy nhiên cần xét thêm... Do đó tôi nghĩ có lẽ nên dùng Redis."
+Người bận đọc theo trình tự **quyết định**: kết luận → tôi cần làm gì → chi tiết nếu cần.
 
-✅ "Đề nghị: dùng Redis cho cache phiên. Chi phí ~120 $/tháng, làm trong 3 ngày.
-   Cần quyết định trước thứ Sáu để kịp phát hành 1/9.
+Cùng một nội dung, hai thứ tự, và thứ tự thứ nhất thường bị đóng lại trước khi tới đoạn quan trọng.
 
-   Vì sao: hiện session nằm trong RAM nên không chạy được nhiều instance,
-   và đó là thứ chặn chúng ta xử lý tải Black Friday.
+## Mental model
 
-   Đã xét và loại: [chi tiết bên dưới]"
-```
+Hãy nghĩ tới **bản tin thời sự so với một cuốn tiểu thuyết trinh thám**.
 
-Ba dòng đầu của câu thứ hai trả lời đủ ba câu hỏi người đọc có: **làm gì, tốn gì, tôi cần làm gì**. Ai muốn chi tiết sẽ đọc xuống; ai không thì họ vẫn quyết định được.
+> Tiểu thuyết trinh thám giữ đáp án tới trang cuối. Đó là **điều làm nên giá trị** của nó.
+>
+> Bản tin thời sự nói kết quả ở câu đầu tiên, rồi mới tới chi tiết. Vì người đọc có thể dừng ở bất kỳ đâu — và **phải nắm được điều quan trọng nhất trước khi dừng**.
+>
+> Email của bạn là bản tin, không phải tiểu thuyết.
 
-## Dịch sang thứ người nghe quan tâm
+Từ đó ra một quy tắc kiểm tra: nếu người đọc chỉ đọc **câu đầu tiên** rồi đóng lại, họ có nắm được điều bạn cần họ biết không?
 
-Cùng một việc, ba cách nói cho ba đối tượng:
+## Ví dụ nhỏ
 
-```
-Với kỹ sư:
-"Session đang ở RAM tiến trình nên không scale ngang được."
+```text
+❌ "Tuần này tôi xem xét kiến trúc thanh toán. Sau khi phân tích
+    ba phương án và đo hiệu năng, tôi nhận thấy..."
 
-Với quản lý sản phẩm:
-"Hiện tại chỉ chạy được một server. Vượt ~2.000 người dùng đồng thời là chậm,
- và không thêm máy được. Black Friday dự kiến 5.000."
-
-Với ban điều hành:
-"Rủi ro: sập vào ngày doanh thu cao nhất năm. Xử lý mất 3 ngày làm."
+✅ "Đề xuất: hoãn tính năng X hai tuần.
+    Lý do: hệ thống thanh toán không chịu được tải dự kiến.
+    Cần bạn quyết trước thứ Sáu.
+    Chi tiết bên dưới."
 ```
 
-Cả ba đều đúng và cùng nói về một thứ. Nói câu đầu với ban điều hành thì họ không hiểu; nói câu thứ ba với kỹ sư thì thiếu thông tin để làm.
+## Code chạy thế nào
 
-**Nhắm vào cái người nghe phải quyết định.** Quản lý sản phẩm quyết ưu tiên → nói bằng ảnh hưởng tới người dùng và hạn. Ban điều hành quyết đầu tư → nói bằng rủi ro và tiền.
+**Cấu trúc bốn phần cho mọi thông điệp quan trọng:**
 
-## Báo tin xấu
-
-Bốn nguyên tắc:
-
-**Sớm.** Tin xấu không tự tốt lên khi để lâu, và mất tin cậy vì báo muộn tệ hơn chính tin xấu.
-
-**Trực tiếp, không đệm.** "Tôi có thể nhầm nhưng có lẽ hơi trượt một chút" làm người nghe không rõ mức độ. Nói: "Chúng ta sẽ trượt hạn 3 ngày."
-
-**Kèm hiện trạng bằng số.** "Xong 60%, kế hoạch 80%" thay vì "hơi chậm".
-
-**Kèm lựa chọn.** Xem [[uoc-luong-va-pham-vi]].
-
-Và cụ thể với sự cố: nói rõ **ai bị ảnh hưởng và bao nhiêu**, đừng làm nhẹ. "Một số người dùng có thể gặp vấn đề" khi thực tế là 30% checkout thất bại sẽ phá tin cậy khi con số thật lộ ra — xem [[su-co-va-hau-kiem]].
-
-## Thuyết phục mà không có quyền
-
-Tech lead thường không phải quản lý của những người mình cần thuyết phục. Bốn cách, xếp theo hiệu quả:
-
-**1. Bắt đầu bằng vấn đề của họ, không phải giải pháp của mình.**
-
-```
-❌ "Chúng ta nên chuyển sang TypeScript."
-✅ "Ba sự cố tháng trước đều là lỗi kiểu dữ liệu (undefined ở production).
-   Có cách bắt chúng lúc build. Muốn thử ở một module không?"
+```text
+① KẾT LUẬN / ĐỀ XUẤT     câu đầu tiên
+② VÌ SAO                  2–3 câu, có SỐ
+③ CẦN GÌ Ở NGƯỜI ĐỌC      quyết định? thông tin? hay chỉ để biết?
+④ CHI TIẾT                cho ai muốn đọc thêm
 ```
 
-**2. Bằng chứng nhỏ thay vì tranh luận lớn.** Một prototype hoạt động thắng mọi bài trình bày. Làm ở một module, đo, cho người ta xem số.
+Phần ③ là phần hay bị thiếu nhất, và thiếu nó khiến người đọc phải đoán vai của mình — nên họ thường chọn vai "để đó đã".
 
-**3. Cho người ta tham gia sớm.** Người góp phần vào một quyết định sẽ ủng hộ nó. Hỏi ý kiến ở bản nháp — không phải để lấy dấu duyệt cho thứ đã chốt, mà thật sự nghe và sửa.
+**Dịch từ ngôn ngữ kỹ thuật sang ngôn ngữ tác động:**
 
-**4. Nói ra cái mình đánh đổi.** Đề xuất chỉ có ưu điểm thì không đáng tin. Nêu nhược điểm trước khi người khác nêu — nó cho thấy bạn đã suy nghĩ thật và làm mọi thứ còn lại đáng tin hơn.
+```text
+❌ "Cần refactor module thanh toán vì coupling cao."
+✅ "Mỗi thay đổi ở thanh toán mất gấp 6 lần bình thường và
+    gây 40% số lỗi. Một tuần dọn dẹp sẽ hoà vốn ngay quý này."
 
-## Bất đồng: về mục tiêu hay về cách làm
+❌ "CSDL thiếu index nên query chậm."
+✅ "Trang danh sách mất 3 giây; 1/5 người dùng bỏ đi trước khi tải xong.
+    Sửa mất một ngày."
 
-Phân biệt này giải quyết phần lớn tranh cãi:
+Nguyên tắc: nói bằng THỜI GIAN, TIỀN, RỦI RO, NGƯỜI DÙNG.
+Không nói bằng tên công nghệ.
+```
 
-**Về mục tiêu** — hai người muốn hai thứ khác nhau. Không giải quyết được bằng dữ liệu kỹ thuật; cần lùi lại chốt mục tiêu, và thường cần người có quyền quyết định.
+Đây không phải "làm nhẹ đi cho dễ hiểu". Đó là trả lời đúng câu hỏi mà người nghe đang có: *"điều này ảnh hưởng gì tới thứ tôi chịu trách nhiệm?"*
 
-**Về cách làm** — cùng mục tiêu, khác đường. Giải quyết được bằng: *"số liệu nào sẽ khiến chúng ta đồng ý?"*
+## Cú pháp
 
-Rất nhiều tranh luận kỹ thuật dài thực chất là bất đồng về mục tiêu bị ngụy trang thành bất đồng kỹ thuật. Hai người tranh về monolith và microservices, nhưng thực ra một người tối ưu cho tốc độ ra hàng và người kia tối ưu cho khả năng mở rộng của tổ chức — xem [[ranh-gioi-service]].
+**Báo tin xấu — bốn phần, theo đúng thứ tự này:**
 
-Kết thúc bằng **không đồng ý nhưng cam kết**, kèm dấu hiệu xem lại cụ thể. Xem [[ra-quyet-dinh-ky-thuat]].
+```text
+① NÓI SỚM        ngay khi biết, đừng đợi tới hạn
+② NÓI THẲNG      "Chúng ta sẽ trễ 3 ngày."  ← không rào đón
+③ NÓI VÌ SAO     ngắn gọn, không đổ lỗi, không kể lể quá trình
+④ NÓI PHƯƠNG ÁN  ít nhất hai lựa chọn, kèm đánh đổi
+```
 
-## Viết ngắn là một kỹ năng
+```text
+❌ "Có một vài vấn đề nhỏ phát sinh, tôi đang cố gắng xử lý,
+    có thể sẽ hơi chậm một chút..."
+   → Người nghe không biết mức độ, và sẽ hỏi lại năm lần.
 
-Tài liệu 8 trang không ai đọc thì bằng không. Một trang được đọc thì bằng một.
+✅ "Sẽ trễ 3 ngày. Nguyên nhân: API đối tác thiếu 2 endpoint.
+    Hai phương án: (a) lùi 3 ngày; (b) ra mắt đúng hạn nhưng
+    bỏ phần đồng bộ, thêm ở đợt sau. Tôi nghiêng về (b)."
+```
 
-```markdown
-# Chuyển session sang Redis
+Phần ④ là thứ biến bạn từ người mang vấn đề thành người mang lựa chọn — và đó là khác biệt lớn nhất về cách người khác nhìn bạn.
 
-**Đề nghị:** dùng Redis cho cache phiên. 3 ngày làm, ~120 $/tháng.
-**Cần:** duyệt trước 25/8 để kịp phát hành 1/9.
+**Thuyết phục khi không có quyền ra lệnh:**
 
-## Vấn đề
-Session nằm trong RAM tiến trình → chỉ chạy được 1 instance → trần ~2.000
-người dùng đồng thời. Dự báo Black Friday: 5.000.
+```text
+① HIỂU HỌ QUAN TÂM GÌ
+   Sếp sản phẩm: tốc độ ra tính năng, trải nghiệm người dùng
+   Sếp kỹ thuật: rủi ro, năng lực đội
+   Kinh doanh:   doanh thu, cam kết với khách
+   ⇒ Cùng một đề xuất, nói bằng ba ngôn ngữ khác nhau.
 
-## Phương án
-| | Được | Mất |
+② NÓI BẰNG DỮ LIỆU, không bằng ý kiến
+   "Tôi thấy nên..."  →  "Số liệu cho thấy... nên tôi đề xuất..."
+
+③ ĐỀ XUẤT THỬ NGHIỆM NHỎ thay vì thay đổi lớn
+   "Thử ở một service trong một sprint, đo lại rồi quyết."
+   ⇒ Hạ rủi ro của việc ĐỒNG Ý xuống ⇒ dễ được đồng ý hơn nhiều.
+
+④ NÓI CHUYỆN RIÊNG TRƯỚC CUỘC HỌP
+   Người ta phản đối trong phòng họp thường vì bị bất ngờ,
+   không phải vì không đồng ý.
+
+⑤ CHO HỌ QUYỀN SỞ HỮU
+   Ý tưởng người ta góp phần tạo ra thì người ta bảo vệ.
+```
+
+Điểm ③ là kỹ thuật hiệu quả nhất trong danh sách: phần lớn phản đối không phải là "tôi nghĩ bạn sai" mà là "tôi không muốn chịu rủi ro nếu bạn sai".
+
+**Viết tài liệu người ta thật sự đọc:**
+
+```text
+□ Tiêu đề nói được nội dung — người ta tìm lại được sau 6 tháng
+□ Tóm tắt 3 dòng ở đầu
+□ Có tiêu đề mục để quét mắt
+□ Ví dụ cụ thể, không chỉ mô tả trừu tượng
+□ Ghi NGÀY và người viết — tài liệu không rõ ngày thì không ai dám tin
+```
+
+## Tại sao cần nó
+
+Vì công việc kỹ thuật tốt mà không ai biết thì không tạo ra ảnh hưởng gì:
+
+```text
+Sửa một lỗi hiệu năng, không nói với ai
+  ⇒ không ai biết vấn đề từng tồn tại
+  ⇒ không ai biết nó đã được giải quyết
+  ⇒ và lần sau ai đó lại làm hỏng đúng chỗ đó.
+
+Sửa xong và viết ba dòng: vấn đề, tác động, cách sửa
+  ⇒ đội học được
+  ⇒ và giá trị công việc của bạn được nhìn thấy.
+```
+
+Đây không phải chuyện tự quảng bá. Đó là cách kiến thức ở lại trong đội thay vì chỉ ở trong đầu một người.
+
+**Chọn kênh cho đúng:**
+
+```text
+Chat        việc nhanh, không quan trọng, cần trả lời trong ngày
+Email/tài liệu   quyết định, thứ cần tìm lại sau
+Gọi/gặp     bất đồng, tin xấu, hoặc khi đã trao đổi qua chat 3 lượt
+            mà chưa hiểu nhau
+```
+
+Dòng cuối là quy tắc đáng nhớ: **ba lượt chat không hiểu nhau ⇒ chuyển sang gọi**. Lượt thứ tư gần như không bao giờ giải quyết được gì.
+
+## So sánh
+
+| | Thứ tự khám phá | Thứ tự quyết định |
 |---|---|---|
-| Redis (đề nghị) | Chuẩn, nhóm đã biết | +1 dịch vụ, 120 $/tháng |
-| JWT không trạng thái | Không thêm dịch vụ | Không thu hồi được token ngay |
-| Sticky session | Sửa ít nhất | Mất session khi deploy, tải lệch |
+| Bắt đầu bằng | bối cảnh | **kết luận** |
+| Phù hợp với | báo cáo nghiên cứu | email, họp, tin nhắn |
+| Người bận | đóng giữa chừng | nắm được ý chính |
 
-## Rủi ro
-Redis chết → không ai đăng nhập được. Giảm bằng Redis có quản lý + replica.
+## Dễ nhầm
+
+**1. Kết luận ở cuối.** Người đọc đóng trước khi tới đó.
+
+**2. Nói bằng thuật ngữ kỹ thuật với người không phải dev.**
+
+**3. Báo tin xấu vòng vo.** Người nghe không biết mức độ.
+
+**4. Mang vấn đề mà không mang phương án.**
+
+**5. Báo trễ vào phút cuối.** Không còn lựa chọn cho ai.
+
+**6. Thuyết phục bằng ý kiến thay vì dữ liệu.**
+
+**7. Đề xuất thay đổi lớn ngay.** Rủi ro của việc đồng ý quá cao.
+
+**8. Bất ngờ hoá người khác trong cuộc họp.**
+
+**9. Chat vòng vo mãi khi đáng lẽ nên gọi.**
+
+**10. Làm tốt mà không nói.** Kiến thức không lan, giá trị không được thấy.
+
+## Mẹo nhớ
+
+> **Kết luận TRƯỚC. Người bận đọc theo thứ tự quyết định.**
+>
+> **Dịch sang THỜI GIAN, TIỀN, RỦI RO, NGƯỜI DÙNG.**
+>
+> **Tin xấu: sớm, thẳng, có phương án.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Bốn phần của một thông điệp quan trọng, phần nào hay bị thiếu?
+2. Dịch vấn đề kỹ thuật sang ngôn ngữ nghiệp vụ bằng bốn thứ gì?
+3. Bốn phần khi báo tin xấu?
+4. Năm cách thuyết phục khi không có quyền ra lệnh, cái nào hiệu quả nhất?
+5. Khi nào nên chuyển từ chat sang gọi?
+
+## Tự viết lại
+
+Bạn phát hiện hệ thống hiện tại **không chịu nổi** tải của chiến dịch marketing tháng sau. Cần 3 tuần để sửa; chiến dịch còn 4 tuần và đã chốt ngân sách quảng cáo. Không nhìn lại, viết email gửi sếp sản phẩm và sếp kỹ thuật:
+
+```text
+① kết luận ở câu đầu
+② lý do có số
+③ ít nhất hai phương án kèm đánh đổi
+④ bạn cần gì và trước khi nào
 ```
 
-Bảng ba dòng ở trên hiệu quả hơn ba trang văn xuôi so sánh, và nó buộc bạn phải thật sự chốt được cái "mất" của phương án mình đề nghị.
+Tự kiểm: nếu người nhận chỉ đọc dòng đầu rồi đóng, họ có biết phải làm gì không?
 
-## Cuộc họp và bất đồng bộ
+## Thử sức
 
-Với một tech lead, phần lớn cuộc họp có thể thay bằng văn bản. Họp chỉ đáng khi cần **bàn qua lại nhanh** hoặc chủ đề **có cảm xúc**.
+Bạn đề xuất một thay đổi kiến trúc trong cuộc họp. Sếp kỹ thuật phản đối ngay, và cuộc họp chuyển sang việc khác.
 
-Bất đồng bộ tốt hơn cho: cập nhật tình hình, đề xuất kỹ thuật, review, quyết định có thể ghi thành văn bản. Nó cho người ta thời gian suy nghĩ, và nó **để lại bản ghi** — thứ mà cuộc họp không có.
-
-Nếu phải họp: có agenda, có người quyết, và ghi lại kết luận. Cuộc họp không ghi kết luận sẽ được họp lại.
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Kết luận ở cuối | Người bận không đọc tới | Kết luận + việc cần làm ở đầu |
-| Dùng thuật ngữ với người ngoài | Không hiểu → không duyệt | Dịch sang ảnh hưởng, rủi ro, tiền |
-| Đệm tin xấu cho nhẹ | Người nghe không rõ mức độ | Nói trực tiếp, kèm số |
-| Làm nhẹ ảnh hưởng sự cố | Mất tin cậy khi số thật lộ ra | Nói rõ ai bị ảnh hưởng, bao nhiêu |
-| Đề xuất chỉ có ưu điểm | Bị coi là không suy nghĩ thật | Nêu nhược điểm trước |
-| Xin ý kiến khi đã chốt | Người ta nhận ra và mất lòng tin | Hỏi ở bản nháp, thật sự sửa |
-| Tranh luận thay vì thử | Bàn ba tuần cho việc thử hai ngày | Prototype nhỏ, đo, cho xem số |
-| Lẫn bất đồng mục tiêu với cách làm | Tranh luận không có điểm dừng | Phân biệt trước |
-| Tài liệu 8 trang | Không ai đọc = giá trị bằng 0 | Một trang có bảng |
-| Họp không ghi kết luận | Sẽ họp lại | Ghi quyết định + người + hạn |
-
-## Ghi nhớ
-
-- Kết luận và việc cần làm đứng đầu; suy luận đặt bên dưới.
-- Cùng một sự thật, ba cách nói cho ba đối tượng — nhắm vào cái họ phải quyết.
-- Tin xấu: sớm, trực tiếp, có số, có lựa chọn.
-- Nêu nhược điểm của chính đề xuất mình trước khi người khác nêu.
-
-## Tự kiểm tra
-
-1. Ba câu hỏi mà ba dòng đầu của một đề xuất phải trả lời?
-2. Cùng vấn đề "session trong RAM": nói với ban điều hành thế nào?
-3. Làm sao phân biệt bất đồng về mục tiêu với bất đồng về cách làm, và mỗi loại xử lý ra sao?
+Ba câu để trả lời: chuyện gì có thể đã sai **trong cách bạn đưa ra đề xuất**; bạn làm gì tiếp theo; và bạn chuẩn bị khác đi thế nào cho lần sau. Câu khó nhất: nếu phản đối thật sự là *"tôi không muốn chịu rủi ro nếu việc này hỏng"*, bạn thiết kế lại đề xuất ra sao để nó không còn là câu hỏi được/mất lớn?
