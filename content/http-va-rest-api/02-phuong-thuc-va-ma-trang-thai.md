@@ -4,115 +4,211 @@ slug: phuong-thuc-va-ma-trang-thai
 summary: GET/POST/PUT/PATCH/DELETE khác nhau ở chỗ nào, và chọn mã trạng thái cho đúng.
 level: co-ban
 tags: [http, rest, status-code, method]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** chọn đúng phương thức cho mỗi thao tác, và không còn trả `200 OK` cho mọi thứ kể cả khi lỗi.
+> **Sau bài này bạn sẽ:** chọn phương thức và mã trạng thái bằng hai câu hỏi, thay vì theo thói quen.
 
-## Phương thức: hai tính chất quyết định tất cả
+## Ý tưởng chính
 
-| Phương thức | An toàn? | Idempotent? | Việc |
+Phương thức HTTP không phải nhãn dán tuỳ thích. Mỗi cái mang **hai lời hứa** với client, proxy, và trình duyệt:
+
+```text
+An toàn (safe)      →  Gọi nó KHÔNG làm thay đổi gì
+Idempotent          →  Gọi 1 lần hay 10 lần cho cùng kết quả
+```
+
+Chọn sai phương thức nghĩa là **hứa sai** — và hạ tầng sẽ hành xử theo lời hứa đó, không theo ý bạn.
+
+## Mental model
+
+Hãy nghĩ tới **các loại thao tác ở quầy ngân hàng**.
+
+> **GET là xem sao kê.** Xem mười lần cũng không đổi gì — an toàn, và nhân viên có thể đưa bản in sẵn (cache).
+>
+> **PUT là ghi số dư thành 5 triệu.** Làm mười lần vẫn ra 5 triệu — idempotent.
+>
+> **POST là nộp 1 triệu vào tài khoản.** Làm mười lần thì **nộp mười lần** — không idempotent, và đây là lý do trình duyệt cảnh báo khi bạn F5 sau khi gửi form.
+>
+> **DELETE là đóng tài khoản.** Lần đầu đóng, những lần sau "đã đóng rồi" — kết quả cuối vẫn như nhau, nên vẫn idempotent.
+
+## Ví dụ nhỏ
+
+```http
+GET    /don-hang/123      → xem
+POST   /don-hang          → tạo mới
+PUT    /don-hang/123      → thay THẾ toàn bộ
+PATCH  /don-hang/123      → sửa MỘT PHẦN
+DELETE /don-hang/123      → xoá
+```
+
+## Code chạy thế nào
+
+Vì sao hai tính chất kia quan trọng — chúng quyết định hành vi của **hạ tầng**, không chỉ của code bạn:
+
+```text
+GET an toàn ⇒
+  · trình duyệt cache được
+  · proxy/CDN cache được
+  · trình duyệt tự tải trước (prefetch) khi rê chuột vào link
+  · bot quét web gọi thoải mái
+
+⇒ Đặt hành động XOÁ sau một GET là thảm hoạ:
+     GET /xoa-don?id=123
+  Bot Google quét trang, đi theo mọi link, và xoá sạch dữ liệu của bạn.
+  Chuyện này ĐÃ XẢY RA với nhiều hệ thống thật.
+```
+
+```text
+PUT/DELETE idempotent ⇒
+  · client/proxy được phép TỰ THỬ LẠI khi mạng lỗi
+POST không idempotent ⇒
+  · không ai dám tự thử lại
+  · muốn thử lại an toàn thì phải có idempotency key — [[idempotency-va-thu-lai]]
+```
+
+## Cú pháp
+
+| Phương thức | An toàn | Idempotent | Có body |
 |---|---|---|---|
-| `GET` | ✅ | ✅ | Đọc, không đổi gì |
-| `HEAD` | ✅ | ✅ | Như `GET` nhưng chỉ lấy header |
-| `POST` | ❌ | ❌ | Tạo mới, hoặc thao tác không xếp vào đâu được |
-| `PUT` | ❌ | ✅ | Thay **toàn bộ** tài nguyên |
-| `PATCH` | ❌ | ❌ | Sửa **một phần** tài nguyên |
-| `DELETE` | ❌ | ✅ | Xoá |
+| GET | ✅ | ✅ | ❌ |
+| HEAD | ✅ | ✅ | ❌ |
+| POST | ❌ | ❌ | ✅ |
+| PUT | ❌ | ✅ | ✅ |
+| PATCH | ❌ | ❌* | ✅ |
+| DELETE | ❌ | ✅ | Hiếm |
 
-- **An toàn** = không làm thay đổi dữ liệu. Trình duyệt và crawler tự do gọi lại.
-- **Idempotent** = gọi 10 lần cho kết quả giống gọi 1 lần. Đây là tính chất khiến việc thử lại khi mạng lỗi trở nên an toàn — xem [[idempotency-va-thu-lai]].
+\* `PATCH` idempotent hay không **tuỳ nội dung**: `{"tuoi": 30}` thì có; `{"tang_diem": 5}` thì không.
 
-`PUT` idempotent vì nó *ghi đè* bằng giá trị bạn gửi:
-
-```http
-PUT /api/users/u-1
-{"name":"Kiệt","email":"k@example.com"}
-```
-
-Gọi ba lần thì user vẫn đúng như vậy. Còn `POST /api/orders` ba lần thì có **ba** đơn hàng.
-
-## PUT hay PATCH
-
-Sai phổ biến: dùng `PUT` để sửa một trường.
+**PUT hay PATCH** — khác biệt hay bị nhầm:
 
 ```http
-PUT /api/users/u-1
-{"email":"moi@example.com"}
+PUT /nguoi-dung/1        {"ten": "An", "email": "a@x.com", "tuoi": 30}
+   → THAY THẾ toàn bộ. Thiếu trường nào thì trường đó bị XOÁ.
+
+PATCH /nguoi-dung/1      {"tuoi": 31}
+   → chỉ sửa `tuoi`, phần còn lại giữ nguyên.
 ```
 
-Đúng nghĩa `PUT`, cái này nói *"user u-1 giờ chỉ có email, không có tên"* — nhiều API sẽ xoá trắng `name`. Sửa một phần thì dùng `PATCH`:
+Trong thực tế **PATCH được dùng nhiều hơn**, vì client hiếm khi có đủ toàn bộ bản ghi để gửi lên.
 
-```http
-PATCH /api/users/u-1
-{"email":"moi@example.com"}
+## Tại sao cần nó
+
+Vì mã trạng thái là thứ **máy** đọc để quyết định làm gì tiếp — thử lại, cache, đăng nhập lại, hay báo lỗi.
+
+```text
+2xx  Thành công
+  200 OK              — GET/PUT/PATCH thành công
+  201 Created         — đã tạo mới (kèm header Location)
+  204 No Content      — thành công, không có gì trả về (DELETE)
+
+3xx  Chuyển hướng
+  301 Moved Permanently — đổi vĩnh viễn, trình duyệt ghi nhớ
+  304 Not Modified      — dữ liệu chưa đổi, dùng bản cache của bạn
+
+4xx  LỖI CỦA CLIENT — gửi lại y hệt cũng vẫn lỗi
+  400 Bad Request     — dữ liệu sai định dạng
+  401 Unauthorized    — CHƯA đăng nhập (tên gọi sai lịch sử)
+  403 Forbidden       — ĐÃ đăng nhập nhưng không có quyền
+  404 Not Found       — không tồn tại
+  409 Conflict        — xung đột trạng thái (email đã tồn tại)
+  422 Unprocessable   — đúng định dạng nhưng sai nghiệp vụ
+  429 Too Many Requests — vượt giới hạn tần suất
+
+5xx  LỖI CỦA SERVER — client thử lại có thể được
+  500 Internal Server Error
+  502 Bad Gateway     — server phía sau trả lời sai
+  503 Service Unavailable — quá tải/bảo trì, kèm Retry-After
+  504 Gateway Timeout — server phía sau không trả lời kịp
 ```
 
-## Mã trạng thái: nhóm chữ số đầu là ý chính
+Ranh giới **4xx và 5xx** là thứ quan trọng nhất phải hiểu: nó trả lời câu *"lỗi này tại ai, và thử lại có ích không?"* Trả sai nhóm thì client thử lại vô vọng, hoặc bỏ cuộc khi lẽ ra nên thử lại.
 
-| Nhóm | Nghĩa | Ai sai |
-|---|---|---|
-| `2xx` | Thành công | — |
-| `3xx` | Chuyển hướng | — |
-| `4xx` | Request có vấn đề | **Client** |
-| `5xx` | Server hỏng | **Server** |
+Phân biệt 401 và 403 (tên gọi gây nhầm từ đầu):
 
-Ranh giới `4xx`/`5xx` không phải chuyện thẩm mỹ: hệ thống giám sát báo động dựa trên tỉ lệ `5xx`. Trả `500` cho lỗi nhập liệu sai là tự tạo báo động giả lúc 3 giờ sáng.
-
-Những mã dùng thật sự:
-
-```
-200 OK                  Đọc thành công, hoặc sửa xong và có trả về nội dung
-201 Created             Vừa tạo. Kèm header Location trỏ tới tài nguyên mới
-204 No Content          Xong, cố tình không có body (DELETE thường dùng)
-400 Bad Request         Cú pháp/kiểu dữ liệu sai
-401 Unauthorized        CHƯA đăng nhập (tên gọi sai lịch sử — nó là "unauthenticated")
-403 Forbidden           ĐÃ đăng nhập nhưng không có quyền
-404 Not Found           Không có tài nguyên này
-409 Conflict            Xung đột trạng thái (email đã tồn tại)
-422 Unprocessable       Cú pháp đúng nhưng nghiệp vụ sai (ngày sinh ở tương lai)
-429 Too Many Requests   Quá tần suất. Kèm Retry-After
-500 Internal Error      Bug của server
-503 Service Unavailable Quá tải hoặc đang bảo trì. Kèm Retry-After
+```text
+401 → "Anh là ai? Tôi không biết anh."      → đăng nhập đi
+403 → "Tôi biết anh, nhưng anh không được." → đăng nhập lại cũng vô ích
 ```
 
-**401 và 403** là cặp bị lẫn nhiều nhất. `401` = "bạn là ai?", `403` = "biết bạn là ai rồi, nhưng không được". Xem [[xac-thuc-va-phan-quyen-khac-nhau]].
+Chi tiết ở [[xac-thuc-va-phan-quyen-khac-nhau]].
 
-## Đừng trả 200 rồi nhét lỗi vào body
+## So sánh
+
+**Đừng trả 200 rồi nhét lỗi vào body:**
 
 ```json
-// ❌ Mã 200, lỗi giấu trong body
-{ "success": false, "error": "Email đã tồn tại" }
+// ❌ Trả 200 OK
+{ "success": false, "error": "Không tìm thấy đơn hàng" }
 ```
 
-Client phải parse body mới biết có lỗi, mọi lớp trung gian (proxy, cache, retry, monitoring) đều tưởng thành công. Dùng đúng mã:
+Hậu quả rất cụ thể:
+
+```text
+· Client phải parse body mới biết thành công hay không
+· Thư viện HTTP tưởng thành công, không kích hoạt cơ chế thử lại
+· Giám sát báo "0% lỗi" trong khi hệ thống đang hỏng
+· CDN cache một phản hồi lỗi như thể nó hợp lệ
+```
 
 ```http
-HTTP/1.1 409 Conflict
-Content-Type: application/json
-
-{"error":{"code":"EMAIL_TAKEN","message":"Email đã được dùng"}}
+404 Not Found
+{ "error": { "code": "DON_HANG_KHONG_TON_TAI", "message": "Không tìm thấy đơn hàng" } }
 ```
 
-## Lỗi hay gặp
+Mã trạng thái cho **máy**, body cho **người và cho việc xử lý chi tiết**.
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| `200` cho mọi response kể cả lỗi | Retry/cache/monitoring hiểu sai hoàn toàn | Dùng mã đúng nhóm |
-| `500` cho lỗi validate | Báo động giả, che mất lỗi server thật | `400` hoặc `422` |
-| `403` khi người dùng chưa đăng nhập | Client không biết là cần hiện form đăng nhập | `401` |
-| `POST` để đọc dữ liệu | Mất cache, mất khả năng bookmark | `GET` với query string |
-| `PUT` để sửa một trường | Xoá trắng các trường không gửi | `PATCH` |
-| `201` mà không có `Location` | Client không biết tài nguyên mới ở đâu | Thêm header `Location` |
+## Dễ nhầm
 
-## Ghi nhớ
+**1. Dùng GET cho hành động thay đổi dữ liệu.** Bot và trình duyệt sẽ gọi nó mà không hỏi bạn.
 
-- An toàn = không đổi dữ liệu. Idempotent = gọi lại không hại gì.
-- `PUT` thay toàn bộ, `PATCH` sửa một phần.
-- `4xx` là client sai, `5xx` là mình sai — giám sát dựa vào ranh giới này.
-- `401` chưa đăng nhập, `403` không có quyền.
+**2. Dùng POST cho mọi thứ.** Bạn mất khả năng cache, mất khả năng thử lại an toàn, và client không đoán được hành vi.
 
-## Tự kiểm tra
+**3. Trả 200 cho lỗi.** Xem ở trên.
 
-1. Vì sao `DELETE` được coi là idempotent dù lần thứ hai trả `404`?
-2. API trả `200 {"success": false}`. Kể ba thứ bị hỏng vì cách này.
-3. Người dùng gửi ngày sinh là năm 2090. Trả mã nào, và vì sao không phải `500`?
+**4. Trả 500 cho lỗi validate.** Đó là 400 hoặc 422. Trả 500 làm hệ thống giám sát báo động nhầm, và client thử lại vô ích.
+
+**5. Nhầm 401 với 403.**
+
+**6. Trả 404 cho tài nguyên tồn tại nhưng không có quyền.** Đôi khi đây là **cố ý** (không tiết lộ sự tồn tại), nhưng phải là quyết định có ý thức chứ không phải nhầm lẫn.
+
+**7. Quên `Retry-After` khi trả 429 hoặc 503.** Client không biết chờ bao lâu và sẽ thử lại ngay lập tức, làm mọi thứ tệ hơn.
+
+## Mẹo nhớ
+
+> **An toàn = không đổi gì. Idempotent = làm nhiều lần vẫn thế.**
+>
+> **4xx tại client, 5xx tại server — đó là câu hỏi "thử lại có ích không".**
+>
+> **Mã trạng thái cho máy, body cho người.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. "An toàn" và "idempotent" nghĩa là gì, và mỗi cái cho phép hạ tầng làm gì?
+2. Vì sao `GET /xoa?id=1` là thiết kế nguy hiểm?
+3. PUT và PATCH khác nhau thế nào — điều gì xảy ra với trường bạn không gửi?
+4. 401 và 403 khác nhau ra sao?
+5. Ba hậu quả của việc trả 200 kèm `{"success": false}`?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, chọn phương thức và mã trạng thái cho từng tình huống:
+
+```text
+a) Lấy danh sách đơn hàng
+b) Tạo đơn mới → trả về gì, mã nào, header nào?
+c) Đổi trạng thái đơn thành "đã huỷ"
+d) Xoá đơn không tồn tại
+e) Người dùng gửi email đã có người dùng
+f) Người dùng gọi API quá 100 lần/phút
+```
+
+Tự kiểm: câu (d) — trả 404 hay 204? Cả hai đều có lý; nêu lý do cho lựa chọn của bạn.
+
+## Thử sức
+
+Client báo: *"API của các anh cứ tạo đơn trùng"*. Bạn kiểm tra log: client gọi `POST /don-hang` ba lần trong 2 giây, cả ba đều thành công.
+
+Giải thích **vì sao client làm vậy** (họ không cố ý), và nêu hai cách sửa — một ở phía client, một ở phía server. Cách nào đáng tin hơn, và vì sao?

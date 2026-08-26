@@ -4,102 +4,180 @@ slug: vong-doi-mot-lan-goi-http
 summary: Request gồm những gì, response gồm những gì, và vì sao HTTP không nhớ lần gọi trước.
 level: co-ban
 tags: [http, request, response, header]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** đọc được một request/response thô, và giải thích được vì sao server không tự biết bạn là ai ở lần gọi thứ hai.
+> **Sau bài này bạn sẽ:** đọc được một request thô và biết mỗi phần làm gì, và giải thích được vì sao máy chủ "không nhớ" bạn là ai.
 
-## Một request là một khối văn bản
+## Ý tưởng chính
 
-Bỏ hết thư viện đi, HTTP chỉ là văn bản gửi qua TCP:
+HTTP đơn giản hơn nhiều người tưởng: **client gửi một khối văn bản, server gửi lại một khối văn bản**. Hết.
+
+Và nó có một tính chất định hình mọi thứ còn lại: **HTTP không nhớ gì cả**. Mỗi request là một tờ giấy trắng — server không biết bạn vừa gọi gì năm giây trước.
+
+## Mental model
+
+Hãy nghĩ tới **gửi thư qua bưu điện, và người nhận bị mất trí nhớ mỗi sáng**.
+
+> Bạn viết thư: **địa chỉ** (URL), **loại việc** (phương thức), **ghi chú ngoài phong bì** (header), **nội dung** (body).
+>
+> Người nhận đọc, làm, gửi thư trả lời: **mã tình trạng** (status), **ghi chú** (header), **nội dung** (body).
+>
+> Nhưng sáng hôm sau anh ta **quên sạch**. Bạn gửi thư thứ hai thì phải nói lại mình là ai — mỗi lần, không có ngoại lệ.
+
+"Nói lại mình là ai" chính là cookie hoặc token. Và toàn bộ chuyện phiên đăng nhập tồn tại chỉ vì tính chất mất trí nhớ đó — xem [[phien-dang-nhap-va-cookie]].
+
+## Ví dụ nhỏ
 
 ```http
-POST /api/orders HTTP/1.1
-Host: shop.example.com
+POST /api/don-hang HTTP/1.1
+Host: shop.vn
 Content-Type: application/json
-Authorization: Bearer eyJhbGci...
-Content-Length: 38
+Authorization: Bearer eyJhbGc...
 
-{"productId":"p-12","quantity":2}
+{"sanPhamId": "abc", "soLuong": 2}
 ```
-
-Bốn phần, đúng thứ tự này:
-
-1. **Dòng đầu** — phương thức, đường dẫn, phiên bản
-2. **Header** — mỗi dòng một cặp `Tên: giá trị`
-3. **Một dòng trống** — ranh giới bắt buộc giữa header và body
-4. **Body** — tuỳ chọn; `GET` thường không có
-
-Response cùng hình dạng, chỉ khác dòng đầu:
 
 ```http
 HTTP/1.1 201 Created
 Content-Type: application/json
-Location: /api/orders/o-891
+Location: /api/don-hang/123
 
-{"id":"o-891","status":"pending"}
+{"id": "123", "trangThai": "moi"}
 ```
 
-## HTTP không nhớ gì cả
+Bốn phần ở request, ba phần ở response. Không có gì khác.
 
-Đây là tính chất quan trọng nhất và cũng bị quên nhiều nhất: **mỗi request là một tờ giấy trắng**. Server xử lý xong là quên sạch. Request thứ hai đến, server không có cách nào tự biết nó cùng người với request thứ nhất.
+## Code chạy thế nào
 
-Nên mọi thứ cần "nhớ" phải **đi kèm trong từng request**:
+Một lần gọi đi qua sáu chặng, và biết chúng giúp bạn chẩn đoán khi chậm:
 
-```http
-GET /api/me HTTP/1.1
-Cookie: session=abc123          ← danh tính gửi lại mỗi lần
-Authorization: Bearer eyJ...    ← hoặc bằng token
+```text
+① DNS       shop.vn → 203.0.113.5           (~20ms, có cache)
+② TCP       bắt tay ba bước                  (~30ms)
+③ TLS       trao đổi khoá, xác minh chứng chỉ (~50ms)  ← chỉ với https
+④ Request   gửi khối văn bản đi
+⑤ Xử lý     server làm việc, truy vấn CSDL   ← thường là phần lâu nhất
+⑥ Response  gửi khối văn bản về
 ```
 
-Hệ quả thực tế: không có "biến toàn cục của người dùng" ở server. Cái bạn tưởng là "đang đăng nhập" thực chất là *cookie được gửi lại ở mỗi request và server tra lại vào store mỗi lần*. Xem [[phien-dang-nhap-va-cookie]].
+Ba chặng đầu tốn ~100ms và **chỉ trả một lần** cho nhiều request nhờ kết nối được giữ lại (keep-alive). Đó là lý do request thứ hai tới cùng một host luôn nhanh hơn request đầu.
 
-## Header đáng nhớ
+Khi ai đó báo "API chậm", câu hỏi đầu tiên là **chậm ở chặng nào** — mạng, hay xử lý? Hai nguyên nhân đó cần hai cách sửa hoàn toàn khác nhau.
 
-| Header | Chiều | Việc |
-|---|---|---|
-| `Content-Type` | cả hai | Body đang ở định dạng gì (`application/json`) |
-| `Accept` | request | Client muốn nhận định dạng gì |
-| `Authorization` | request | Danh tính (`Bearer <token>`) |
-| `Cache-Control` | cả hai | Được cache bao lâu, ở đâu |
-| `Location` | response | URL của tài nguyên vừa tạo, hoặc đích chuyển hướng |
-| `ETag` | response | "Dấu vân tay" của phiên bản nội dung |
+## Cú pháp
 
-## Xem tận mắt
+Header đáng nhớ, chia theo vai trò:
 
-`curl -v` in ra cả hai chiều, `>` là gửi đi và `<` là nhận về:
+```text
+GỬI ĐI (request)
+  Content-Type      định dạng của body        application/json
+  Authorization     giấy tờ tuỳ thân          Bearer <token>
+  Accept            tôi muốn nhận định dạng gì
+  User-Agent        tôi là trình duyệt/ứng dụng nào
+  Cookie            dữ liệu trình duyệt tự đính kèm
+
+NHẬN VỀ (response)
+  Content-Type      định dạng của body trả về
+  Cache-Control     được cache bao lâu
+  Set-Cookie        server yêu cầu lưu cookie
+  Location          địa chỉ mới (khi 201 hoặc 3xx)
+  Retry-After       hãy thử lại sau N giây
+```
+
+Xem tận mắt:
 
 ```bash
-curl -v https://api.github.com/users/torvalds
-
-# Chỉ xem header response
-curl -sI https://example.com
-
-# Gửi JSON và xem mã trạng thái
-curl -s -o /dev/null -w '%{http_code}\n' \
-  -X POST https://httpbin.org/post \
-  -H 'Content-Type: application/json' \
-  -d '{"a":1}'
+curl -v https://api.github.com/users/torvalds       # -v hiện cả header
+curl -i -X POST -H "Content-Type: application/json" \
+     -d '{"a":1}' https://api.example.com/items
+curl -w "\nDNS: %{time_namelookup}s  Kết nối: %{time_connect}s  Tổng: %{time_total}s\n" \
+     -o /dev/null -s https://example.com
 ```
 
-## Lỗi hay gặp
+Lệnh cuối đo từng chặng — dùng nó trước khi kết luận "server chậm".
 
-| Lỗi | Hậu quả | Sửa thế nào |
+## Tại sao cần nó
+
+Vì tính **không nhớ gì** của HTTP không phải khiếm khuyết mà là **quyết định thiết kế**, và nó đổi lấy ba thứ rất giá trị:
+
+```text
+① Mở rộng ngang được   → request nào cũng gửi tới server nào cũng được
+② Cache được           → cùng URL + cùng điều kiện = cùng kết quả
+③ Đơn giản, chịu lỗi   → server chết, request tiếp theo đi sang server khác
+```
+
+Nếu server phải nhớ bạn, mọi request của bạn buộc phải về đúng máy đó. Một máy chết là bạn mất phiên. Chuyện này liên quan trực tiếp tới [[mo-rong-va-can-bang-tai]].
+
+Cái giá là bạn phải tự mang theo danh tính ở **mỗi** request — và mọi cơ chế xác thực đều chỉ là các cách khác nhau để làm việc đó.
+
+## So sánh
+
+| | Ai gửi | Chứa gì |
 |---|---|---|
-| Gửi JSON mà không đặt `Content-Type` | Server đọc body thành chuỗi rỗng | Đặt `Content-Type: application/json` |
-| Tưởng server "nhớ" mình từ request trước | Code chạy đúng ở máy mình, sai khi có nhiều instance | Gửi danh tính ở mọi request |
-| Nhét dữ liệu nhạy cảm vào query string | Lộ trong log server, lịch sử trình duyệt, header `Referer` | Đưa vào body hoặc header |
-| Đặt `Content-Length` sai bằng tay | Body bị cắt hoặc kết nối treo | Để thư viện tự tính |
-| Dùng `GET` có body | Nhiều proxy âm thầm bỏ body đi | Đổi sang `POST` |
+| Phương thức | Client | Ý định: đọc, tạo, sửa, xoá |
+| URL | Client | Tài nguyên nào |
+| Header (req) | Client | Bối cảnh: định dạng, danh tính, ngôn ngữ |
+| Body (req) | Client | Dữ liệu gửi lên |
+| Mã trạng thái | Server | Kết quả: thành công, lỗi ai, lỗi gì |
+| Header (res) | Server | Cách xử lý kết quả: cache, cookie, chuyển hướng |
+| Body (res) | Server | Dữ liệu trả về |
 
-## Ghi nhớ
+## Dễ nhầm
 
-- Request = dòng đầu + header + dòng trống + body. Response cùng hình dạng.
-- HTTP không có bộ nhớ giữa các request — danh tính phải gửi lại mỗi lần.
-- `Content-Type` mô tả body; thiếu nó là nguyên nhân số một của "server nhận rỗng".
-- `curl -v` là cách nhanh nhất để biết mình thật sự đã gửi cái gì.
+**1. Quên `Content-Type` khi gửi JSON.** Server không biết đọc kiểu gì và thường trả `400` hoặc `415` — lỗi trông rất khó hiểu vì body của bạn hoàn toàn hợp lệ.
 
-## Tự kiểm tra
+**2. Nhét dữ liệu nhạy cảm vào URL.**
 
-1. Vì sao HTTP cần một dòng trống giữa header và body?
-2. Server có ba instance sau load balancer. Vì sao lưu trạng thái đăng nhập trong biến của tiến trình là sai?
-3. Bạn `POST` JSON nhưng server báo body rỗng. Kiểm tra header nào trước tiên?
+```text
+❌ GET /api/login?matKhau=123456
+```
+
+URL bị ghi vào log máy chủ, log proxy, lịch sử trình duyệt, và header `Referer` khi người dùng bấm sang trang khác. Dữ liệu nhạy cảm đi trong **body** hoặc **header**.
+
+**3. Tưởng HTTPS mã hoá cả URL.** Nó mã hoá đường dẫn và body, nhưng **tên miền** thì không (server cần biết bạn hỏi ai). Và URL vẫn hiện nguyên trong log của chính bạn.
+
+**4. Gửi `GET` có body.** Kỹ thuật thì được, nhưng nhiều proxy và thư viện âm thầm bỏ nó đi. `GET` truyền tham số qua query string.
+
+**5. Tưởng "không nhớ gì" nghĩa là không có phiên đăng nhập.** Có phiên — nhưng **client mang theo bằng chứng** ở mỗi request, chứ server không tự nhớ.
+
+**6. Nhầm 3xx với lỗi.** `301`/`302` là chuyển hướng bình thường; `curl` không tự đi theo trừ khi bạn thêm `-L`.
+
+## Mẹo nhớ
+
+> **HTTP là gửi thư cho một người mất trí nhớ mỗi sáng.**
+>
+> **Request: phương thức + URL + header + body. Response: mã + header + body.**
+>
+> **Nhạy cảm thì đi trong body/header, không đi trong URL.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Bốn phần của một request và ba phần của một response?
+2. "HTTP không nhớ gì" nghĩa là gì, và nó đổi lấy ba lợi ích nào?
+3. Vì sao request thứ hai tới cùng một host thường nhanh hơn?
+4. Vì sao không được đặt mật khẩu trong query string, kể cả với HTTPS?
+5. Nếu server không nhớ bạn, phiên đăng nhập hoạt động thế nào?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết bằng tay một cặp request/response thô cho tình huống:
+
+```text
+Người dùng đã đăng nhập, tải lên một ảnh đại diện, server lưu thành công và
+trả về đường dẫn ảnh mới.
+```
+
+Tự kiểm: `Content-Type` của bạn là gì (gợi ý: **không** phải `application/json`), và mã trạng thái nào phù hợp nhất?
+
+## Thử sức
+
+Một API mất trung bình 800ms. Bạn đo bằng `curl -w` và thấy:
+
+```text
+DNS: 0.004s   Kết nối: 0.031s   TLS: 0.089s   Bắt đầu nhận: 0.780s   Tổng: 0.795s
+```
+
+Chỉ ra chặng nào là điểm nghẽn, và **loại trừ** những nguyên nhân nào. Rồi nêu ba giả thuyết cho chặng đó và cách kiểm chứng từng cái.

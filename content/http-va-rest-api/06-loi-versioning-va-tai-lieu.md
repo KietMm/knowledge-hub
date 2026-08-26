@@ -4,134 +4,204 @@ slug: loi-versioning-va-tai-lieu
 summary: Một hình dạng lỗi dùng chung, khi nào cần lên phiên bản, và thứ gì thật sự phá vỡ client.
 level: trung-cap
 tags: [rest, api-design, versioning, error-handling]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** thiết kế được hình dạng lỗi mà client xử lý bằng code, và phân biệt thay đổi nào phá vỡ tương thích.
+> **Sau bài này bạn sẽ:** thiết kế được một hình dạng lỗi dùng cho cả API, và phân biệt thay đổi nào **thật sự** phá vỡ client.
 
-## Lỗi phải máy đọc được, không chỉ người đọc được
+## Ý tưởng chính
+
+Lỗi API phải **máy đọc được**, không chỉ người đọc được. Client cần quyết định: thử lại? hiện thông báo gì? gắn lỗi vào ô nhập nào?
+
+Một chuỗi tiếng Việt không trả lời được câu nào trong ba câu đó.
+
+## Mental model
+
+Hãy nghĩ tới **giấy báo từ chối hồ sơ ở cơ quan hành chính**.
+
+> Tờ giấy chỉ ghi *"hồ sơ không hợp lệ"* buộc bạn phải quay lại hỏi, và nhân viên phải đọc lại từ đầu.
+>
+> Tờ giấy tốt ghi: **mã lỗi** (để tra), **lỗi ở mục nào**, **cần sửa gì**, và **mã hồ sơ** để lần sau nhắc tới cho nhanh.
+
+Bốn thứ đó tương ứng chính xác với bốn phần của một phản hồi lỗi tốt: `code`, `fields`, `message`, `requestId`.
+
+## Ví dụ nhỏ
 
 ```json
-// ❌ Client chỉ còn cách so sánh chuỗi tiếng Việt
-{ "error": "Email đã được sử dụng" }
+// ❌ Máy không làm gì được với thứ này
+{ "error": "Có lỗi xảy ra" }
 ```
 
-Đổi câu chữ một lần là mọi client vỡ. Client cũng không phân biệt được lỗi nào nên hiện ở ô nhập nào.
-
 ```json
-// ✅ Mã cho máy, thông điệp cho người, chi tiết cho từng ô nhập
+// ✅
 {
   "error": {
     "code": "VALIDATION_FAILED",
     "message": "Dữ liệu không hợp lệ",
-    "details": [
-      { "field": "email", "code": "ALREADY_TAKEN", "message": "Email đã được dùng" },
-      { "field": "age",   "code": "OUT_OF_RANGE",  "message": "Tuổi phải từ 18" }
-    ],
-    "requestId": "req_8f14e45f"
+    "fields": {
+      "email": "Email không đúng định dạng",
+      "tuoi": "Phải là số dương"
+    },
+    "requestId": "req_01H9X..."
   }
 }
 ```
 
-Bốn thứ đáng có:
+## Code chạy thế nào
 
-- **`code`** — hằng số, không bao giờ đổi. Client `switch` trên nó.
-- **`message`** — cho người đọc, tự do đổi.
-- **`details`** — mảng theo từng trường, để form gắn lỗi vào đúng ô.
-- **`requestId`** — cùng id có trong log server. Người dùng đọc cho support, support tìm ra đúng request trong vài giây.
+Bốn trường, mỗi trường phục vụ một người dùng khác nhau:
 
-Quan trọng: **không để lộ nội bộ**. Stack trace, câu SQL, tên bảng trong response là quà cho người tấn công — xem [[thu-vien-log-va-ssrf]].
+```text
+code       → CODE, không phải chữ tiếng Việt
+             client so sánh bằng ===; dịch ngôn ngữ ở phía client
+             đổi message không phá vỡ ai; đổi code thì có
 
-```ts
-// Lỗi ngoài dự kiến: ghi đầy đủ vào log, trả ra ngoài đúng requestId
-catch (loi) {
-  const requestId = crypto.randomUUID()
-  logger.error({ requestId, loi })       // stack trace ở lại đây
-  return Response.json(
-    { error: { code: 'INTERNAL', message: 'Có lỗi xảy ra', requestId } },
-    { status: 500 },
-  )
+message    → cho người phát triển đọc lúc gỡ lỗi
+             KHÔNG hiện thẳng cho người dùng cuối
+
+fields     → để gắn lỗi vào đúng ô nhập trên form
+
+requestId  → nối phản hồi này với log phía server
+             người dùng gửi mã này, bạn tìm ra đúng request trong hàng triệu dòng log
+```
+
+`requestId` là trường bị bỏ qua nhiều nhất và có giá trị vận hành cao nhất. Không có nó, câu *"API bị lỗi lúc 3 giờ chiều"* gần như không truy được.
+
+Và một quy tắc bảo mật: **không lộ chi tiết nội bộ**.
+
+```json
+// ❌ Lộ cấu trúc cơ sở dữ liệu và cả stack trace
+{ "error": "PostgresError: duplicate key value violates unique constraint \"users_email_key\"" }
+
+// ✅
+{ "error": { "code": "EMAIL_DA_TON_TAI", "message": "Email đã được sử dụng" } }
+```
+
+Chi tiết đầy đủ **ghi vào log**, không gửi cho client.
+
+## Cú pháp
+
+**Thay đổi nào phá vỡ client** — bảng này quyết định bạn có cần lên phiên bản hay không:
+
+```text
+❌ PHÁ VỠ
+  · Xoá hoặc đổi tên một trường
+  · Đổi kiểu dữ liệu           ("123" → 123)
+  · Thêm trường BẮT BUỘC ở request
+  · Thu hẹp giá trị cho phép   (bỏ bớt giá trị enum)
+  · Đổi ý nghĩa của một trường (giá: đồng → nghìn đồng)
+  · Đổi mã trạng thái trả về cho cùng tình huống
+
+✅ KHÔNG phá vỡ
+  · Thêm trường MỚI vào response
+  · Thêm endpoint mới
+  · Thêm tham số TUỲ CHỌN
+  · Thêm giá trị mới vào enum*
+```
+
+Dấu * ở dòng cuối: chỉ đúng nếu client được viết để **bỏ qua giá trị lạ**. Client dùng `switch` không có nhánh `default` sẽ vỡ khi bạn thêm trạng thái mới — nên hãy ghi rõ điều này trong tài liệu ngay từ đầu.
+
+Điều đáng nhớ nhất: **thêm thì an toàn, bớt và đổi thì không.** Phần lớn thay đổi có thể được thiết kế thành "thêm".
+
+## Tại sao cần nó
+
+Vì lên phiên bản là việc **đắt**: bạn phải chạy song song hai bản, sửa lỗi hai lần, test hai lần. Nên thứ tự ưu tiên là:
+
+```text
+① Thiết kế thay đổi thành "thêm", không phải "đổi"
+② Giữ trường cũ song song trường mới, đánh dấu deprecated
+③ Chỉ khi không còn cách nào → lên phiên bản
+```
+
+Cách ② trong thực tế:
+
+```json
+{
+  "ten": "An",           // cũ — vẫn giữ
+  "hoTen": "Nguyễn An"   // mới
 }
 ```
 
-## Thay đổi nào phá vỡ client
-
-Đây là câu hỏi thật, "có nên lên v2 không" chỉ là hệ quả.
-
-**Phá vỡ:**
-- Xoá hoặc đổi tên field trong response
-- Đổi kiểu dữ liệu (`"total": 100` → `"total": "100"`)
-- Thêm field **bắt buộc** vào request
-- Thu hẹp giá trị được nhận
-- Đổi mã trạng thái của một trường hợp đã có
-- Đổi ý nghĩa của field mà giữ nguyên tên — loại tệ nhất, vì không ai phát hiện được bằng test
-
-**Không phá vỡ:**
-- Thêm field mới vào response
-- Thêm field **tuỳ chọn** vào request
-- Thêm endpoint mới
-- Thêm giá trị mới vào enum — *chỉ khi* client đã xử lý giá trị lạ một cách an toàn
-
-Điều kiện cuối là lý do client nên **bỏ qua field không biết** thay vì ném lỗi. Một client nghiêm khắc quá mức biến mọi bổ sung thành thay đổi phá vỡ.
-
-## Versioning khi buộc phải
-
-```
-/api/v1/users          ← trong đường dẫn: dễ thấy, dễ route, dễ test bằng curl
-Accept: application/vnd.example.v2+json   ← trong header: URL sạch, khó debug hơn
-```
-
-Chọn đường dẫn cho hầu hết trường hợp. Cái quan trọng hơn cách đặt là **kế hoạch khai tử**:
-
 ```http
-HTTP/1.1 200 OK
-Deprecation: version="v1"
-Sunset: Sat, 01 Nov 2026 00:00:00 GMT
-Link: </api/v2/users>; rel="successor-version"
+Deprecation: true
+Sunset: Wed, 31 Dec 2026 23:59:59 GMT
+Link: <https://docs.example.com/migration>; rel="deprecation"
 ```
 
-Không có `Sunset` thì v1 sống mãi và bạn bảo trì hai API vĩnh viễn.
+Ba header đó cho client biết **khi nào** trường cũ biến mất và **đọc gì** để chuyển đổi — thay vì phát hiện vào ngày nó ngừng hoạt động.
 
-Cách tránh versioning tốt nhất là **mở rộng thay vì thay thế**: thêm field mới, giữ field cũ trả về song song một thời gian, đo xem còn ai dùng field cũ rồi mới bỏ.
+Khi buộc phải lên phiên bản, ba cách:
 
-## Tài liệu sinh từ code
+| Cách | Ví dụ | Đánh đổi |
+|---|---|---|
+| Trong URL | `/v1/don-hang` | Rõ ràng, dễ định tuyến, cache tốt — **phổ biến nhất** |
+| Header | `Accept: application/vnd.api.v2+json` | URL sạch, nhưng khó test bằng trình duyệt |
+| Query | `?version=2` | Dễ lẫn với tham số nghiệp vụ |
 
-Tài liệu viết tay lệch khỏi code trong vòng vài tuần. Sinh nó từ chính schema đang dùng để validate:
+Với API nội bộ hoặc API cho app di động của chính bạn, đường đơn giản nhất thường là: **không versioning, chỉ thêm không bớt**, và bỏ trường cũ khi số người dùng bản cũ về 0.
+
+## So sánh
+
+**Tài liệu phải sinh từ code**, không viết tay:
 
 ```ts
-import { z } from 'zod'
-
-export const TaoUserSchema = z.object({
-  email: z.string().email(),
-  name: z.string().min(1).max(100),
-  role: z.enum(['admin', 'member']).default('member'),
+const DonHangSchema = z.object({
+  id: z.string(),
+  tong: z.number().int().describe('Tổng tiền, đơn vị đồng'),
 })
-// Cùng schema này: validate ở runtime + sinh OpenAPI + sinh type cho client.
-// Một nguồn sự thật, không có cách nào lệch nhau.
+// → sinh OpenAPI → sinh trang tài liệu → sinh client TypeScript
 ```
 
-Đây đúng cách repo này làm: `src/lib/db/schema.ts` là nguồn duy nhất cho cả kiểu TypeScript lẫn kiểm tra runtime.
+Lý do rất đơn giản: **tài liệu viết tay luôn lỗi thời**. Không phải vì người ta lười — mà vì không có gì bắt nó phải đúng. Tài liệu sinh từ chính schema đang chạy thì không thể lệch.
 
-## Lỗi hay gặp
+## Dễ nhầm
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Lỗi chỉ có `message` tiếng Việt | Đổi câu chữ là client vỡ | Thêm `code` bất biến |
-| Trả stack trace/câu SQL ra ngoài | Lộ cấu trúc nội bộ cho người tấn công | Log nội bộ, trả `requestId` |
-| Mỗi endpoint một hình dạng lỗi | Client viết parser riêng từng chỗ | Một hình dạng chung |
-| Lên `v2` cho mọi thay đổi nhỏ | Bảo trì N phiên bản song song | Chỉ khi thật sự phá vỡ |
-| Ra `v2` mà không hẹn ngày tắt `v1` | Nợ kỹ thuật vĩnh viễn | Header `Sunset` |
-| Client ném lỗi khi thấy field lạ | Mọi bổ sung thành thay đổi phá vỡ | Bỏ qua field không biết |
-| Tài liệu viết tay | Lệch khỏi thực tế sau vài tuần | Sinh từ schema |
+**1. `code` là chuỗi tiếng Việt.** Đổi câu chữ cho hay hơn là phá vỡ client đang so sánh chuỗi đó.
 
-## Ghi nhớ
+**2. Hiện `message` thẳng cho người dùng cuối.** Nó dành cho lập trình viên; người dùng cần câu khác, và cần đúng ngôn ngữ của họ.
 
-- Lỗi cần `code` cho máy, `message` cho người, `details` cho từng trường, `requestId` để tra log.
-- Không bao giờ để stack trace ra ngoài.
-- Thêm field không phá vỡ; xoá/đổi tên/đổi kiểu thì có.
-- Ra phiên bản mới phải kèm ngày tắt phiên bản cũ.
+**3. Không có `requestId`.** Hỗ trợ khách hàng trở thành trò đoán.
 
-## Tự kiểm tra
+**4. Lộ stack trace ra ngoài.** Vừa lộ cấu trúc nội bộ, vừa lộ đường tấn công — cùng chủ đề với [[thu-vien-log-va-ssrf]].
 
-1. Vì sao `code` phải là hằng số chứ không phải chính `message`?
-2. `"total": 100` đổi thành `"total": "100"`. Phá vỡ hay không, vì sao?
-3. `requestId` giúp gì mà log server một mình không giúp được?
+**5. Lên phiên bản cho mọi thay đổi nhỏ.** Bạn nhận về `/v7` sau một năm và không ai biết mỗi bản khác nhau chỗ nào.
+
+**6. Xoá trường cũ ngay khi có trường mới.** Client di động cần **hàng tháng** để người dùng cập nhật app — trên App Store bạn không ép được ai.
+
+**7. Tài liệu viết tay.** Sáu tháng sau nó mô tả một API không còn tồn tại.
+
+## Mẹo nhớ
+
+> **`code` cho máy, `message` cho lập trình viên, `fields` cho form, `requestId` cho hỗ trợ.**
+>
+> **Thêm thì an toàn; bớt và đổi thì phá vỡ.**
+>
+> **Tài liệu viết tay luôn lỗi thời — sinh từ code.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Bốn trường của một phản hồi lỗi tốt, và mỗi trường phục vụ ai?
+2. Vì sao `code` không được là chuỗi tiếng Việt?
+3. Kể ba thay đổi **phá vỡ** và ba thay đổi **không phá vỡ**.
+4. Ba bước ưu tiên trước khi quyết định lên phiên bản?
+5. Vì sao không được xoá trường cũ ngay khi có trường mới, đặc biệt với app di động?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, thiết kế phản hồi lỗi cho ba tình huống:
+
+```text
+a) Form đăng ký: email sai định dạng và mật khẩu quá ngắn
+b) Người dùng cố xoá đơn hàng của người khác
+c) Cơ sở dữ liệu mất kết nối
+```
+
+Tự kiểm: mã trạng thái HTTP của từng trường hợp, và trường hợp nào client **nên** tự thử lại?
+
+## Thử sức
+
+API của bạn có 200.000 người dùng app di động. Bạn cần đổi trường `gia` từ *nghìn đồng* sang *đồng* (nhân 1000).
+
+Đây là thay đổi phá vỡ **nguy hiểm nhất**: kiểu dữ liệu không đổi, nên client cũ vẫn chạy — chỉ là hiển thị giá sai gấp 1000 lần. Lập kế hoạch chuyển đổi **không có ngày nào hiển thị sai**, và nói rõ bạn biết khi nào an toàn để xoá trường cũ.

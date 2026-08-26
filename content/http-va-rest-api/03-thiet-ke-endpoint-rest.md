@@ -4,111 +4,188 @@ slug: thiet-ke-endpoint-rest
 summary: Đặt URL theo danh từ, lồng tài nguyên đúng mức, và xử lý những thao tác không phải CRUD.
 level: co-ban
 tags: [rest, api-design, url]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** đặt được URL cho một API mới mà không phải tra tài liệu, và biết làm gì với những thao tác không nhét được vào CRUD.
+> **Sau bài này bạn sẽ:** đặt được URL mà người khác đoán ra trước khi đọc tài liệu, và biết xử lý những thao tác không vừa khuôn CRUD.
 
-## Đường dẫn là danh từ, hành động là phương thức
+## Ý tưởng chính
 
-Nguyên tắc duy nhất cần nhớ: **URL chỉ tài nguyên, phương thức nói hành động**.
+Nguyên tắc REST gói trong một câu: **URL là danh từ, phương thức là động từ**.
 
-```
-❌ POST /api/createUser          ✅ POST   /api/users
-❌ GET  /api/getUserById?id=1    ✅ GET    /api/users/u-1
-❌ POST /api/deleteUser          ✅ DELETE /api/users/u-1
-❌ POST /api/updateUserEmail     ✅ PATCH  /api/users/u-1
-```
+`/don-hang/123` nói *cái gì*; `GET` hay `DELETE` nói *làm gì với nó*. Nhét động từ vào URL (`/layDonHang`, `/xoaDonHang`) là nói cùng một thứ hai lần, và làm mất khả năng đoán.
 
-Động từ trong URL là dấu hiệu API đang mô phỏng lời gọi hàm chứ không phải mô tả tài nguyên. Hệ quả thật: cache không dùng được (mọi thứ thành `POST`), và số endpoint phình theo số hành động thay vì theo số loại dữ liệu.
+## Mental model
 
-Danh từ **số nhiều**, nhất quán toàn bộ API:
+Hãy nghĩ tới **địa chỉ nhà và các loại thao tác của bưu tá**.
 
-```
-/api/users        /api/users/u-1
-/api/orders       /api/orders/o-9
-/api/categories   /api/categories/c-2
-```
+> Địa chỉ luôn là **một chỗ**: *"số 12 đường Láng"*. Nó không đổi theo việc bạn định làm.
+>
+> Việc cần làm nằm ở **loại thư**: giao thư, thu thư, chuyển phát nhanh.
+>
+> Không ai viết địa chỉ là *"đi-giao-thư-số-12-đường-Láng"*.
 
-Trộn `/user/1` với `/orders/9` là bắt người dùng API phải đoán ở mỗi endpoint.
+Từ đó suy ra tính chất quan trọng nhất của API tốt: **đoán được**. Biết `/don-hang/123` thì đoán ra `/don-hang`, `/nguoi-dung/45`, `/nguoi-dung/45/don-hang` — mà không cần mở tài liệu.
 
-## Lồng tài nguyên: một cấp là đủ
+## Ví dụ nhỏ
 
-```
-GET  /api/users/u-1/orders        ← đơn hàng của user u-1
-POST /api/users/u-1/orders        ← tạo đơn cho user u-1
+```text
+❌ Động từ trong URL           ✅ Danh từ + phương thức
+GET  /layDanhSachDonHang       GET    /don-hang
+POST /taoDonHang               POST   /don-hang
+POST /xoaDonHang?id=1          DELETE /don-hang/1
+POST /capNhatDonHang           PATCH  /don-hang/1
 ```
 
-Đừng lồng sâu hơn khi tài nguyên đã có id riêng:
+## Code chạy thế nào
 
-```
-❌ GET /api/users/u-1/orders/o-9/items/i-3/product
-✅ GET /api/order-items/i-3        ← nó có id riêng, truy cập trực tiếp
-```
+Bốn quy tắc đặt URL, mỗi cái có lý do cụ thể:
 
-Quy tắc: **lồng để lọc, không lồng để định danh**. `o-9` đã đủ để tìm ra đơn hàng, không cần biết nó thuộc user nào mới đọc được — và nếu bạn cần `u-1` để kiểm tra quyền, đó là việc của tầng phân quyền chứ không phải của URL.
+```text
+① Danh từ SỐ NHIỀU cho tập hợp
+   /don-hang           ← tập hợp
+   /don-hang/123       ← một phần tử trong tập đó
+   Nhất quán số nhiều thì không ai phải nhớ chỗ nào số ít chỗ nào số nhiều.
 
-## Thao tác không phải CRUD
+② Chữ thường, nối bằng gạch NGANG
+   /don-hang-cho-duyet     ✅
+   /donHangChoDuyet        ❌ URL phân biệt hoa thường trên nhiều server
+   /don_hang_cho_duyet     ❌ gạch dưới bị gạch chân che mất trong link
 
-Không phải mọi việc đều là tạo/đọc/sửa/xoá. "Xuất bản bài viết", "hoàn tiền đơn hàng", "gửi lại email xác nhận" — ba cách xử lý, theo thứ tự ưu tiên:
+③ Không có đuôi định dạng
+   /don-hang.json          ❌ định dạng thuộc về header Accept
+   /don-hang               ✅
 
-**1. Biến trạng thái thành thứ sửa được** (tốt nhất):
-
-```http
-PATCH /api/posts/p-1
-{"status":"published"}
-```
-
-**2. Coi hành động là một tài nguyên** — dùng khi bản thân hành động có dữ liệu và lịch sử riêng:
-
-```http
-POST /api/orders/o-9/refunds
-{"amount":50000,"reason":"Hàng lỗi"}
-
-GET /api/orders/o-9/refunds       ← lịch sử hoàn tiền, tự nhiên có luôn
+④ Lồng TỐI ĐA một cấp
+   /nguoi-dung/45/don-hang            ✅
+   /nguoi-dung/45/don-hang/12/dong/3  ❌
 ```
 
-**3. Sub-resource dạng động từ** — chấp nhận được khi hai cách trên đều gượng:
+Vì sao quy tắc ④: URL lồng sâu **khoá chặt cấu trúc dữ liệu vào API**. Ngày nào đó một dòng đơn hàng thuộc về hai đơn, hoặc bạn muốn lấy dòng đơn hàng mà không biết đơn nào — URL đó thành vô dụng.
 
-```http
-POST /api/emails/e-1/resend
+```text
+Cần lấy dòng số 3:   /dong-don-hang/3            ← truy cập thẳng bằng id
+Cần lọc theo đơn:    /dong-don-hang?donHangId=12  ← dùng query
 ```
 
-Đừng cố nhồi mọi thứ vào CRUD tới mức méo mó. `POST /api/orders/o-9/refunds` rõ ràng hơn `PATCH /api/orders/o-9 {"refundAmount": 50000}` rất nhiều.
+## Cú pháp
 
-## Hình dạng response nên nhất quán
+**Thao tác không phải CRUD** — chỗ REST hay bị chê là cứng nhắc. Có ba cách xử lý, xếp theo thứ tự nên thử:
 
-Một tài nguyên trả thẳng object, danh sách trả object có khoá bọc ngoài:
+```text
+① Biến hành động thành TÀI NGUYÊN
+   POST /don-hang/123/huy            ← "huỷ" là một sự kiện, tạo nó ra
+   POST /nguoi-dung/45/xac-thuc-email
+
+② Đổi TRẠNG THÁI bằng PATCH
+   PATCH /don-hang/123    {"trangThai": "da_huy"}
+
+③ Tài nguyên con thể hiện quan hệ
+   PUT    /bai-viet/1/luot-thich/me     ← thích
+   DELETE /bai-viet/1/luot-thich/me     ← bỏ thích
+```
+
+Cách ① là cách dùng nhiều nhất trong thực tế, và nó hợp lý về mặt nghiệp vụ: *"huỷ đơn"* thường kèm lý do, thời điểm, người thực hiện — nó **là** một bản ghi, không chỉ là một trường đổi giá trị.
+
+Đừng ép mọi thứ vào CRUD. `POST /thanh-toan/123/hoan-tien` rõ ràng hơn nhiều so với `PATCH /thanh-toan/123 {"trangThai": "hoan_tien"}`, vì hoàn tiền là **một hành động có hệ quả**, không phải một phép gán.
+
+## Tại sao cần nó
+
+Vì **hình dạng response nhất quán** quyết định client viết code dễ hay khó:
 
 ```json
-// GET /api/users/u-1
-{ "id": "u-1", "name": "Kiệt", "email": "k@example.com" }
+// Một phần tử
+{ "id": "123", "tong": 500000 }
 
-// GET /api/users
-{ "data": [ {...}, {...} ], "meta": { "total": 128, "page": 1 } }
+// Danh sách — luôn bọc trong object, đừng trả mảng trần
+{
+  "data": [ ... ],
+  "meta": { "tong": 240, "trang": 1, "moiTrang": 20 }
+}
 ```
 
-Vì sao danh sách cần khoá bọc: trả mảng trần `[...]` thì sau này muốn thêm thông tin phân trang là **phá vỡ tương thích** — mọi client đang `for` trực tiếp trên response sẽ vỡ. Xem [[phan-trang-loc-va-sap-xep]].
+Vì sao **không** trả mảng trần `[...]`:
 
-## Lỗi hay gặp
+```text
+· Không có chỗ để thêm phân trang, tổng số, cảnh báo
+· Thêm chúng sau này là THAY ĐỔI PHÁ VỠ
+· Một số client cũ không parse được mảng ở cấp cao nhất (vấn đề bảo mật JSON cũ)
+```
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Động từ trong URL | Mất cache, endpoint phình vô hạn | Danh từ + phương thức |
-| Trộn số ít và số nhiều | Người dùng API phải đoán từng chỗ | Số nhiều, nhất quán |
-| Lồng 4-5 cấp | URL dài, khó cache, khó test | Lồng tối đa một cấp |
-| Trả mảng trần cho danh sách | Không thêm được phân trang về sau | Bọc trong `{ data, meta }` |
-| Mỗi endpoint một hình dạng lỗi khác nhau | Client phải viết parser riêng cho từng chỗ | Một hình dạng lỗi chung |
-| Lộ khoá chính tự tăng | Đoán được `/users/1`, `/users/2` — lộ quy mô và mở đường dò dữ liệu | Dùng id không đoán được |
+Và ba quy ước nhỏ nhưng tiết kiệm rất nhiều tranh cãi:
 
-## Ghi nhớ
+```text
+· Tên trường: nhất quán một kiểu (camelCase HOẶC snake_case), không trộn
+· Thời gian: LUÔN ISO 8601 kèm múi giờ — "2026-08-26T10:30:00Z"
+· Tiền: số nguyên đơn vị nhỏ nhất, hoặc chuỗi thập phân — không dùng float
+```
 
-- URL là danh từ số nhiều; hành động nằm ở phương thức.
-- Lồng để lọc (`/users/u-1/orders`), không lồng để định danh.
-- Thao tác lạ: ưu tiên đổi trạng thái, rồi tới coi hành động là tài nguyên.
-- Danh sách luôn bọc `{ data, meta }` để còn chỗ mở rộng.
+Ba dòng đó nên nằm trong tài liệu dự án ngay từ endpoint đầu tiên, vì sửa sau là thay đổi phá vỡ.
 
-## Tự kiểm tra
+## So sánh
 
-1. Đặt URL cho "lấy toàn bộ bình luận của bài viết p-9".
-2. "Gộp hai tài khoản trùng thành một" — thiết kế thế nào theo cách 2?
-3. Vì sao trả mảng trần cho danh sách là một quyết định khó sửa về sau?
+| Nhu cầu | Cách làm |
+|---|---|
+| Lấy một tài nguyên | `GET /don-hang/123` |
+| Lấy danh sách có lọc | `GET /don-hang?trangThai=moi` — [[phan-trang-loc-va-sap-xep]] |
+| Tài nguyên con của một tài nguyên | `GET /nguoi-dung/45/don-hang` |
+| Quan hệ nhiều-nhiều | `PUT /bai-viet/1/the/2` |
+| Hành động nghiệp vụ | `POST /don-hang/123/huy` |
+| Tìm kiếm phức tạp | `POST /don-hang/tim-kiem` với body |
+
+Dòng cuối là ngoại lệ hợp lệ: khi điều kiện tìm kiếm quá dài cho query string (URL có giới hạn ~2000 ký tự), dùng `POST` với body — và chấp nhận rằng nó không cache được.
+
+## Dễ nhầm
+
+**1. Động từ trong URL.** `/getUsers`, `/deleteOrder` — bạn đang lặp lại thứ phương thức đã nói.
+
+**2. Trộn số ít và số nhiều.** `/user/1` và `/orders/2` trong cùng một API buộc người dùng phải tra từng endpoint.
+
+**3. Lồng quá sâu.** Xem quy tắc ④.
+
+**4. Trả mảng trần cho danh sách.** Bạn tự chặn đường thêm metadata.
+
+**5. Trộn `camelCase` và `snake_case`.** Thường xảy ra khi API mới viết theo kiểu này, còn phần cũ theo kiểu kia — và client phải nhớ từng endpoint.
+
+**6. Trả thời gian không có múi giờ.** `"2026-08-26 10:30:00"` là 10:30 ở đâu? Client đoán, và đoán sai.
+
+**7. Ép hành động nghiệp vụ vào PATCH.** `PATCH {"trangThai": "da_thanh_toan"}` giấu mất việc thanh toán là một quy trình có hệ quả, và mở đường cho client tự đặt trạng thái tuỳ ý.
+
+## Mẹo nhớ
+
+> **URL là địa chỉ (danh từ); phương thức là loại thư (động từ).**
+>
+> **Lồng tối đa một cấp — sâu hơn thì dùng query.**
+>
+> **Danh sách luôn bọc trong object, đừng trả mảng trần.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Vì sao không đặt động từ trong URL?
+2. Vì sao chỉ nên lồng tài nguyên một cấp?
+3. Ba cách xử lý thao tác không phải CRUD?
+4. Vì sao không trả mảng trần cho danh sách?
+5. Khi nào dùng `POST` cho một thao tác **đọc**?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, thiết kế endpoint cho một hệ thống blog:
+
+```text
+- Xem danh sách bài, xem một bài
+- Tạo/sửa/xoá bài
+- Bình luận vào bài; xoá bình luận
+- Thích / bỏ thích một bài
+- Xuất bản một bài nháp
+- Tìm bài theo từ khoá, tác giả, khoảng ngày
+```
+
+Tự kiểm: "xuất bản" của bạn là `PATCH` hay `POST /bai-viet/1/xuat-ban`? Nêu lý do — và nói xem nếu xuất bản cần lưu **thời điểm và người xuất bản** thì lựa chọn nào đúng hơn.
+
+## Thử sức
+
+Team di động yêu cầu: *"cho tôi một endpoint trả về đơn hàng kèm thông tin khách, kèm 5 sản phẩm đầu, kèm trạng thái giao hàng — để tôi khỏi gọi 4 lần"*.
+
+Nêu **ba** cách đáp ứng, với đánh đổi của từng cách. Câu khó: cách nào khiến bạn phải sửa server mỗi khi màn hình di động thay đổi, và làm sao tránh điều đó?

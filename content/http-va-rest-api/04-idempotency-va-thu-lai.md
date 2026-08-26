@@ -4,114 +4,200 @@ slug: idempotency-va-thu-lai
 summary: Vì sao retry có thể tạo hai đơn hàng, và idempotency key chặn nó thế nào.
 level: trung-cap
 tags: [http, idempotency, retry, api-design]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** hiểu vì sao mạng lỗi lại làm khách bị trừ tiền hai lần, và cài được idempotency key.
+> **Sau bài này bạn sẽ:** hiểu vì sao "mất phản hồi" không có nghĩa là "việc chưa xảy ra", và cài được idempotency key đúng cách.
 
-## Vấn đề: response mất tích không có nghĩa là việc chưa xảy ra
+## Ý tưởng chính
 
-```
-Client                          Server
-  |---- POST /orders ----------->|
-  |                              |  tạo đơn o-891 ✅
-  |                              |  trừ tiền ✅
-  |    ✗ mạng đứt ở đây          |
-  |<-------- (không nhận) -------|
-  |
-  |  timeout → thử lại
-  |---- POST /orders ----------->|
-  |                              |  tạo đơn o-892 ✅  ← đơn thứ hai!
-  |                              |  trừ tiền lần hai ✅
+Khi một request thất bại vì mạng, bạn **không biết** việc đã xảy ra hay chưa. Có đúng hai khả năng, và chúng trông giống hệt nhau từ phía client:
+
+```text
+① Request chưa tới server           → thử lại là đúng
+② Request tới rồi, server đã làm,
+   nhưng response mất trên đường về  → thử lại là TẠO HAI LẦN
 ```
 
-Client **không thể phân biệt** ba tình huống: request chưa tới server, server đang xử lý, hay server làm xong rồi mà response mất. Với `POST`, thử lại là đánh cược. Không thử lại thì người dùng thấy lỗi dù việc đã thành công.
+Idempotency key là cách để **thử lại luôn an toàn**, bất kể rơi vào trường hợp nào.
 
-Đây không phải trường hợp hiếm. Retry tự động có ở mọi tầng: thư viện HTTP, load balancer, service mesh, và cả ngón tay người dùng bấm nút hai lần.
+## Mental model
 
-## Idempotency key
+Hãy nghĩ tới **đặt món qua điện thoại và bị rớt mạng**.
 
-Client sinh một khoá **duy nhất cho mỗi ý định**, không phải cho mỗi request:
+> Bạn gọi: *"cho tôi hai bát phở"* — rồi cuộc gọi đứt trước khi nghe *"vâng, đã ghi"*.
+>
+> Gọi lại thì sao? Nếu bạn chỉ nói *"cho tôi hai bát phở"*, quán có thể ghi **thêm** hai bát nữa.
+>
+> Nhưng nếu bạn nói: *"đơn số **DH-8817**, hai bát phở"* — quán tra sổ, thấy DH-8817 đã có, và trả lời *"đơn này ghi rồi"*.
+
+**Mã đơn do bạn tự đặt** chính là idempotency key. Nó biến câu hỏi *"đã làm chưa"* từ chỗ đoán mò thành một phép tra cứu.
+
+## Ví dụ nhỏ
 
 ```http
-POST /api/orders
-Idempotency-Key: 8f14e45f-ea2b-4c1a-9d3e-7b6c5a4d3e2f
+POST /don-hang
+Idempotency-Key: 7c9e6679-7425-40de-944b-e07fc1f90ae7
 Content-Type: application/json
 
-{"productId":"p-12","quantity":2}
+{"sanPhamId": "abc", "soLuong": 2}
 ```
 
-Điểm mấu chốt: **khi thử lại, gửi lại đúng khoá cũ**. Khoá mới ở lần thử lại thì vô nghĩa hoàn toàn.
+Gửi lại **cùng key** → server trả **cùng kết quả cũ**, không tạo đơn thứ hai.
 
-Server xử lý:
+## Code chạy thế nào
 
-```ts
-async function taoDon(key: string, payload: DonHangInput) {
-  // 1. Đã thấy khoá này chưa?
-  const daLuu = await db.idempotency.findUnique({ where: { key } })
-  if (daLuu !== null) return daLuu.response   // trả lại y nguyên kết quả cũ
+```text
+Nhận request kèm key K:
 
-  // 2. Chưa: xử lý và lưu kết quả CÙNG MỘT transaction với việc tạo đơn.
-  //    Tách ra hai transaction thì vẫn còn kẽ hở: đơn đã tạo mà khoá chưa lưu.
-  return db.$transaction(async (tx) => {
-    const don = await tx.orders.create({ data: payload })
-    await tx.idempotency.create({ data: { key, response: don } })
-    return don
-  })
-}
+① Tra bảng idempotency theo K
+   │
+   ├─ CHƯA CÓ  → ghi K với trạng thái "đang xử lý"
+   │              → thực hiện nghiệp vụ
+   │              → LƯU response vào bảng cùng với K
+   │              → trả response
+   │
+   ├─ CÓ, đã xong → trả LẠI response đã lưu (không làm gì thêm)
+   │
+   └─ CÓ, đang xử lý → trả 409 "đang xử lý, thử lại sau"
 ```
 
-Ràng buộc `UNIQUE` trên cột `key` là thứ chặn hai request **đồng thời**: một cái thắng, cái kia ném lỗi unique và đọc lại kết quả của cái thắng. Không có ràng buộc đó thì hai request cùng lúc đều thấy "chưa có khoá" và đều tạo đơn.
+Bước quan trọng nhất là **lưu cả response**, không chỉ đánh dấu "đã xử lý". Nếu chỉ đánh dấu, lần thử lại thứ hai bạn không biết trả về gì — và client mất mã đơn hàng.
 
-## Thử lại thế nào cho đúng
+Và bước ghi khoá phải **nguyên tử** với việc kiểm tra:
 
-Không phải lỗi nào cũng nên thử lại:
+```sql
+INSERT INTO idempotency (khoa, trang_thai) VALUES ($1, 'dang_xu_ly')
+ON CONFLICT (khoa) DO NOTHING
+RETURNING khoa;
+-- Không có dòng trả về ⇒ khoá đã tồn tại ⇒ đây là lần thử lại
+```
 
-| Mã | Thử lại? | Vì sao |
-|---|---|---|
-| `408`, `429`, `503`, `504` | ✅ | Tạm thời; `429`/`503` có `Retry-After` — tôn trọng nó |
-| `500` | ⚠️ | Chỉ khi có idempotency key |
-| `400`, `422` | ❌ | Request sai; gửi lại y hệt vẫn sai |
-| `401`, `403` | ❌ | Thiếu quyền; thử lại chỉ làm khoá tài khoản |
-| `409` | ❌ | Xung đột trạng thái, cần người quyết định |
+Viết thành `SELECT` rồi `INSERT` riêng là mở cửa cho hai request song song cùng lọt qua — cùng vấn đề đã nói ở [[truy-cap-dong-thoi-va-khoa]].
 
-Chờ theo **exponential backoff có jitter**:
+## Cú pháp
+
+**Ai tạo key?** — **Client**, và đây là điểm hay bị hiểu sai.
 
 ```ts
-async function goiLai<T>(fn: () => Promise<T>, soLan = 3): Promise<T> {
-  for (let i = 0; ; i += 1) {
+const key = crypto.randomUUID()          // tạo MỘT lần cho một ý định
+// mọi lần thử lại của CÙNG một ý định đều dùng lại key này
+await goiApi('/don-hang', { key, ...duLieu })
+```
+
+Nếu server tạo key thì vô nghĩa: mỗi request lại có key mới, và server không nhận ra đó là lần thử lại.
+
+**Thử lại thế nào cho đúng** — ba quy tắc:
+
+```ts
+async function thuLai(fn, lanToiDa = 3) {
+  for (let i = 0; i < lanToiDa; i++) {
     try {
       return await fn()
-    } catch (loi) {
-      if (i >= soLan - 1 || !nenThuLai(loi)) throw loi
-      // 2^i giây, cộng ngẫu nhiên 0-1s: thiếu jitter thì mọi client cùng
-      // thử lại đúng một thời điểm và đánh sập server vừa hồi phục.
+    } catch (e) {
+      if (!dangThuLaiDuoc(e) || i === lanToiDa - 1) throw e
+      // ① lùi theo cấp số nhân  ② cộng ngẫu nhiên (jitter)
       const cho = 2 ** i * 1000 + Math.random() * 1000
       await new Promise((r) => setTimeout(r, cho))
     }
   }
 }
+
+function dangThuLaiDuoc(e) {
+  return e.status >= 500 || e.status === 429 || e.code === 'ECONNRESET'
+}
 ```
 
-## Lỗi hay gặp
+```text
+① Lùi theo cấp số nhân — 1s, 2s, 4s. Thử lại ngay lập tức chỉ làm server tệ hơn.
+② Jitter (cộng ngẫu nhiên) — không có nó, 1000 client cùng thử lại ở giây thứ 2
+   và tạo ra một đợt tải mới đúng lúc server đang hồi phục.
+③ Chỉ thử lại lỗi TẠM THỜI — 5xx, 429, lỗi mạng.
+   400 hay 403 thì thử lại vô ích: gửi lại y hệt vẫn sai.
+```
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Sinh khoá mới ở mỗi lần thử lại | Idempotency vô tác dụng hoàn toàn | Sinh một lần cho mỗi ý định |
-| Lưu khoá ở transaction riêng | Vẫn tạo đơn trùng khi hỏng giữa hai bước | Cùng một transaction |
-| Không có `UNIQUE` trên cột khoá | Hai request đồng thời đều lọt | Thêm ràng buộc unique |
-| Thử lại `400`/`422` | Đốt tài nguyên vô ích | Chỉ thử lại lỗi tạm thời |
-| Retry không có jitter | Cả đàn client dồn vào cùng lúc, server vừa dậy lại sập | Cộng thêm ngẫu nhiên |
-| Giữ khoá mãi mãi | Bảng phình vô hạn | TTL 24h là đủ |
+Điểm ② gọi là *thundering herd*, và nó là lý do nhiều sự cố kéo dài hơn mức cần thiết.
 
-## Ghi nhớ
+## Tại sao cần nó
 
-- Response mất không có nghĩa việc chưa xảy ra — đây là gốc của mọi đơn trùng.
-- Idempotency key gắn với **ý định**, gửi lại y nguyên khi thử lại.
-- Lưu khoá và làm việc phải cùng một transaction; cột khoá phải `UNIQUE`.
-- Chỉ thử lại `408/429/503/504`; backoff phải có jitter.
+Vì với nghiệp vụ có tiền, một lần trùng là một khiếu nại. Bốn thao tác **bắt buộc** phải có idempotency key:
 
-## Tự kiểm tra
+```text
+· Tạo đơn hàng
+· Thanh toán / hoàn tiền
+· Gửi email, SMS, thông báo đẩy
+· Bất kỳ thao tác nào tính phí hoặc trừ tồn kho
+```
 
-1. Vì sao client không thể biết request đã được xử lý hay chưa khi bị timeout?
-2. Lưu idempotency key ở transaction riêng sau khi tạo đơn thì kẽ hở còn ở đâu?
-3. Vì sao không nên thử lại `422`?
+Đường thay thế khi không thể thêm key — **khoá tự nhiên**:
+
+```sql
+-- Ràng buộc duy nhất trên chính dữ liệu nghiệp vụ
+CREATE UNIQUE INDEX ON don_hang (nguoi_dung_id, ma_gio_hang);
+```
+
+Cách này đơn giản hơn và đôi khi đủ dùng: lần thử lại thứ hai vi phạm ràng buộc, bạn bắt lỗi đó và trả về bản ghi đã có.
+
+## So sánh
+
+| Phương thức | Cần idempotency key? |
+|---|---|
+| GET, HEAD | ❌ vốn đã an toàn |
+| PUT, DELETE | ❌ vốn đã idempotent |
+| POST tạo tài nguyên | ✅ **bắt buộc** |
+| POST thanh toán | ✅ **bắt buộc** |
+| PATCH kiểu "cộng thêm" | ✅ cần |
+| PATCH kiểu "gán bằng" | ❌ đã idempotent |
+
+Dòng cuối đáng chú ý: `{"tuoi": 30}` gọi mười lần vẫn ra 30; `{"tang_diem": 5}` gọi mười lần thì cộng 50. Cùng là PATCH, khác nhau hoàn toàn.
+
+## Dễ nhầm
+
+**1. Server tạo key.** Vô nghĩa — xem ở trên.
+
+**2. Tạo key mới cho mỗi lần thử lại.** Cùng lỗi: một ý định = một key, dùng lại cho mọi lần thử.
+
+**3. Chỉ đánh dấu "đã xử lý" mà không lưu response.** Lần thử lại nhận về `200 OK` rỗng, và client mất mã đơn hàng.
+
+**4. `SELECT` rồi `INSERT` không nguyên tử.** Hai request song song cùng thấy "chưa có" và cùng tạo.
+
+**5. Thử lại lỗi 4xx.** Gửi lại dữ liệu sai vẫn sai; bạn chỉ tốn thêm request.
+
+**6. Thử lại không có jitter.** Tạo đợt tải đồng loạt đúng lúc server đang gượng dậy.
+
+**7. Không đặt hạn cho key.** Bảng idempotency phình vô hạn. Đặt TTL 24 giờ là đủ cho mọi kịch bản thử lại thực tế.
+
+## Mẹo nhớ
+
+> **Mất phản hồi ≠ việc chưa xảy ra.**
+>
+> **Client tạo key, một ý định một key.**
+>
+> **Lưu cả RESPONSE, không chỉ đánh dấu đã xong.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Hai khả năng khi request thất bại vì mạng, và vì sao client không phân biệt được?
+2. Ai phải tạo idempotency key, và vì sao không phải bên kia?
+3. Vì sao phải lưu cả response chứ không chỉ đánh dấu "đã xử lý"?
+4. Jitter giải quyết vấn đề gì?
+5. Vì sao không thử lại lỗi 400?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết mã giả cho endpoint `POST /thanh-toan` có idempotency:
+
+```text
+Yêu cầu: hai request song song cùng key chỉ được trừ tiền MỘT lần;
+lần thử lại sau khi xong phải trả về đúng kết quả cũ.
+```
+
+Tự kiểm: chỗ nào trong code của bạn là **thao tác nguyên tử**, và điều gì xảy ra nếu server chết ngay giữa hai bước?
+
+## Thử sức
+
+Hệ thống của bạn gửi email xác nhận đơn hàng. Log cho thấy có khách nhận **ba email giống hệt** trong 10 giây.
+
+Truy nguyên nhân theo hai hướng: phía client và phía hạ tầng (retry của message queue). Rồi thiết kế cách chặn — lưu ý rằng gửi email là gọi ra **hệ thống bên ngoài**, nên bạn không thể bọc nó trong transaction cơ sở dữ liệu. Bạn làm thế nào?
