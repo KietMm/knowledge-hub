@@ -9,11 +9,11 @@ import {
   type Note,
   type Topic,
 } from './schema'
-import bundle from './seed-data.json'
+import bundle from './seed-data.generated'
 
 /**
- * Giáo trình khởi tạo. File này KHÔNG viết tay: `seed-data.json` được sinh ra từ
- * thư mục `content/` bằng `pnpm content:build`.
+ * Giáo trình khởi tạo. File này KHÔNG viết tay: `seed-data.generated.ts` được sinh ra
+ * từ thư mục `content/` bằng `pnpm content:build`.
  *
  * Vì sao qua một bước sinh: nội dung bài học là văn bản dài có khối code, gần như
  * không sửa nổi khi đã bị nhét vào chuỗi trong file .ts hay .json. Viết ở dạng .md
@@ -25,10 +25,10 @@ import bundle from './seed-data.json'
  * biến nó thành Category/Topic/Note đầy đủ.
  */
 
-/** Lỗi ở đây luôn là do seed-data.json cũ hoặc bị sửa tay — nói rõ cách xử lý. */
+/** Lỗi ở đây luôn là do bundle cũ hoặc bị sửa tay — nói rõ cách xử lý. */
 function baoLoi(ten: string, error: z.ZodError): never {
   throw new Error(
-    `seed-data.json sai hình dạng ở "${ten}" — chạy lại \`pnpm content:build\`.\n` +
+    `seed-data.generated.ts sai hình dạng ở "${ten}" — chạy lại \`pnpm content:build\`.\n` +
       error.issues.map((i) => `  - ${i.path.join('.') || '(gốc)'}: ${i.message}`).join('\n'),
   )
 }

@@ -24,7 +24,7 @@ import {
  * dài có khối code, gần như không sửa nổi khi đã bị nhét vào một chuỗi JSON một dòng.
  * Viết ở dạng .md thì diff đọc được, và thứ tự bài học nhìn thấy ngay từ tên file.
  *
- *   pnpm content:build   -> chỉ dựng lại src/lib/db/seed-data.json
+ *   pnpm content:build   -> chỉ dựng lại src/lib/db/seed-data.generated.ts
  *   pnpm content:sync    -> dựng lại rồi ghi luôn vào data/ (giữ nguyên trạng thái ghim)
  */
 
@@ -37,7 +37,7 @@ function formatIssues(error: z.ZodError): string {
 
 const ROOT = resolve(__dirname, '..')
 const CONTENT_DIR = join(ROOT, 'content')
-const SEED_JSON = join(ROOT, 'src', 'lib', 'db', 'seed-data.json')
+const SEED_BUNDLE = join(ROOT, 'src', 'lib', 'db', 'seed-data.generated.ts')
 const DATA_DIR = join(ROOT, 'data')
 /** Bài tập nằm ngoài cây mảng/công nghệ: nó là kho riêng, không thuộc lộ trình nào. */
 const EXERCISE_DIR = join(CONTENT_DIR, 'bai-tap')
@@ -297,8 +297,34 @@ function writeJson(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
 }
 
+/**
+ * Giáo trình được sinh ra dưới dạng module .ts, KHÔNG phải .json — dù nội dung là
+ * JSON thuần và `import` .json thì gọn hơn.
+ *
+ * Lý do là một lỗi thật gặp lúc build: webpack nội tuyến module JSON bằng cách nhúng
+ * văn bản JSON vào một chuỗi JS rồi gọi `JSON.parse`. Bước nhúng đó thoát dấu chéo
+ * ngược thiếu một lớp, nên một bài học chứa nguyên văn `\ud83d` (bài Unicode, nói về
+ * việc cắt chuỗi làm vỡ emoji) biến thành dấu chéo ngược cộng một surrogate lẻ trong
+ * chuỗi JS ⇒ `JSON.parse` ném "Unexpected token" và cả bản build hỏng.
+ *
+ * Sinh thẳng ra .ts thì không còn vòng `JSON.parse` nào để hỏng: webpack coi nó là mã
+ * JS bình thường. Đổi lại, file sinh ra bị tsc và eslint quét — nên có chỉ thị bỏ qua
+ * ở đầu file. `seed-data.ts` vẫn parse lại bằng zod, nên kiểu suy ra ở đây không quan
+ * trọng.
+ */
+function writeBundle(path: string, value: unknown): void {
+  const than = JSON.stringify(value, null, 2)
+  writeFileSync(
+    path,
+    '/* eslint-disable */\n' +
+      '// File sinh tự động bởi scripts/build-content.ts — ĐỪNG SỬA TAY.\n' +
+      `export default ${than} as const\n`,
+    'utf8',
+  )
+}
+
 const { categories, topics, notes, exercises } = build()
-writeJson(SEED_JSON, { categories, topics, notes, exercises })
+writeBundle(SEED_BUNDLE, { categories, topics, notes, exercises })
 console.log(
   `Đã dựng giáo trình: ${categories.length} mảng, ${topics.length} công nghệ, ` +
     `${notes.length} bài học, ${exercises.length} bài tập`,

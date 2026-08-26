@@ -37,7 +37,7 @@ Mở http://localhost:3000
 | `pnpm test` | Unit test tầng dữ liệu và các hàm thuần |
 | `pnpm typecheck` | Kiểm tra kiểu |
 | `pnpm seed` | Nạp dữ liệu mẫu (không ghi đè dữ liệu đã có) |
-| `pnpm content:build` | Biên dịch `content/` (bài học + bài tập) → `src/lib/db/seed-data.json` |
+| `pnpm content:build` | Biên dịch `content/` (bài học + bài tập) → `src/lib/db/seed-data.generated.ts` |
 | `pnpm content:sync` | Như trên, rồi ghi luôn vào `data/` (giữ các bài đã ghim) |
 
 ## Soạn bài học
@@ -160,7 +160,7 @@ của giáo trình. Hai thứ chỉ gặp nhau khi bạn chạy `content:sync`.
 
 | | Local (mặc định) | Triển khai công khai |
 |---|---|---|
-| Nguồn dữ liệu | `data/*.json` | `src/lib/db/seed-data.json` (trong bundle) |
+| Nguồn dữ liệu | `data/*.json` | `src/lib/db/seed-data.generated.ts` (trong bundle) |
 | Thêm/sửa/xoá bài | ✅ | ❌ bị từ chối, nút được **ẩn** |
 | Ghim bài | ✅ | ❌ |
 | `/api/export` | ✅ | ✅ |
@@ -172,7 +172,7 @@ Chế độ chỉ đọc tự bật khi `process.env.VERCEL === '1'`; đặt tay
 Vì sao phải có chế độ này: filesystem của môi trường serverless **chỉ đọc**, và kể cả ghi
 được thì mỗi instance có một bản riêng rồi biến mất. Thêm nữa `readCollection()` dùng đường
 dẫn động (`process.cwd() + '/data'`) nên Next **không truy vết được** để đóng gói `data/` vào
-hàm serverless — lúc chạy chúng đơn giản không tồn tại. `seed-data.json` được `import` tĩnh
+hàm serverless — lúc chạy chúng đơn giản không tồn tại. `seed-data.generated.ts` được `import` tĩnh
 nên chắc chắn có trong bundle.
 
 Nhánh phân biệt đặt trong `json-store.ts`, nhờ vậy toàn bộ `*.repo.ts` phía trên không phải
@@ -248,7 +248,7 @@ vào giữa khi mở trang, nhưng chỉ khi nó nằm ngoài vùng nhìn.
 - `src/lib/actions/` — Server Actions, luôn trả `{ok:true|false}`, không throw ra UI.
 - `src/lib/{slug,search,markdown,tags,tag-label,category-color,level,reading-time,frontmatter}.ts` — hàm thuần, có unit test.
 - `scripts/build-content.ts` — bộ biên dịch giáo trình; là nơi duy nhất đọc `content/`.
-- `src/lib/db/seed-data.json` — **file sinh tự động**, đừng sửa tay.
+- `src/lib/db/seed-data.generated.ts` — **file sinh tự động**, đừng sửa tay.
 
 ### Giao diện
 

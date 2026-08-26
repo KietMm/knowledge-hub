@@ -1,4 +1,6 @@
-{
+/* eslint-disable */
+// File sinh tự động bởi scripts/build-content.ts — ĐỪNG SỬA TAY.
+export default {
   "categories": [
     {
       "id": "cat-nen-tang",
@@ -5139,4 +5141,4 @@
       "order": 10
     }
   ]
-}
+} as const

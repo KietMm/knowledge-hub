@@ -9,7 +9,7 @@
  *
  * Vì sao đọc từ bundle chứ không đọc `data/`: `readCollection()` dùng đường dẫn động
  * (`process.cwd() + '/data'`) nên Next không truy vết được để đóng gói các file đó vào
- * hàm serverless — lúc chạy chúng đơn giản là không tồn tại. `seed-data.json` thì được
+ * hàm serverless — lúc chạy chúng đơn giản là không tồn tại. `seed-data.generated.ts` thì được
  * `import` tĩnh nên chắc chắn có trong bundle.
  */
 
