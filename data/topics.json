@@ -374,5 +374,29 @@
     "description": "Ước lượng, cắt phạm vi, giao tiếp, uỷ quyền và onboarding.",
     "categoryId": "cat-leadership",
     "order": 2
+  },
+  {
+    "id": "topic-product",
+    "name": "Tư duy sản phẩm",
+    "slug": "tu-duy-san-pham",
+    "description": "Hiểu vì sao trước khi hỏi làm gì: người dùng, chỉ số, và cắt phạm vi có chủ đích.",
+    "categoryId": "cat-leadership",
+    "order": 3
+  },
+  {
+    "id": "topic-eng-thinking",
+    "name": "Tư duy kỹ sư",
+    "slug": "tu-duy-ky-su",
+    "description": "Giải quyết vấn đề có phương pháp, đọc đánh đổi, và biết khi nào đủ tốt.",
+    "categoryId": "cat-leadership",
+    "order": 4
+  },
+  {
+    "id": "topic-sd-interview",
+    "name": "Phỏng vấn thiết kế hệ thống",
+    "slug": "phong-van-thiet-ke-he-thong",
+    "description": "Khung 45 phút: làm rõ yêu cầu, ước lượng, phác thảo, và đào sâu đúng chỗ.",
+    "categoryId": "cat-leadership",
+    "order": 5
   }
 ]
