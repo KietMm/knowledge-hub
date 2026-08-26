@@ -4,197 +4,239 @@ slug: hang-doi-va-xu-ly-bat-dong-bo
 summary: Đưa việc nặng ra khỏi request, at-least-once nghĩa là gì, và vì sao consumer phải idempotent.
 level: trung-cap
 tags: [kien-truc, hang-doi, worker, bat-dong-bo]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** biết việc nào phải ra khỏi request, và viết được consumer an toàn khi cùng một message đến hai lần.
+> **Sau bài này bạn sẽ:** biết việc nào nên đẩy ra hàng đợi, và vì sao consumer **bắt buộc** phải xử lý được cùng một message hai lần.
 
-## Việc nào phải ra khỏi request
+## Ý tưởng chính
 
-Người dùng bấm "Đặt hàng". Trong request đó bạn đang làm:
+Người dùng bấm "Đặt hàng" không cần đợi email xác nhận gửi xong, ảnh được resize xong, hay báo cáo được cập nhật xong.
 
-```
-1. Kiểm tra tồn kho          20 ms   ← người dùng cần biết ngay
-2. Tạo đơn hàng              30 ms   ← người dùng cần biết ngay
-3. Trừ kho                   10 ms   ← người dùng cần biết ngay
-4. Gửi email xác nhận       800 ms   ← không
-5. Gửi tin nhắn cho kho     600 ms   ← không
-6. Đồng bộ sang CRM        1200 ms   ← không
-7. Cập nhật báo cáo          400 ms   ← không
-                          ─────────
-                           3060 ms
-```
+Hàng đợi tách hai câu hỏi ra: *"đã ghi nhận chưa?"* (trả lời ngay) và *"đã xử lý xong chưa?"* (làm sau).
 
-Người dùng chờ 3 giây cho một việc lẽ ra 60ms. Tệ hơn: **CRM sập thì đơn hàng không tạo được** — bạn vừa gắn khả năng bán hàng của mình vào uptime của một hệ thống bên ngoài.
+## Mental model
 
-Tiêu chí tách rất rõ ràng: **người dùng có cần kết quả của việc này để biết yêu cầu đã thành công hay chưa?** Không → đưa vào hàng đợi.
+Hãy nghĩ tới **quầy nhận đồ giặt là**.
 
-```ts
-export async function datHang(input: DonInput) {
-  const don = await db.$transaction(async (tx) => {
-    const kho = await tx.$executeRaw`
-      UPDATE kho SET so_luong = so_luong - ${input.soLuong}
-      WHERE id = ${input.productId} AND so_luong >= ${input.soLuong}`
-    if (kho === 0) throw new HetHang()
-    return tx.orders.create({ data: input })
-  })
+> Bạn đưa đồ, nhận **phiếu**, và đi về. Bạn không đứng đó nhìn người ta giặt.
+>
+> Quán nhận đồ liên tục dù máy giặt đang bận — đồ **xếp hàng chờ**. Máy hỏng thì đồ vẫn còn đó, giặt sau.
+>
+> Và cái phiếu là điều then chốt: nó cho bạn cách **hỏi lại trạng thái** mà không cần đứng chờ.
 
-  // Đẩy việc SAU khi transaction commit. Đẩy bên trong transaction thì worker có thể
-  // nhận message trước khi đơn hàng thật sự tồn tại trong database, rồi báo "không
-  // tìm thấy đơn" — một lỗi rất khó tái hiện.
-  await queue.add('don-da-tao', { orderId: don.id })
+Cái phiếu là job id. Không có nó, hàng đợi biến việc "chậm nhưng biết kết quả" thành việc "nhanh nhưng không biết gì" — thường là một đánh đổi tệ.
 
-  return don      // ~60 ms
-}
-```
-
-Đoạn chú thích trên là một trong những lỗi khó gỡ nhất của kiến trúc có hàng đợi. Nếu cần đảm bảo chắc chắn "tạo đơn thì phải có message", dùng **transactional outbox**: ghi message vào một bảng trong cùng transaction, rồi một tiến trình riêng đọc bảng đó và đẩy vào hàng đợi.
-
-## At-least-once: giả định phải sống cùng
-
-Gần như mọi hàng đợi thực tế đảm bảo **at-least-once**, không phải exactly-once. Nghĩa là **cùng một message sẽ đến hai lần**, và điều đó là bình thường, không phải bug:
-
-- Worker xử lý xong nhưng chết trước khi ack → message quay lại hàng đợi
-- Ack bị mất trên đường
-- Retry sau timeout
-
-Exactly-once ở mức hạ tầng gần như không tồn tại trong hệ phân tán. Cách thực tế: **at-least-once + consumer idempotent** — về mặt hiệu ứng thì tương đương exactly-once, và đây là cách mọi hệ thống nghiêm túc làm.
+## Ví dụ nhỏ
 
 ```ts
-// ❌ Message đến hai lần = khách nhận hai email, hoặc bị trừ tiền hai lần
-async function xuLy(job: { orderId: string }) {
-  const don = await db.orders.findUnique({ where: { id: job.orderId } })
-  await guiEmail(don.email, 'don-da-tao')
-}
-
-// ✅ Chống trùng bằng ràng buộc UNIQUE trong database
-async function xuLy(job: { orderId: string; jobId: string }) {
-  try {
-    // UNIQUE trên (job_id) là thứ THẬT SỰ chặn: kiểm tra bằng SELECT trước rồi
-    // INSERT vẫn có kẽ hở khi hai worker chạy đồng thời.
-    await db.processedJobs.create({ data: { jobId: job.jobId } })
-  } catch (loi) {
-    if (laLoiUnique(loi)) return      // đã xử lý rồi, bỏ qua êm
-    throw loi
-  }
-
-  const don = await db.orders.findUnique({ where: { id: job.orderId } })
-  if (don === null) return             // đơn đã bị xoá: không phải lỗi, đừng retry
-  await guiEmail(don.email, 'don-da-tao')
-}
-```
-
-Cùng nguyên tắc với [[idempotency-va-thu-lai]] ở tầng HTTP và [[truy-cap-dong-thoi-va-khoa]] ở tầng dữ liệu: **ràng buộc unique trong database là thứ duy nhất chặn được cuộc đua**.
-
-## Retry và dead letter queue
-
-```ts
-await queue.add('don-da-tao', { orderId }, {
-  attempts: 5,
-  backoff: { type: 'exponential', delay: 1000 },   // 1s, 2s, 4s, 8s, 16s
-  removeOnComplete: { count: 1000 },
-  removeOnFail: false,                              // giữ lại để điều tra
+// Trong request — trả lời ngay
+app.post('/don-hang', async (req, res) => {
+  const don = await db.donHang.create({ data: req.body })
+  await hangDoi.them('gui-email-xac-nhan', { donHangId: don.id })
+  res.json({ id: don.id })          // ← không đợi email
 })
 ```
 
-Phân biệt hai loại lỗi, vì chúng cần cách xử lý ngược nhau:
+## Code chạy thế nào
 
-| Loại | Ví dụ | Xử lý |
+**At-least-once — điều quan trọng nhất về hàng đợi:**
+
+```text
+Gần như mọi hàng đợi đảm bảo AT-LEAST-ONCE: message được giao
+ÍT NHẤT một lần — có thể nhiều hơn.
+
+Vì sao không phải exactly-once:
+  Worker xử lý xong, chưa kịp báo "đã xong" thì chết.
+  Hàng đợi không phân biệt được:
+      "worker chết TRƯỚC khi xử lý"  ⇒ phải giao lại
+      "worker chết SAU khi xử lý"    ⇒ không nên giao lại
+  Nó chọn phương án an toàn: GIAO LẠI.
+
+⇒ Consumer PHẢI xử lý được cùng một message hai lần
+  mà không gây hậu quả khác nhau.
+```
+
+Từ đó suy ra hệ quả không tránh được: **idempotent không phải tính năng nâng cao, nó là điều kiện tối thiểu**.
+
+```ts
+// ❌ Chạy hai lần = trừ tiền hai lần
+await truTien(don.userId, don.tongTien)
+
+// ✅ Chạy hai lần = kết quả như chạy một lần
+const daXuLy = await db.xuLy.findUnique({ where: { messageId } })
+if (daXuLy !== null) return                    // đã làm rồi, bỏ qua
+await db.$transaction([
+  truTien(don.userId, don.tongTien),
+  db.xuLy.create({ data: { messageId } }),     // ghi dấu TRONG CÙNG transaction
+])
+```
+
+Chi tiết quyết định: dấu "đã xử lý" phải nằm **trong cùng một transaction** với tác dụng phụ. Tách ra là quay lại đúng vấn đề cũ, chỉ nhỏ hơn ([[idempotency-va-thu-lai]]).
+
+**Dead letter queue — nơi message hỏng đi tới:**
+
+```text
+Message lỗi → thử lại 3 lần với backoff (1s, 4s, 16s)
+            → vẫn lỗi → chuyển sang DLQ, KHÔNG chặn hàng đợi chính
+
+Không có DLQ:
+  Một message hỏng (JSON sai định dạng, bản ghi đã bị xoá)
+  ⇒ thử lại vô hạn
+  ⇒ chặn cả hàng đợi phía sau nó
+  ⇒ và tạo một vòng lặp đốt tài nguyên.
+```
+
+DLQ phải được **theo dõi**: message vào đó là dấu hiệu có gì đó sai, và không ai biết nếu không có cảnh báo.
+
+## Cú pháp
+
+**Việc nào nên đẩy ra hàng đợi:**
+
+```text
+✅ NÊN:
+   Gửi email, SMS, thông báo đẩy
+   Xử lý ảnh, video, tạo PDF
+   Gọi API bên thứ ba (chậm, hay lỗi)
+   Đồng bộ dữ liệu, cập nhật chỉ mục tìm kiếm
+   Báo cáo, tính toán nặng
+
+❌ KHÔNG NÊN:
+   Việc người dùng cần kết quả NGAY để đi tiếp
+   Việc dưới 100ms (chi phí hàng đợi lớn hơn lợi ích)
+   Việc phải chạy đúng thứ tự nghiêm ngặt (khó đảm bảo)
+```
+
+**Ba mức phức tạp — chọn cái nhỏ nhất đủ dùng:**
+
+```text
+① Bảng trong CSDL sẵn có   (SELECT ... FOR UPDATE SKIP LOCKED)
+   Không thêm hạ tầng. Đủ cho tới hàng nghìn job/phút.
+   Và bạn ghi job trong CÙNG transaction với dữ liệu ⇒ không mất job.
+
+② Redis + BullMQ / Sidekiq
+   Nhanh, có sẵn retry, DLQ, giao diện theo dõi.
+
+③ Kafka / RabbitMQ / SQS
+   Nhiều consumer, thông lượng rất lớn, lưu lại lịch sử.
+   Vận hành nặng.
+```
+
+Phần lớn hệ thống dừng ở ① hoặc ② rất lâu. Chọn ③ khi chưa cần là mua một hệ thống nữa phải vận hành.
+
+**Vấn đề dual-write — dễ bỏ sót:**
+
+```ts
+// ❌ Hai hệ thống, không có transaction chung
+await db.donHang.create({ data })      // thành công
+await hangDoi.them('email', { ... })   // ← lỗi ở đây ⇒ đơn hàng KHÔNG BAO GIỜ được gửi email
+```
+
+Cách xử lý gọn nhất là **outbox**: ghi job vào một bảng trong **cùng transaction** với dữ liệu, rồi một tiến trình riêng đọc bảng đó đẩy sang hàng đợi. Hoặc đơn giản hơn: dùng luôn cách ① — CSDL **là** hàng đợi.
+
+**Theo dõi hàng đợi:**
+
+```text
+Độ dài hàng đợi        tăng đều ⇒ worker không theo kịp
+Tuổi message cũ nhất   ⇒ chỉ số quan trọng hơn độ dài
+Tỉ lệ lỗi, số vào DLQ
+Thời gian xử lý p95
+```
+
+"Tuổi message cũ nhất" nói lên trải nghiệm thật: hàng đợi dài 10.000 mà xử lý trong 30 giây thì không sao; hàng đợi dài 100 mà message cũ nhất 2 tiếng thì có gì đó kẹt.
+
+## Tại sao cần nó
+
+Vì đẩy việc ra khỏi request đổi cả hình dạng của hệ thống:
+
+```text
+Đồng bộ:      request giữ worker suốt 5 giây gửi email
+              → tải cao là hết worker, dù CPU rảnh
+              → dịch vụ email lỗi ⇒ ĐẶT HÀNG THẤT BẠI
+
+Bất đồng bộ:  request trả về sau 50ms
+              → chịu được đỉnh tải: hàng đợi hấp thụ, worker xử lý dần
+              → dịch vụ email lỗi ⇒ retry sau, đơn hàng VẪN THÀNH CÔNG
+```
+
+Vế thứ ba là giá trị lớn nhất và ít được nói tới: hàng đợi **cách ly lỗi**. Một dịch vụ phụ hỏng không kéo theo luồng chính.
+
+**Cái giá phải trả — nói rõ để cân nhắc:**
+
+```text
+□ Người dùng không thấy kết quả ngay ⇒ cần cách báo trạng thái
+□ Gỡ lỗi khó hơn: luồng bị cắt làm hai, log ở hai nơi
+□ Thêm một hệ thống phải vận hành và theo dõi
+□ Mọi consumer phải idempotent
+```
+
+Với điểm đầu, cách xử lý thường là trả về job id và cho phép hỏi trạng thái — hoặc thông báo đẩy khi xong. Điểm quan trọng: **đừng để người dùng không biết gì**.
+
+## So sánh
+
+| | Đồng bộ | Bất đồng bộ |
 |---|---|---|
-| **Tạm thời** | Mạng lỗi, `503`, timeout, deadlock | Retry có backoff |
-| **Vĩnh viễn** | Payload sai, đơn không tồn tại, email không hợp lệ | **Đừng retry** — vào DLQ ngay |
+| Người dùng thấy kết quả | ngay | sau |
+| Chịu đỉnh tải | kém | ✅ hàng đợi hấp thụ |
+| Dịch vụ phụ lỗi | luồng chính hỏng | ✅ retry sau |
+| Gỡ lỗi | dễ | khó hơn |
+| Cần idempotent | không | **bắt buộc** |
 
-```ts
-class LoiVinhVien extends Error {}
+## Dễ nhầm
 
-async function xuLy(job) {
-  if (!EmailSchema.safeParse(job.email).success) {
-    // Retry 5 lần một payload sai chỉ đốt tài nguyên và làm nhiễu log.
-    throw new LoiVinhVien(`Email không hợp lệ: ${job.email}`)
-  }
-  ...
-}
+**1. Consumer không idempotent.** Email gửi hai lần, tiền trừ hai lần.
 
-worker.on('failed', (job, loi) => {
-  if (loi instanceof LoiVinhVien) void job.discard()   // bỏ retry, đưa vào DLQ
-})
+**2. Không có DLQ.** Một message hỏng chặn cả hàng đợi.
+
+**3. Không theo dõi DLQ.** Message rơi vào đó và không ai biết.
+
+**4. Dual-write không có outbox.** Job mất khi ghi hàng đợi lỗi.
+
+**5. Retry không backoff.** Dịch vụ đang quá tải nhận thêm cơn bão retry.
+
+**6. Đẩy việc người dùng cần ngay ra hàng đợi.** Trải nghiệm tệ hơn.
+
+**7. Message chứa dữ liệu thay vì id.** Dữ liệu cũ khi worker xử lý, và message phình to.
+
+**8. Dùng Kafka khi một bảng CSDL là đủ.**
+
+**9. Không báo trạng thái cho người dùng.** "Tôi đặt hàng rồi, sao chẳng thấy gì?"
+
+**10. Chỉ theo dõi độ dài hàng đợi.** Tuổi message cũ nhất mới nói lên trải nghiệm.
+
+## Mẹo nhớ
+
+> **At-least-once là mặc định ⇒ consumer BẮT BUỘC idempotent.**
+>
+> **Dấu "đã xử lý" phải nằm trong CÙNG transaction với tác dụng phụ.**
+>
+> **Message mang ID, không mang dữ liệu.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. At-least-once nghĩa là gì, và vì sao exactly-once khó?
+2. Vì sao consumer phải idempotent, và làm thế nào?
+3. DLQ giải quyết gì?
+4. Vấn đề dual-write là gì, cách xử lý?
+5. Ba việc nên đẩy ra hàng đợi và ba việc không nên?
+
+## Tự viết lại
+
+Luồng đặt hàng cần: trừ tồn kho, gửi email, tạo hoá đơn PDF, cập nhật báo cáo. Không nhìn lại, thiết kế:
+
+```text
+① việc nào đồng bộ, việc nào bất đồng bộ, vì sao
+② một consumer idempotent (viết mã)
+③ xử lý khi PDF thất bại 3 lần
+④ người dùng biết trạng thái bằng cách nào
 ```
 
-**DLQ không phải nơi để quên.** Nó cần một báo động: DLQ có message nghĩa là có người dùng không nhận được email xác nhận, và không ai biết trừ khi bạn theo dõi nó. Xem [[slo-va-error-budget]].
+Tự kiểm: nếu ghi vào hàng đợi thất bại sau khi đơn hàng đã lưu, thiết kế của bạn xử lý ra sao?
 
-## Thứ tự và tính song song đối nghịch nhau
+## Thử sức
 
-Nhiều worker chạy song song → **mất thứ tự**. Message "cập nhật địa chỉ" và "xoá địa chỉ" có thể xử lý ngược thứ tự.
+Người dùng báo nhận **ba email xác nhận giống hệt nhau** cho một đơn hàng.
 
-Ba cách, theo mức độ đắt:
-
-**1. Thiết kế để thứ tự không quan trọng** (tốt nhất). Gửi trạng thái cuối thay vì delta:
-
-```ts
-// ❌ Phụ thuộc thứ tự
-{ type: 'tang-so-luong', delta: 1 }
-
-// ✅ Xử lý thứ tự nào cũng ra cùng kết quả
-{ type: 'dat-so-luong', soLuong: 5, version: 12 }
-```
-
-**2. Phân vùng theo khoá.** Cùng `orderId` vào cùng một phân vùng → thứ tự được giữ **trong phạm vi khoá đó**, mà vẫn song song giữa các khoá khác nhau. Đây là mô hình của Kafka và là điểm ngọt trong hầu hết trường hợp.
-
-**3. Một worker duy nhất.** Thứ tự tuyệt đối, nhưng không mở rộng được.
-
-Cũng cần bảo vệ chống message cũ đến muộn:
-
-```ts
-// version trong WHERE: message cũ tới sau message mới thì không ghi gì cả.
-const { count } = await db.orders.updateMany({
-  where: { id, version: { lt: job.version } },
-  data: { soLuong: job.soLuong, version: job.version },
-})
-```
-
-## Theo dõi hàng đợi: ba con số
-
-| Chỉ số | Nghĩa | Báo động khi |
-|---|---|---|
-| **Độ sâu** | Số job đang chờ | Tăng liên tục = consumer không kịp |
-| **Tuổi job cũ nhất** | Job chờ lâu nhất | Quan trọng hơn độ sâu |
-| **Tỉ lệ vào DLQ** | Lỗi vĩnh viễn | > 0 cần người xem |
-
-"Tuổi job cũ nhất" đáng theo dõi hơn "độ sâu": hàng đợi 10.000 job xử lý hết trong 30 giây thì bình thường, còn hàng đợi 5 job mà job cũ nhất đã chờ 2 giờ nghĩa là worker đã chết.
-
-## Khi nào chưa cần hàng đợi
-
-Hàng đợi thêm một hệ thống phải vận hành, một chế độ lỗi mới, và làm việc gỡ lỗi khó hơn. Nếu bạn chỉ cần đưa việc gửi email ra khỏi request và có thể chấp nhận mất nó khi tiến trình chết:
-
-```ts
-// Chấp nhận được cho việc không quan trọng, KHÔNG dùng cho việc phải đảm bảo:
-// tiến trình chết là job mất, không có retry, không thấy được từ ngoài.
-void guiEmail(...).catch((loi) => logger.error({ loi }))
-```
-
-Và bước trung gian rất tốt trước khi dựng Redis + BullMQ: **hàng đợi bằng chính database** — một bảng `jobs` với `SELECT ... FOR UPDATE SKIP LOCKED`. Xem [[truy-cap-dong-thoi-va-khoa]]. Nó dùng lại transaction của database bạn đã có, và chịu tải tốt hơn nhiều so với cảm giác.
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Đẩy job trong transaction | Worker thấy dữ liệu chưa commit | Đẩy sau commit, hoặc outbox |
-| Consumer không idempotent | Email/tiền lặp hai lần | `UNIQUE` trên job id |
-| Retry lỗi vĩnh viễn | Đốt tài nguyên, nhiễu log | Phân loại lỗi, DLQ ngay |
-| DLQ không có báo động | Người dùng mất email, không ai biết | Cảnh báo khi DLQ > 0 |
-| Giả định thứ tự với nhiều worker | Cập nhật ghi ngược | Phân vùng theo khoá, hoặc gửi trạng thái cuối |
-| Chỉ theo dõi độ sâu | Không phát hiện worker đã chết | Theo dõi tuổi job cũ nhất |
-| Payload chứa cả object lớn | Message phình, dữ liệu cũ lúc xử lý | Chỉ gửi id, worker tự đọc |
-| Dựng Kafka cho 100 job/ngày | Vận hành nặng vô ích | Bảng `jobs` + `SKIP LOCKED` |
-
-## Ghi nhớ
-
-- Ra hàng đợi nếu người dùng không cần kết quả để biết yêu cầu đã thành công.
-- At-least-once là mặc định — consumer **phải** idempotent, chặn bằng `UNIQUE`.
-- Lỗi tạm thời thì retry, lỗi vĩnh viễn thì vào DLQ ngay; DLQ phải có báo động.
-- Payload chỉ chứa id, không chứa bản sao dữ liệu.
-
-## Tự kiểm tra
-
-1. Vì sao đẩy job bên trong transaction là bug, và outbox sửa nó thế nào?
-2. Cùng một message đến hai lần. Cơ chế nào thật sự chặn được, và vì sao `SELECT` rồi `INSERT` thì không?
-3. Vì sao "tuổi job cũ nhất" hữu ích hơn "độ sâu hàng đợi"?
+Ba câu để trả lời: nguyên nhân khả dĩ nhất; bạn sửa ở đâu để nó không xảy ra nữa; và bạn **kiểm chứng** cách sửa đó đúng bằng cách nào. Câu khó nhất: nếu đó là **thanh toán** chứ không phải email — trừ tiền ba lần — thì cách sửa của bạn có gì phải chặt hơn?

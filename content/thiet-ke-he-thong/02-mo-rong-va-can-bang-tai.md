@@ -4,153 +4,226 @@ slug: mo-rong-va-can-bang-tai
 summary: Stateless nghĩa là gì trong thực tế, giới hạn của việc thêm máy, và vì sao connection pool là chỗ vỡ trước tiên.
 level: trung-cap
 tags: [kien-truc, mo-rong, load-balancer, stateless]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** biết cái gì chặn hệ thống của bạn khỏi việc chạy nhiều instance, và tính được số kết nối database mà cụm app cần.
+> **Sau bài này bạn sẽ:** biết chính xác cái gì làm ứng dụng không mở rộng được, và vì sao thêm máy đôi khi làm mọi thứ tệ hơn.
 
-## Hai hướng mở rộng
+## Ý tưởng chính
 
-**Dọc (scale up)** — máy to hơn. Không phải giải pháp kém: nó không đổi kiến trúc, không tạo lỗi phân tán, và một máy 64 core ngày nay phục vụ được lượng tải mà mười năm trước cần cả cụm. Với hầu hết ứng dụng, **scale up là câu trả lời đúng trong thời gian dài hơn bạn tưởng**.
+**Mở rộng dọc** = máy to hơn. Đơn giản, nhanh, và có trần cứng.
 
-Giới hạn: có trần cứng, giá tăng phi tuyến ở đoạn trên, và **một máy là một điểm chết**.
+**Mở rộng ngang** = nhiều máy hơn. Không có trần, nhưng chỉ hoạt động khi ứng dụng **phi trạng thái**.
 
-**Ngang (scale out)** — nhiều máy. Không có trần, chịu được máy chết. Đổi lại: phải stateless, phải có cân bằng tải, và mọi thứ liên quan đến trạng thái trở nên khó.
+Và "phi trạng thái" có một định nghĩa kiểm tra được: bất kỳ request nào cũng đi tới bất kỳ máy nào và cho kết quả như nhau.
 
-Thứ tự đúng: **scale up tới khi hết rẻ, đồng thời viết code stateless để scale out được khi cần**.
+## Mental model
 
-## Stateless: cụ thể là gì
+Hãy nghĩ tới **quầy phục vụ ở một cửa hàng**.
 
-Stateless không có nghĩa "không có trạng thái" — nghĩa là **không có trạng thái nằm trong bộ nhớ của một instance cụ thể**. Bốn thứ hay vi phạm:
+> **Mở rộng dọc**: thuê một nhân viên làm nhanh gấp đôi. Có giới hạn — không ai nhanh gấp mười.
+>
+> **Mở rộng ngang**: mở thêm quầy. Không giới hạn... **nếu** mọi quầy phục vụ được mọi khách.
+>
+> Nhưng nếu mỗi nhân viên **ghi đơn của khách vào sổ tay riêng**, thì khách quay lại phải gặp đúng người đó. Mở thêm quầy không giúp gì — hàng vẫn dài trước mặt một người.
 
-**1. Session trong RAM.**
+Cái sổ tay riêng đó là **trạng thái trong bộ nhớ tiến trình**: session lưu trong RAM, cache cục bộ, file người dùng vừa upload nằm trên đĩa của máy đó.
+
+## Ví dụ nhỏ
 
 ```ts
-// ❌ Instance A nhớ, instance B không biết → đăng nhập rồi vẫn bị hỏi lại
+// ❌ Trạng thái trong tiến trình — máy khác không thấy
 const sessions = new Map<string, User>()
 
-// ✅ Ra ngoài tiến trình
-await redis.set(`session:${id}`, JSON.stringify(user), { EX: 3600 })
+// ✅ Trạng thái ở kho dùng chung — mọi máy đều thấy
+await redis.set(`session:${id}`, JSON.stringify(user), 'EX', 3600)
 ```
 
-Xem [[phien-dang-nhap-va-cookie]].
+## Code chạy thế nào
 
-**2. File tải lên ghi vào đĩa cục bộ.** Ảnh lên instance A, request sau vào instance B → 404. Dùng object storage (S3/R2).
+**Bốn loại trạng thái phá vỡ mở rộng ngang, và chỗ đúng của chúng:**
 
-**3. Cache trong bộ nhớ tiến trình.** Không sai, nhưng phải hiểu: mỗi instance một bản, nên tỉ lệ hit chia cho số instance và **invalidate không đồng bộ được**. Xem [[cache-nhieu-tang]].
-
-**4. Cron chạy trong app.** Ba instance = job chạy ba lần. Cần lock phân tán, hoặc tách hẳn thành một tiến trình scheduler riêng.
-
-```ts
-// Lock bằng Redis: SET NX = chỉ đặt nếu chưa tồn tại → đúng một instance thắng.
-// EX bắt buộc: thiếu nó, instance chết giữa job sẽ giữ lock vĩnh viễn.
-const thang = await redis.set('cron:daily-report', instanceId, { NX: true, EX: 300 })
-if (thang !== 'OK') return
+```text
+① Session trong RAM        → Redis, hoặc JWT
+② Upload lưu trên đĩa máy  → object storage (S3/R2)
+③ Cache cục bộ trong tiến trình → Redis dùng chung
+                             (hoặc chấp nhận không nhất quán giữa các máy)
+④ Cron/job chạy trong ứng dụng → 3 máy = job chạy 3 LẦN
+                             → tách ra worker riêng, hoặc dùng khoá phân tán
 ```
 
-## Sticky session là mùi, không phải giải pháp
+Loại ④ hay bị bỏ sót nhất, và hậu quả rất cụ thể: email gửi ba lần, hoá đơn tính ba lần.
 
-Cân bằng tải có thể "ghim" một người dùng vào một instance để session trong RAM vẫn chạy. Nó khiến ứng dụng có state chạy được ngay mà không phải sửa code — và đó chính là vấn đề: nó **hoãn** việc sửa, đồng thời tạo ra ba vấn đề mới.
+**Sticky session — vì sao đó là giải pháp tồi:**
 
-- Instance chết → toàn bộ người dùng ghim vào nó **mất session**
-- Tải lệch: một instance nhận nhóm người dùng nặng, các instance khác rỗi
-- Deploy rolling luôn làm rơi session của người đang dùng
+```text
+"Cho load balancer luôn gửi cùng một người tới cùng một máy."
 
-Dùng nó như miếng vá tạm để mua thời gian thì được. Coi nó là kiến trúc thì không.
+Nghe hợp lý, nhưng:
+  → Máy đó chết ⇒ mất session của mọi người trên nó
+  → Tải phân bổ lệch (người dùng nặng dồn vào một máy)
+  → Không tự mở rộng được: máy mới thêm vào không nhận traffic cũ
+  → Deploy nào cũng đá hết người dùng ra
 
-## Thuật toán cân bằng tải
+⇒ Đó là cách TRÌ HOÃN việc phi trạng thái hoá, không phải cách giải quyết.
+```
 
-| Thuật toán | Cách chọn | Dùng khi |
+**Vì sao thêm máy đôi khi làm mọi thứ tệ hơn:**
+
+```text
+1 máy ứng dụng, pool 20 kết nối → CSDL thấy 20 kết nối.
+Thêm thành 10 máy, mỗi máy pool 20 → CSDL thấy 200 kết nối.
+
+Postgres mặc định max_connections = 100.
+⇒ Kết nối bị từ chối.
+⇒ Và mỗi kết nối Postgres tốn vài MB RAM cùng chi phí chuyển ngữ cảnh
+  ⇒ CSDL CHẬM HƠN dù có nhiều máy hơn.
+```
+
+Đây là điểm vỡ phổ biến nhất khi mở rộng ngang lần đầu, và nó gây bất ngờ vì triệu chứng — "thêm máy mà chậm hơn" — đi ngược trực giác.
+
+Cách xử lý: **connection pooler** đứng giữa.
+
+```text
+10 máy × 20   →  PgBouncer  →  20 kết nối thật tới Postgres
+                 (ghép nhiều kết nối ứng dụng vào ít kết nối thật)
+```
+
+## Cú pháp
+
+**Thuật toán cân bằng tải:**
+
+```text
+Round-robin           lần lượt. Đơn giản, đủ dùng cho phần lớn trường hợp.
+Least connections     gửi tới máy đang rảnh nhất.
+                      Tốt khi request có thời gian xử lý rất khác nhau.
+IP hash               cùng IP → cùng máy. (Sticky — hạn chế dùng.)
+Weighted              máy mạnh nhận nhiều hơn. Khi các máy không đồng nhất.
+```
+
+**Health check — phần quan trọng hơn thuật toán:**
+
+```nginx
+upstream backend {
+  server 10.0.0.1:3000 max_fails=3 fail_timeout=30s;
+  server 10.0.0.2:3000 max_fails=3 fail_timeout=30s;
+}
+```
+
+Không có nó, load balancer vẫn gửi traffic tới máy đã chết — và người dùng thấy lỗi ở đúng 1/N số request ([[giam-sat-va-sao-luu]]).
+
+**Mở rộng CSDL — thứ tự đúng:**
+
+```text
+① Index và sửa truy vấn      ← LUÔN làm trước, thường đủ
+② Cache                       ← giảm tải đọc
+③ Replica đọc                 ← ghi vào primary, đọc từ replica
+④ Sharding                    ← chia dữ liệu ra nhiều máy. RẤT phức tạp.
+```
+
+Đừng nhảy cóc: một index thiếu có thể chiếm 90% tải CSDL, và không có lượng máy nào bù được cho một truy vấn quét toàn bảng ([[index-va-hieu-nang-truy-van]]).
+
+**Replica đọc có một cái bẫy — độ trễ sao chép:**
+
+```text
+① Người dùng cập nhật hồ sơ  → ghi vào primary
+② Chuyển hướng sang trang hồ sơ → đọc từ replica
+③ Replica chậm 200ms         → hiện DỮ LIỆU CŨ
+⇒ "Tôi vừa sửa mà, sao không thấy?"
+
+Cách xử lý: sau khi ghi, đọc từ primary trong một khoảng ngắn.
+```
+
+## Tại sao cần nó
+
+Vì mở rộng dọc là câu trả lời đúng lâu hơn nhiều người nghĩ:
+
+```text
+Một máy hiện đại: 64 CPU, 512 GB RAM.
+Với ứng dụng bình thường, nó phục vụ được hàng chục nghìn req/s.
+
+Mở rộng ngang mang lại: không giới hạn, và chịu lỗi tốt hơn.
+Nó cũng mang theo: trạng thái phải ra ngoài, connection pool,
+                   triển khai phức tạp hơn, gỡ lỗi khó hơn.
+```
+
+**Quy tắc chọn:**
+
+```text
+< 1.000 req/s      → một máy. Mở rộng dọc khi cần.
+1.000–10.000 req/s → 2–3 máy + load balancer + Redis.
+> 10.000 req/s     → mở rộng ngang thật sự, và đo kỹ.
+```
+
+**Nhưng có một lý do khác để chạy hai máy dù tải nhỏ:** một máy nghĩa là mọi lần bảo trì đều là downtime, và mọi sự cố phần cứng đều là sự cố toàn phần. Hai máy đổi vấn đề "tải" thành vấn đề "sẵn sàng" — và thường lý do thứ hai mới là lý do thật.
+
+**Định luật Amdahl, phát biểu gọn:** phần **tuần tự** của hệ thống đặt trần cho toàn bộ. Nếu 5% công việc phải đi qua một tài nguyên dùng chung (một bảng khoá, một hàng đợi đơn, một CSDL ghi), thì dù thêm bao nhiêu máy bạn cũng không nhanh hơn 20 lần.
+
+## So sánh
+
+| | Dọc (máy to hơn) | Ngang (nhiều máy) |
 |---|---|---|
-| Round-robin | Lần lượt | Request đồng đều |
-| Least connections | Máy ít kết nối nhất | Thời gian xử lý chênh nhau nhiều |
-| Random two choices | Chọn 2 ngẫu nhiên, lấy cái rỗi hơn | Mặc định tốt; gần tối ưu, rẻ |
-| Consistent hashing | Hash khoá → máy | Cần cùng khoá vào cùng máy (cache) |
+| Độ phức tạp | thấp | cao |
+| Trần | có | không |
+| Chịu lỗi | ❌ một điểm chết | ✅ |
+| Cần phi trạng thái | không | **có** |
+| Chi phí | tăng phi tuyến | tuyến tính |
 
-`least connections` là mặc định tốt hơn round-robin cho ứng dụng thật, vì round-robin gửi request thứ N tới máy đang xử lý một truy vấn 5 giây.
+## Dễ nhầm
 
-## Health check phải kiểm đúng thứ
+**1. Session trong RAM tiến trình.** Đăng nhập rồi lại bị đăng xuất ngẫu nhiên.
 
-```ts
-// ❌ Luôn trả 200 kể cả khi database đã sập — cân bằng tải cứ gửi request tới
-app.get('/health', () => new Response('ok'))
+**2. File upload lưu trên đĩa máy.** Máy khác không thấy.
 
-// ✅ Hai endpoint, hai mục đích khác nhau
-app.get('/health/live', () => new Response('ok'))        // tiến trình còn sống?
+**3. Cron chạy trong ứng dụng.** N máy = chạy N lần.
 
-app.get('/health/ready', async () => {                    // sẵn sàng nhận request?
-  try {
-    await db.query('SELECT 1')
-    return new Response('ok')
-  } catch {
-    return new Response('db down', { status: 503 })
-  }
-})
+**4. Dùng sticky session để né việc phi trạng thái hoá.**
+
+**5. Không tính tổng kết nối CSDL.** Thêm máy làm CSDL chậm hơn.
+
+**6. Sharding trước khi thử index và cache.**
+
+**7. Đọc từ replica ngay sau khi ghi.** Người dùng thấy dữ liệu cũ.
+
+**8. Không có health check.** Traffic vẫn tới máy đã chết.
+
+**9. Mở rộng ngang khi mở rộng dọc còn dư.** Trả phức tạp mà không cần.
+
+**10. Quên phần tuần tự.** Điểm nghẽn dùng chung đặt trần cho tất cả.
+
+## Mẹo nhớ
+
+> **Phi trạng thái = request nào tới máy nào cũng cho kết quả như nhau.**
+>
+> **Thêm máy = nhân số kết nối CSDL. Nhớ pooler.**
+>
+> **Index và cache trước, sharding sau cùng.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. "Phi trạng thái" nghĩa là gì, kiểm tra bằng câu hỏi nào?
+2. Bốn loại trạng thái phá vỡ mở rộng ngang, và chỗ đúng của chúng?
+3. Vì sao thêm máy có thể làm CSDL chậm hơn?
+4. Vì sao sticky session là giải pháp tồi?
+5. Thứ tự đúng khi mở rộng CSDL?
+
+## Tự viết lại
+
+Ứng dụng một máy: session trong RAM, upload lưu `/uploads`, cron gửi email hằng ngày trong tiến trình. Không nhìn lại, viết kế hoạch đưa lên ba máy:
+
+```text
+① mỗi loại trạng thái chuyển đi đâu
+② cấu hình connection pool
+③ xử lý cron
+④ thứ tự thực hiện
 ```
 
-Phân biệt **liveness** và **readiness** là điều bắt buộc: trộn hai cái vào một endpoint gây ra một trong hai lỗi. Nếu health check kiểm database và trả `unhealthy` khi database chậm, hệ thống điều phối sẽ **khởi động lại toàn bộ app** — trong khi app không có lỗi gì, và việc restart chỉ làm mọi thứ tệ hơn.
+Tự kiểm: nếu làm bước ③ sau cùng, chuyện gì xảy ra trong khoảng thời gian đó?
 
-Cũng đừng cho readiness gọi hết mọi phụ thuộc. Một API bên thứ ba chậm không nên khiến cả cụm của bạn rời khỏi vòng phục vụ.
+## Thử sức
 
-## Chỗ vỡ trước tiên: connection pool
+Sau khi mở rộng từ 1 lên 5 máy, hai chuyện xảy ra: người dùng **bị đăng xuất ngẫu nhiên**, và CSDL báo **"too many connections"**.
 
-Đây là bài học đắt nhất của việc scale out, và gần như ai cũng gặp một lần.
-
-```
-10 instance × pool 20 kết nối = 200 kết nối tới Postgres
-Postgres mặc định max_connections = 100
-→ "FATAL: sorry, too many clients already"
-```
-
-Nghịch lý: **thêm máy làm hệ thống chậm hơn**. Mỗi kết nối Postgres là một process riêng, tốn RAM và chi phí chuyển ngữ cảnh. 500 kết nối trên máy 4 core không cho thông lượng gấp 500 — nó cho ít hơn 50 kết nối.
-
-Cách tính đúng:
-
-```
-Số kết nối cần ≈ số core × 2 + số đĩa hiệu dụng
-Máy 8 core, SSD → khoảng 20 kết nối là đủ cho TOÀN CỤM
-→ pool mỗi instance = 20 / số instance
-```
-
-Với hơn vài instance, con số chia ra quá nhỏ → dùng **connection pooler** ngoài (PgBouncer, hoặc Supavisor/RDS Proxy):
-
-```
-10 instance × pool 20 → PgBouncer (transaction mode) → 20 kết nối thật tới Postgres
-```
-
-Lưu ý quan trọng khi dùng transaction mode: kết nối được trả lại pool **sau mỗi transaction**, nên prepared statement dùng lại và `SET` ở mức session sẽ không hoạt động như mong đợi. Nhiều ORM cần bật cờ tắt prepared statement.
-
-Xem [[transaction-va-khoa-trong-postgres]].
-
-## Cái không mở rộng ngang được
-
-Ghi vào một database chủ. Bạn thêm bao nhiêu app instance cũng không giúp — mọi lệnh ghi vẫn về một chỗ. Đường ra, theo thứ tự nên thử:
-
-1. **Giảm số lệnh ghi** — gộp, ghi theo lô, bỏ những lệnh ghi không ai cần (đếm view mỗi request)
-2. **Read replica** cho phần đọc — thường 90% tải là đọc
-3. **Tách theo miền nghiệp vụ** — bảng log/analytics ra database riêng
-4. **Sharding** — cuối cùng, và đắt. Xem [[du-lieu-o-quy-mo]]
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Session/cache/file trong bộ nhớ instance | Chạy 1 máy thì đúng, nhiều máy thì sai ngẫu nhiên | Đưa ra Redis / object storage |
-| Cron chạy trong app nhiều instance | Job chạy N lần | Lock phân tán hoặc scheduler riêng |
-| Sticky session coi là giải pháp | Mất session khi deploy, tải lệch | Làm stateless thật |
-| Health check luôn trả 200 | Cân bằng tải gửi request vào máy đã chết | Kiểm phụ thuộc ở `/ready` |
-| Readiness kiểm cả API bên thứ ba | Bên thứ ba chậm → cả cụm rời vòng phục vụ | Chỉ kiểm phụ thuộc bắt buộc |
-| Pool × instance vượt `max_connections` | `too many clients`, thêm máy càng chậm | PgBouncer + tính lại pool |
-| Scale out trước khi scale up hết rẻ | Nhận hết lỗi phân tán mà chưa cần | Máy to trước, code stateless sẵn |
-
-## Ghi nhớ
-
-- Scale up là câu trả lời đúng trong thời gian dài hơn bạn tưởng; viết stateless để còn đường scale out.
-- Stateless = không có trạng thái trong RAM của một instance cụ thể.
-- Liveness và readiness là hai câu hỏi khác nhau, cần hai endpoint.
-- `pool × instance` phải nhỏ hơn `max_connections`; quá vài instance thì cần pooler.
-
-## Tự kiểm tra
-
-1. Kể bốn thứ khiến app không chạy được nhiều instance.
-2. Vì sao readiness check kiểm database lại có thể làm cả cụm bị restart?
-3. 8 instance, pool 25, Postgres `max_connections = 100`. Sai gì và sửa thế nào?
+Ba câu để trả lời: nguyên nhân của từng vấn đề; cách sửa từng cái; và bạn **kiểm chứng** đã sửa đúng bằng cách nào. Câu khó nhất: nếu sau khi sửa cả hai mà hệ thống vẫn không nhanh hơn đáng kể so với một máy, bạn nghi ngờ điều gì?

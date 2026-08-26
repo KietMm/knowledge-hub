@@ -4,189 +4,241 @@ slug: cache-nhieu-tang
 summary: Cache ở đâu, làm mất hiệu lực thế nào, và ba lỗi biến cache thành nguồn bug khó nhất.
 level: trung-cap
 tags: [kien-truc, cache, hieu-nang, redis]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** chọn được tầng cache đúng cho từng loại dữ liệu, và tránh ba lỗi kinh điển: stampede, dữ liệu cũ vĩnh viễn, và cache dữ liệu của người khác.
+> **Sau bài này bạn sẽ:** chọn được tầng cache đúng, và nhận ra ba lỗi làm cache trở thành nguồn bug khó tái hiện nhất.
 
-## Cache là một đánh đổi, không phải tối ưu miễn phí
+## Ý tưởng chính
 
-Cái bạn nhận: nhanh hơn, tải xuống database giảm.
-Cái bạn trả: **dữ liệu có thể cũ**, và một lớp trạng thái nữa để suy luận khi có bug.
+Cache đổi **độ tươi của dữ liệu** lấy **tốc độ**.
 
-Nên câu hỏi đầu tiên **không** phải "cache ở đâu" mà là: *"dữ liệu này cũ 30 giây thì có ai chịu thiệt không?"*
+Đó là một cuộc trao đổi, không phải một cải tiến miễn phí. Mỗi tầng cache bạn thêm vào là một nơi dữ liệu có thể cũ, và một nơi nữa phải nghĩ tới khi có bug.
 
-| Dữ liệu | Cũ được bao lâu |
-|---|---|
-| Danh sách bài viết công khai | Phút tới giờ |
-| Tồn kho hiển thị trên trang sản phẩm | Giây |
-| Tồn kho lúc **trừ kho** | Không bao giờ — xem [[truy-cap-dong-thoi-va-khoa]] |
-| Số dư ví | Không bao giờ |
-| Kết quả tính toán từ dữ liệu bất biến | Vĩnh viễn |
+## Mental model
 
-Dòng thứ ba là điểm quan trọng: **hiển thị** và **quyết định** có yêu cầu khác nhau trên cùng một dữ liệu. Hiển thị "còn 3 cái" từ cache là được; trừ kho phải đọc nguồn thật.
+Hãy nghĩ tới **bản sao giấy tờ để trên bàn**.
 
-## Năm tầng, từ ngoài vào trong
+> Bạn cần tra một thông tin trong hợp đồng. Đi xuống kho lưu trữ mỗi lần thì lâu, nên bạn photo một bản để trên bàn.
+>
+> Nhanh hơn hẳn. Nhưng bây giờ có **hai bản** — và nếu bản gốc trong kho được sửa, bản trên bàn của bạn **sai mà trông vẫn như đúng**.
+>
+> Nên bạn phải quyết định trước: "bản này tôi tin trong bao lâu?" (TTL), hoặc "khi nào ai đó sửa bản gốc thì báo tôi vứt bản photo đi" (invalidation).
 
-```
-Trình duyệt          Cache-Control, ETag          0 ms, không kiểm soát được
-CDN                  cache biên                   10–50 ms, xoá được
-App (RAM)            Map/LRU trong tiến trình     0,001 ms, mỗi instance một bản
-Redis                cache dùng chung             0,5 ms, cả cụm thấy như nhau
-Database             buffer pool                  tự động, không cần làm gì
-```
+Không có cách thứ ba. Mọi chiến lược cache đều là một trong hai cái đó, hoặc kết hợp cả hai.
 
-Mỗi tầng gần người dùng hơn thì nhanh hơn nhưng **khó làm mất hiệu lực hơn**. Cache trong RAM trình duyệt của người dùng: bạn không có cách nào xoá nó. Vì vậy nguyên tắc: **thời gian sống càng ngắn khi càng ra xa**.
+## Ví dụ nhỏ
 
 ```ts
-// Tài sản có hash trong tên: nội dung không bao giờ đổi → cache vĩnh viễn
-'Cache-Control': 'public, max-age=31536000, immutable'
+async function layNguoiDung(id: string) {
+  const key = `user:${id}`
+  const cached = await redis.get(key)
+  if (cached !== null) return JSON.parse(cached)
 
-// Trang HTML: luôn hỏi lại, nhưng dùng ETag để trả 304 nếu chưa đổi
-'Cache-Control': 'no-cache'
-
-// API công khai: CDN giữ 60s, và được phục vụ bản cũ trong 5 phút khi origin chết
-'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300'
-```
-
-`stale-while-revalidate` đáng giá nhất trong ba dòng trên: nó trả bản cũ **ngay** rồi làm mới ở nền, nên người dùng không bao giờ phải chờ một lần tính lại. Next.js dựng `revalidate` trên đúng ý này — xem [[caching-va-revalidate]].
-
-## Cache-aside: mẫu mặc định
-
-```ts
-async function layBaiViet(slug: string): Promise<BaiViet> {
-  const key = `post:${slug}`
-
-  const daCache = await redis.get(key)
-  if (daCache !== null) return JSON.parse(daCache)   // hit
-
-  const bai = await db.posts.findUnique({ where: { slug } })
-  if (bai === null) throw new NotFound()
-
-  // TTL là BẮT BUỘC. Không có nó, một lần invalidate lỗi là dữ liệu sai vĩnh viễn —
-  // và không ai phát hiện được cho tới khi có người phàn nàn.
-  await redis.set(key, JSON.stringify(bai), { EX: 300 })
-  return bai
+  const user = await db.user.findUnique({ where: { id } })
+  await redis.set(key, JSON.stringify(user), 'EX', 300)   // TTL 5 phút
+  return user
 }
 ```
 
-Đặt TTL kể cả khi bạn đã có logic xoá cache chủ động. TTL là **lưới an toàn cho chính bug của bạn**: mọi cơ chế invalidate đều có ngày hỏng, và TTL giới hạn thiệt hại xuống còn vài phút thay vì vĩnh viễn.
+## Code chạy thế nào
 
-## Ba lỗi kinh điển
+**Các tầng, từ gần người dùng nhất:**
 
-### 1. Cache stampede
-
-Key hết hạn đúng lúc 1.000 request đang vào. Cả 1.000 đều miss, cả 1.000 đều chạy truy vấn nặng cùng lúc → database sập. Cache vừa cứu bạn khỏi tải, giờ tạo ra một đợt tải tệ hơn.
-
-```ts
-// Khoá: chỉ MỘT request được tính lại, số còn lại chờ rồi đọc kết quả
-async function layCoKhoa<T>(key: string, tinh: () => Promise<T>, ttl = 300): Promise<T> {
-  const co = await redis.get(key)
-  if (co !== null) return JSON.parse(co)
-
-  const lockKey = `lock:${key}`
-  const thang = await redis.set(lockKey, '1', { NX: true, EX: 10 })
-
-  if (thang !== 'OK') {
-    // Không thắng lock: chờ ngắn rồi đọc lại. Nếu vẫn chưa có thì tự tính —
-    // thà nhiều request cùng tính còn hơn treo vô hạn khi request thắng lock chết.
-    await new Promise((r) => setTimeout(r, 50))
-    const lai = await redis.get(key)
-    if (lai !== null) return JSON.parse(lai)
-    return tinh()
-  }
-
-  try {
-    const kq = await tinh()
-    // Jitter: nếu mọi key đều TTL đúng 300s, chúng cùng hết hạn một lúc và
-    // stampede quay lại theo chu kỳ.
-    await redis.set(key, JSON.stringify(kq), { EX: ttl + Math.floor(Math.random() * 60) })
-    return kq
-  } finally {
-    await redis.del(lockKey)
-  }
-}
+```text
+① Trình duyệt        Cache-Control  → 0ms, nhưng KHÔNG xoá được từ xa
+② CDN                biên gần user  → ~10ms, xoá được (purge)
+③ Reverse proxy      Nginx          → ~1ms
+④ Ứng dụng           Redis          → ~1ms, dùng chung mọi máy
+⑤ Trong tiến trình   Map            → ~0ms, nhưng MỖI MÁY MỘT BẢN
+⑥ CSDL               buffer pool    → tự động
 ```
 
-### 2. Cache dữ liệu của người khác
+Càng gần người dùng càng nhanh, và **càng khó làm mất hiệu lực**. Tầng ① là cực đoan nhất: một file JS cache một năm trong trình duyệt người dùng thì bạn không có cách nào lấy lại — đó là lý do phải đổi tên file thay vì đổi nội dung.
 
-Lỗi nguy hiểm nhất trong bài này, vì nó là **lỗ hổng bảo mật**, không phải lỗi hiệu năng:
+**Ba lỗi biến cache thành nguồn bug khó nhất:**
 
-```ts
-// ❌ Key không có danh tính → người dùng B thấy dữ liệu của người dùng A
-const key = `dashboard`
+```text
+① CACHE DỮ LIỆU RIÊNG TƯ Ở TẦNG DÙNG CHUNG
+   CDN cache /api/toi cho user A
+   ⇒ user B gọi cùng URL ⇒ NHẬN DỮ LIỆU CỦA A.
+   ⇒ Rò rỉ dữ liệu, và rất khó tái hiện.
+   ✅ Cache-Control: private, no-store cho mọi phản hồi cá nhân hoá.
 
-// ✅ Danh tính nằm trong key
-const key = `dashboard:${user.id}`
+② KHÔNG XOÁ CACHE KHI GHI
+   Cập nhật user ⇒ cache vẫn giữ bản cũ tới hết TTL
+   ⇒ "Tôi sửa rồi mà, sao không thấy?"
+   ✅ Xoá key ngay trong cùng luồng ghi.
+
+③ CACHE CẢ LỖI
+   API phụ thuộc lỗi 500 ⇒ cache 500 trong 5 phút
+   ⇒ Dịch vụ kia hồi phục sau 10 giây, bạn vẫn lỗi 5 phút.
+   ✅ Chỉ cache phản hồi thành công.
 ```
 
-Ở tầng CDN cũng vậy: đặt `Cache-Control: public` trên một response phụ thuộc cookie thì CDN sẽ phục vụ dữ liệu của người đầu tiên cho mọi người sau. Response cá nhân hoá phải là `private`, và nếu buộc phải cache thì `Vary` đúng header.
+Cả ba đều có chung một đặc điểm: hệ thống **hoạt động bình thường** trong đa số trường hợp, và hỏng theo cách phụ thuộc thời điểm — kiểu bug tốn nhiều giờ nhất để tìm.
 
-```
-Cache-Control: private, no-store     ← response có dữ liệu cá nhân
-```
+**Cache stampede — chỗ cache tự làm hại mình:**
 
-Xem [[broken-access-control]].
-
-### 3. Invalidate theo từng key rời rạc
-
-```ts
-// ❌ Sửa một bài viết, phải nhớ xoá đủ mọi chỗ đang chứa nó — và sẽ quên
-await redis.del(`post:${slug}`)
-// còn `posts:list:page:1`, `posts:by-tag:${tag}`, `sitemap`, feed RSS...
+```text
+Một key nóng hết hạn lúc 10:00:00.
+1.000 request đến cùng lúc, TẤT CẢ đều thấy cache miss,
+TẤT CẢ cùng gọi CSDL.
+⇒ CSDL nhận 1.000 truy vấn giống hệt nhau trong một nhịp.
+⇒ Cache vốn để bảo vệ CSDL, nay tạo ra đúng cú sốc nó phải chặn.
 ```
 
-Hai cách đúng, chọn theo tình huống:
+Ba cách xử lý:
 
-**Tag/namespace** — xoá theo nhóm:
+```text
+① TTL có nhiễu:  ttl = 300 + random(0, 60)
+   ⇒ các key không hết hạn cùng lúc.
 
-```ts
-// Đổi phiên bản namespace là mọi key cũ trở nên không thể tra tới (rồi TTL tự dọn).
-// Rẻ hơn KEYS/SCAN rất nhiều và không chặn Redis.
-const v = await redis.incr('posts:version')
-const key = `posts:v${v}:list:page:1`
+② Khoá: chỉ một request được đi tính, các request khác chờ kết quả.
+
+③ Làm mới sớm: khi còn 10% TTL, một request nền đi làm mới
+   trong khi các request khác vẫn nhận bản cũ.
 ```
 
-**Cache theo dữ liệu bất biến** — tránh invalidate hoàn toàn:
+## Cú pháp
 
-```ts
-// Key chứa dấu vân tay của nội dung. Nội dung đổi → key mới. Không cần xoá gì.
-const key = `post:${slug}:${bai.updatedAt}`
+**Ba chiến lược ghi:**
+
+```text
+CACHE-ASIDE (phổ biến nhất)
+  Đọc:  miss → CSDL → ghi cache
+  Ghi:  ghi CSDL → XOÁ key
+  ⇒ Đơn giản. Xoá chứ đừng ghi đè: hai request ghi đồng thời
+    có thể để lại giá trị cũ trong cache.
+
+WRITE-THROUGH
+  Ghi:  ghi CSDL VÀ cache cùng lúc
+  ⇒ Cache luôn tươi, nhưng ghi chậm hơn.
+
+WRITE-BEHIND
+  Ghi:  ghi cache trước, đẩy xuống CSDL sau
+  ⇒ Ghi rất nhanh. Mất dữ liệu nếu cache chết. Hiếm dùng.
 ```
 
-Cách thứ hai là cách tốt nhất khi dùng được: **không có invalidate thì không có bug invalidate**.
+**Đặt tên key có phiên bản — mẹo đơn giản, hiệu quả lớn:**
 
-## Đo trước khi thêm cache
+```text
+user:v2:{id}
 
-```ts
-// Tỉ lệ hit dưới ~80% thường nghĩa là cache đang không đáng: bạn trả giá phức tạp
-// và dữ liệu cũ, mà vẫn phải chạy truy vấn ở phần lớn request.
-metrics.increment(hit ? 'cache.hit' : 'cache.miss', { key: 'post' })
+Đổi cấu trúc dữ liệu ⇒ tăng lên v3
+⇒ mọi key cũ tự trở thành rác và hết hạn dần,
+  không cần xoá thủ công, không có phút nào phục vụ dữ liệu sai định dạng.
 ```
 
-Nếu tỉ lệ hit thấp, thường vấn đề thật là **key quá riêng biệt** (chứa timestamp, chứa tham số phân trang tự do) hoặc **truy vấn thiếu index** — và index rẻ hơn cache rất nhiều vì nó không tạo ra dữ liệu cũ.
+**Chọn TTL theo hậu quả của dữ liệu cũ:**
 
-## Lỗi hay gặp
+```text
+Dữ liệu tĩnh (danh mục, cấu hình)   giờ – ngày
+Danh sách sản phẩm                  phút
+Số liệu bảng điều khiển             30 giây – vài phút
+Số dư tài khoản, tồn kho            KHÔNG cache, hoặc TTL vài giây
+```
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Cache không TTL | Một lần invalidate lỗi = sai vĩnh viễn | Luôn đặt TTL làm lưới an toàn |
-| Key thiếu danh tính người dùng | **Lộ dữ liệu giữa người dùng** | Đưa `user.id` vào key |
-| `Cache-Control: public` cho response cá nhân | CDN phát dữ liệu người khác | `private, no-store` |
-| Không chống stampede | Key hết hạn → database sập | Lock + jitter TTL |
-| TTL bằng nhau cho mọi key | Hết hạn đồng loạt theo chu kỳ | Cộng jitter |
-| Invalidate từng key rời rạc | Luôn quên một chỗ | Namespace version hoặc key bất biến |
-| Cache để che truy vấn thiếu index | Vấn đề thật vẫn còn, chỉ bị hoãn | Thêm index trước |
-| Cache dữ liệu dùng để quyết định | Trừ kho sai, tính tiền sai | Đọc nguồn thật khi quyết định |
+Câu hỏi để quyết định: *"Nếu người dùng thấy dữ liệu cũ 5 phút, hậu quả là gì?"* Với danh mục sản phẩm là không có gì; với số dư ví là một khiếu nại.
 
-## Ghi nhớ
+## Tại sao cần nó
 
-- Câu hỏi đầu tiên là "cũ bao lâu thì có ai thiệt", không phải "cache ở đâu".
-- Càng xa người dùng càng dễ xoá; TTL ngắn dần khi ra xa.
-- TTL là lưới an toàn cho bug invalidate của chính bạn — luôn có.
-- Key thiếu danh tính là lỗ hổng bảo mật, không phải lỗi hiệu năng.
+Vì cache là cách rẻ nhất để giảm tải, nhưng nó **không sửa được truy vấn tồi**:
 
-## Tự kiểm tra
+```text
+Truy vấn quét toàn bảng, mất 2 giây, có cache TTL 5 phút:
+  → 99% request nhanh
+  → 1% request mất 2 giây (đúng những người xui xẻo gặp cache miss)
+  → Và mỗi lần cache hết hạn là một cú sốc cho CSDL.
 
-1. Cùng dữ liệu tồn kho: vì sao hiển thị được cache mà trừ kho thì không?
-2. Cache stampede xảy ra thế nào, và jitter TTL giải quyết phần nào của nó?
-3. Vì sao key chứa `updatedAt` làm bạn không cần invalidate?
+⇒ Sửa truy vấn TRƯỚC, cache SAU.
+  Cache đặt lên một truy vấn tồi chỉ giấu nó đi.
+```
+
+**Đo tỉ lệ trúng cache:**
+
+```text
+> 90%   tốt
+70–90%  xem lại TTL hoặc key
+< 50%   cache đang không có tác dụng — có thể còn làm chậm thêm
+```
+
+Tỉ lệ trúng thấp thường có nghĩa key quá đặc thù (chứa timestamp, chứa tham số hiếm lặp lại) hoặc TTL quá ngắn.
+
+**Và câu hỏi nên hỏi trước tiên:** *"Có cần cache không?"*
+
+```text
+Postgres có index tốt trả lời truy vấn trong 1–5ms.
+Redis mất ~1ms cộng chi phí mạng.
+
+⇒ Với nhiều truy vấn, cache tiết kiệm rất ít
+  mà thêm một hệ thống nữa để vận hành và một nguồn bug nữa.
+```
+
+## So sánh
+
+| Tầng | Độ trễ | Xoá được | Dùng chung giữa các máy |
+|---|---|---|---|
+| Trình duyệt | 0ms | ❌ | — |
+| CDN | ~10ms | ✅ purge | ✅ |
+| Redis | ~1ms | ✅ | ✅ |
+| Trong tiến trình | ~0ms | khó | ❌ |
+
+## Dễ nhầm
+
+**1. Cache dữ liệu cá nhân hoá ở tầng dùng chung.** Rò rỉ dữ liệu người khác.
+
+**2. Không xoá cache khi ghi.** "Tôi sửa rồi mà."
+
+**3. Cache cả phản hồi lỗi.** Kéo dài sự cố.
+
+**4. TTL đồng loạt.** Cache stampede.
+
+**5. Cache trong tiến trình rồi tưởng mọi máy giống nhau.** Người dùng thấy kết quả khác nhau tuỳ máy.
+
+**6. Ghi đè cache khi ghi thay vì xoá.** Race condition để lại giá trị cũ.
+
+**7. Cache để che truy vấn tồi.** Vấn đề vẫn còn, chỉ khó thấy hơn.
+
+**8. Không đo tỉ lệ trúng.** Không biết cache có tác dụng không.
+
+**9. Không xử lý khi Redis chết.** Cache là tối ưu — mất nó thì chậm, không nên là sập.
+
+**10. Thêm cache khi chưa cần.** Một hệ thống nữa để vận hành và gỡ lỗi.
+
+## Mẹo nhớ
+
+> **Cache đổi ĐỘ TƯƠI lấy TỐC ĐỘ. Luôn có cái giá.**
+>
+> **Ghi thì XOÁ key, đừng ghi đè.**
+>
+> **Không bao giờ cache dữ liệu cá nhân hoá ở tầng dùng chung.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Các tầng cache, và đánh đổi khi tiến gần người dùng?
+2. Ba lỗi phổ biến nhất, hậu quả của từng cái?
+3. Cache stampede là gì, ba cách xử lý?
+4. Vì sao khi ghi thì xoá key chứ không ghi đè?
+5. Vì sao cache không sửa được một truy vấn tồi?
+
+## Tự viết lại
+
+Trang sản phẩm: thông tin sản phẩm (ít đổi), tồn kho (đổi liên tục), gợi ý cá nhân hoá. Không nhìn lại, thiết kế:
+
+```text
+① mỗi loại cache ở tầng nào, TTL bao nhiêu
+② cái nào KHÔNG cache, vì sao
+③ khi cập nhật sản phẩm thì xoá những key nào
+④ chống stampede cho key nóng nhất
+```
+
+Tự kiểm: gợi ý cá nhân hoá của bạn có bị CDN cache nhầm không — bạn đặt header gì để chắc chắn?
+
+## Thử sức
+
+Người dùng báo: thỉnh thoảng họ thấy **thông tin của người khác** trên trang tài khoản. Không tái hiện được ở môi trường dev.
+
+Ba câu để trả lời: nguyên nhân khả dĩ nhất và **tầng nào** gây ra; bạn xác nhận bằng cách nào; và bạn xử lý ngay lập tức thế nào. Câu khó nhất: sau khi sửa header, dữ liệu sai **đã nằm sẵn** ở CDN và trong trình duyệt người dùng — bạn làm gì với hai chỗ đó?

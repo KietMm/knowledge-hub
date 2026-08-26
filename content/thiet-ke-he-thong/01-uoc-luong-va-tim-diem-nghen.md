@@ -4,160 +4,225 @@ slug: uoc-luong-va-tim-diem-nghen
 summary: Những con số một tech lead phải nhớ, cách tính nhẩm tải, và vì sao trung bình là chỉ số dối.
 level: co-ban
 tags: [kien-truc, thiet-ke-he-thong, hieu-nang, uoc-luong]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** tính nhẩm được hệ thống cần bao nhiêu máy và bao nhiêu dung lượng, và biết đọc số đo hiệu năng mà không bị trung bình lừa.
+> **Sau bài này bạn sẽ:** ước lượng được tải và dung lượng trong đầu, và chỉ ra điểm nghẽn trước khi viết dòng mã nào.
 
-## Bảng số phải nhớ
+## Ý tưởng chính
 
-Thiết kế hệ thống là môn học về **độ lớn tương đối**. Không cần chính xác, cần biết cái nào chậm hơn cái nào **bao nhiêu lần**:
+Thiết kế hệ thống bắt đầu bằng **số**, không bằng sơ đồ.
 
-| Thao tác | Thời gian | So sánh |
+Và số không cần chính xác — cần **đúng bậc độ lớn**. Sai gấp đôi thì không sao; sai gấp nghìn lần thì bạn đang thiết kế cho một hệ thống khác hẳn.
+
+## Mental model
+
+Hãy nghĩ tới **ước lượng số khách cho một bữa tiệc**.
+
+> Bạn không cần biết chính xác 143 hay 147 người. Bạn cần biết đó là **150 người chứ không phải 1500** — vì hai con số đó dẫn tới hai loại địa điểm, hai loại bếp, hai ngân sách hoàn toàn khác nhau.
+>
+> Và bạn cần biết **giờ cao điểm**: 150 khách trải đều cả buổi khác hẳn 150 khách ập vào cùng lúc lúc 7 giờ.
+
+Toàn bộ việc ước lượng hệ thống là như vậy: tìm bậc độ lớn, rồi tìm đỉnh.
+
+## Ví dụ nhỏ
+
+```text
+1 triệu người dùng/ngày, mỗi người 10 request
+= 10 triệu request/ngày
+≈ 10.000.000 / 86.400 ≈ 116 request/giây trung bình
+Đỉnh ≈ 3× trung bình ≈ 350 req/s
+```
+
+## Code chạy thế nào
+
+**Bộ số cần thuộc — để tính nhẩm mà không tra:**
+
+```text
+Một ngày ≈ 86.400 giây  ≈ 10⁵     ← dùng con số này để nhẩm
+
+Đọc RAM tuần tự 1 MB       ~0,25 ms
+Round-trip trong data center ~0,5 ms
+Đọc SSD ngẫu nhiên          ~0,1 ms
+Đọc đĩa quay ngẫu nhiên     ~10 ms       (chậm hơn SSD 100 lần)
+Round-trip qua Internet     ~50–150 ms   ← thường là phần lớn độ trễ
+
+Postgres đơn giản (có index)  ~1–5 ms
+Postgres không index, quét bảng  giây
+Redis GET                    ~0,1 ms
+```
+
+Một hệ quả rút ra ngay từ bảng này: **một request đi qua mạng Internet đắt hơn 500 truy vấn Redis**. Nên gộp nhiều lời gọi lại thường có tác động lớn hơn tối ưu từng lời gọi.
+
+**Quy trình ước lượng bốn bước:**
+
+```text
+① TẢI
+   DAU × request mỗi người / 86.400 = req/s trung bình
+   × 2–5 = đỉnh
+   Tỉ lệ đọc/ghi? (thường 100:1 hoặc hơn ⇒ tối ưu đọc trước)
+
+② DUNG LƯỢNG
+   số bản ghi/ngày × kích thước × 365 × số năm
+   × 2–3 cho index, bản sao, và chỗ dự phòng
+
+③ BĂNG THÔNG
+   req/s × kích thước phản hồi
+
+④ ĐIỂM NGHẼN
+   Cái nào chạm giới hạn TRƯỚC?
+```
+
+**Ví dụ đầy đủ — ứng dụng ảnh:**
+
+```text
+1 triệu DAU, mỗi người tải lên 2 ảnh, xem 50 ảnh.
+
+Ghi:  2.000.000 / 86.400 ≈ 23 ảnh/s      → nhỏ
+Đọc:  50.000.000 / 86.400 ≈ 580 req/s    → đỉnh ~1.700 req/s
+Tỉ lệ đọc/ghi ≈ 25:1                     → CDN là ưu tiên số một
+
+Dung lượng: 2 triệu ảnh/ngày × 2 MB = 4 TB/ngày
+            → 1,4 PB/năm  ⇒ object storage, KHÔNG phải CSDL
+Băng thông đọc: 580 × 200 KB ≈ 116 MB/s ≈ 1 Gbps ⇒ CDN
+```
+
+Chú ý: chưa vẽ sơ đồ nào, nhưng ba quyết định kiến trúc lớn nhất đã lộ ra — CDN, object storage, tối ưu cho đọc.
+
+## Cú pháp
+
+**Vì sao trung bình là chỉ số dối:**
+
+```text
+100 request: 99 cái 10ms, 1 cái 5.000ms
+Trung bình = 60ms   → "nhanh mà"
+p99        = 5.000ms → 1% người dùng chờ 5 giây
+
+Với 1 triệu request/ngày, 1% = 10.000 người dùng bực mình MỖI NGÀY.
+```
+
+Và cái đuôi ấy còn được **nhân lên** khi một trang gọi nhiều dịch vụ:
+
+```text
+Một trang gọi 10 dịch vụ, mỗi dịch vụ p99 = 1 giây.
+Xác suất KHÔNG dính cái chậm nào = 0.99¹⁰ ≈ 90%
+⇒ 10% số lần tải trang chạm ít nhất một dịch vụ chậm.
+
+p99 của từng phần trở thành p90 của trải nghiệm.
+```
+
+Đây là lý do trong hệ nhiều dịch vụ, người ta theo dõi cả p999 ([[quan-sat-he-thong]]).
+
+**Tìm điểm nghẽn — kiểm theo thứ tự:**
+
+```text
+① CSDL       thường là chỗ vỡ đầu tiên
+   → truy vấn thiếu index, N+1, connection pool cạn
+② Ứng dụng   CPU (tính toán) hay chờ I/O?
+③ Mạng       băng thông, độ trễ, số kết nối
+④ Đĩa        IOPS, dung lượng
+```
+
+**Quy tắc kiểm tra nhanh trước khi thiết kế phức tạp:**
+
+```text
+< 1.000 req/s   → một máy chủ + một CSDL là đủ.
+                  KHÔNG cần microservices, không cần Kafka.
+< 100 GB        → Postgres thoải mái.
+< 1 TB          → vẫn Postgres, cần chú ý index và phân vùng.
+```
+
+Phần lớn hệ thống nằm gọn trong ba dòng này. Thiết kế cho quy mô chưa có là cách chắc chắn nhất để làm chậm chính mình ([[chi-phi-ha-tang]]).
+
+## Tại sao cần nó
+
+Vì con số quyết định kiến trúc, và **đoán sai bậc độ lớn thì mọi lựa chọn sau đó đều sai**:
+
+```text
+100 req/s      → một máy chủ. Thêm gì cũng là phức tạp thừa.
+10.000 req/s   → cân bằng tải, replica đọc, cache.
+1.000.000 req/s → sharding, nhiều vùng, kiến trúc khác hẳn.
+```
+
+Ba dòng đó không phải "cùng một thiết kế ở ba quy mô" — chúng là ba thiết kế khác nhau.
+
+**Quy tắc 80/20 khi tối ưu:** đo trước, và tấn công chỗ đắt nhất.
+
+```text
+Trang mất 2 giây:
+  1.700ms  một truy vấn CSDL thiếu index
+    200ms  render
+    100ms  mạng
+
+⇒ Tối ưu render giỏi lắm cứu được 100ms.
+⇒ Thêm một index cứu 1.600ms.
+```
+
+Nghe hiển nhiên, nhưng phần lớn thời gian tối ưu trong thực tế bị tiêu vào các dòng thứ hai và thứ ba — vì chúng dễ nhìn thấy hơn trong mã ([[hieu-nang-va-do-luong]]).
+
+## So sánh
+
+| Chỉ số | Nói lên | Dùng khi |
 |---|---|---|
-| Đọc 1MB từ RAM | ~0,25 ms | 1× |
-| Đọc 1MB từ SSD | ~1 ms | 4× RAM |
-| Round-trip trong cùng datacenter | ~0,5 ms | — |
-| Truy vấn Postgres có index, dữ liệu trong cache | 0,2–1 ms | — |
-| Truy vấn Postgres phải đọc đĩa | 5–20 ms | ~20× |
-| Round-trip Việt Nam ↔ Singapore | ~30 ms | 60× trong DC |
-| Round-trip Việt Nam ↔ us-east-1 | ~200 ms | 400× trong DC |
-| Đọc 1MB qua mạng 1Gbps | ~8 ms | — |
+| Trung bình | ít giá trị | gần như không bao giờ |
+| p50 | trải nghiệm điển hình | mô tả chung |
+| p95 | phần đuôi thật sự | **đặt SLO** |
+| p99 | trường hợp xấu | cảnh báo |
+| p999 | hệ nhiều dịch vụ | quy mô lớn |
 
-Hai kết luận rút ra ngay, và chúng chi phối gần như mọi quyết định kiến trúc:
+## Dễ nhầm
 
-**Mạng đắt hơn tính toán vài bậc.** Một request gọi 20 service nội bộ tuần tự đã mất 10ms chỉ cho việc đi lại, chưa làm gì cả. Đây là lý do gọi song song quan trọng hơn tối ưu thuật toán trong hầu hết ứng dụng web.
+**1. Dùng trung bình.** Che mất đuôi — nơi người dùng thật sự khổ.
 
-**Chọn vùng đặt máy quan trọng hơn nhiều tối ưu code.** App ở Singapore, database ở us-east-1: mỗi truy vấn cộng 200ms. Một trang gọi 5 truy vấn tuần tự là **1 giây** thuần tuý ngồi chờ. Không có tối ưu code nào bù được.
+**2. Quên nhân hệ số đỉnh.** Thiết kế cho mức trung bình là hỏng vào giờ cao điểm.
 
-## Tính nhẩm: một ví dụ đầy đủ
+**3. Không tính chỗ cho index và bản sao.** Dung lượng thật gấp 2–3 lần dữ liệu thô.
 
-*"Hệ thống 500.000 người dùng hoạt động hàng ngày, mỗi người xem 20 trang."*
+**4. Thiết kế cho quy mô chưa có.** Trả giá phức tạp ngay, nhận lợi ích có thể không bao giờ tới.
 
-**Bước 1 — Từ ngày sang giây.**
+**5. Bỏ qua tỉ lệ đọc/ghi.** Nó quyết định cache và replica.
 
-```
-500.000 × 20 = 10 triệu lượt xem/ngày
-86.400 giây/ngày ≈ 100.000 giây (làm tròn cho dễ nhẩm)
-→ 10.000.000 / 100.000 = 100 request/giây trung bình
-```
+**6. Tối ưu trước khi đo.** Sửa 5% và bỏ qua 85%.
 
-**Bước 2 — Nhân hệ số đỉnh.** Người dùng không rải đều 24 giờ. Với ứng dụng phục vụ một múi giờ, đỉnh thường **3–10×** trung bình:
+**7. Quên độ trễ mạng.** Round-trip Internet thường lớn hơn toàn bộ thời gian xử lý.
 
-```
-100 × 5 = 500 request/giây lúc đỉnh
-```
+**8. Không tính hiệu ứng đuôi khi gọi nhiều dịch vụ.**
 
-Bước này bị bỏ qua nhiều nhất, và nó là nguyên nhân của phần lớn sự cố "chạy tốt lúc test, sập lúc thật".
+**9. Lẫn bit với byte.** 1 Gbps ≈ 125 MB/s.
 
-**Bước 3 — Từ RPS sang số máy.** Dùng **định luật Little**: số việc đang xử lý đồng thời = tốc độ đến × thời gian xử lý.
+## Mẹo nhớ
 
-```
-500 req/s × 0,2 s mỗi request = 100 request đang xử lý cùng lúc
-```
+> **Một ngày ≈ 10⁵ giây. Đỉnh ≈ 3× trung bình.**
+>
+> **Trung bình là chỉ số dối. Dùng p95/p99.**
+>
+> **Dưới 1.000 req/s: một máy chủ, một CSDL. Đừng thiết kế cho quy mô chưa có.**
 
-Một tiến trình Node xử lý được ~50 request đồng thời khi phần lớn thời gian là chờ I/O → **2 tiến trình**, và chạy 4 để có dư. Con số nhỏ đến mức đáng ngạc nhiên — hầu hết hệ thống cần ít máy hơn nhiều so với cảm giác.
+## Tự nhớ
 
-**Bước 4 — Dung lượng.**
+Không nhìn lên, trả lời bằng lời của bạn:
 
-```
-Mỗi lượt xem ghi 1 dòng log 200 byte
-10 triệu × 200 B = 2 GB/ngày = 730 GB/năm
-```
+1. Bốn bước ước lượng?
+2. Vì sao trung bình che mất vấn đề, và bạn dùng gì thay thế?
+3. Vì sao p99 của từng dịch vụ lại thành p90 của trang?
+4. Tỉ lệ đọc/ghi ảnh hưởng tới quyết định kiến trúc nào?
+5. Ba mốc quy mô và kiến trúc tương ứng?
 
-Con số này quyết định: log phải có hạn lưu trữ, và bảng log **không nằm chung** database nghiệp vụ.
+## Tự viết lại
 
-## Điểm nghẽn ở đâu
+Ứng dụng chat: 500.000 DAU, mỗi người gửi 50 tin, đọc 200 tin, mỗi tin ~1 KB. Không nhìn lại, tính:
 
-Trong ứng dụng web, theo thứ tự tần suất thực tế:
-
-1. **Database** — truy vấn thiếu index, N+1, khoá tranh chấp
-2. **Gọi tuần tự cái có thể song song**
-3. **Truyền quá nhiều dữ liệu** — `SELECT *`, trả cả bản ghi khi client cần 3 field
-4. **Việc nặng làm trong request** — gửi mail, tạo PDF, gọi API bên thứ ba
-5. Cuối cùng mới là CPU của chính app
-
-Thứ tự này nói lên điều quan trọng: **tối ưu code hiếm khi là việc đúng cần làm**. Đi tìm I/O trước.
-
-Ví dụ N+1 — lỗi hiệu năng phổ biến nhất trong mọi codebase:
-
-```ts
-// ❌ 1 + N truy vấn: 100 bài viết = 101 lượt đi lại database
-const posts = await db.posts.findMany({ take: 100 })
-for (const post of posts) {
-  post.author = await db.users.findUnique({ where: { id: post.authorId } })
-}
-
-// ✅ 2 truy vấn, bất kể bao nhiêu bài
-const posts = await db.posts.findMany({ take: 100 })
-const authors = await db.users.findMany({
-  where: { id: { in: [...new Set(posts.map((p) => p.authorId))] } },
-})
-const byId = new Map(authors.map((a) => [a.id, a]))
+```text
+① req/s trung bình và đỉnh cho ghi và đọc
+② dung lượng một năm
+③ băng thông
+④ điểm nghẽn khả dĩ nhất
 ```
 
-Với 0,5ms mỗi round-trip nội bộ, 101 truy vấn = 50ms chỉ riêng đi lại. Xem [[index-va-hieu-nang-truy-van]] và [[doc-explain-analyze]].
+Tự kiểm: tỉ lệ đọc/ghi của bạn là bao nhiêu, và nó gợi ý kiến trúc nào?
 
-## Trung bình là chỉ số dối
+## Thử sức
 
-```
-10 request: 9 request 50ms, 1 request 5000ms
-Trung bình = (9×50 + 5000) / 10 = 545 ms
-```
+Sếp hỏi: *"Hệ thống này chịu được bao nhiêu người dùng?"* Bạn có một máy chủ 4 CPU, Postgres, và ứng dụng Node.
 
-Con số 545ms **không mô tả trải nghiệm của ai cả**: không ai chờ 545ms. Chín người chờ 50ms, một người chờ 5 giây.
-
-Đọc theo **phân vị**:
-
-| | Nghĩa |
-|---|---|
-| p50 (trung vị) | Nửa số request nhanh hơn mức này |
-| p95 | 5% chậm hơn mức này |
-| p99 | 1% chậm hơn — thường là người dùng có nhiều dữ liệu nhất |
-| p99,9 | Chỗ ẩn giấu timeout, GC pause, cache miss lạnh |
-
-p99 quan trọng hơn cảm giác ban đầu vì **một trang gọi nhiều request**. Trang gọi 20 request nội bộ, mỗi cái p99 = 1%:
-
-```
-Xác suất cả 20 đều nhanh = 0,99^20 ≈ 0,82
-→ 18% số lần tải trang gặp ít nhất một request chậm
-```
-
-Cái là "1% hiếm" ở tầng service trở thành "18% thường xuyên" ở tầng người dùng. Đây gọi là **tail latency amplification**, và nó là lý do p99 của từng service phải rất tốt trong hệ thống nhiều service.
-
-## Đo trước, đoán sau
-
-```bash
-# Xem thời gian một endpoint, tách từng chặng
-curl -s -o /dev/null -w 'dns=%{time_namelookup} connect=%{time_connect} ttfb=%{time_starttransfer} total=%{time_total}\n' \
-  https://api.example.com/orders
-
-# Chạy 200 request, 10 luồng, xem phân vị
-npx autocannon -c 10 -a 200 https://api.example.com/orders
-```
-
-`ttfb` cao mà `total - ttfb` thấp → server chậm. Ngược lại → payload quá lớn hoặc mạng chậm. Hai nguyên nhân này cần hai cách sửa hoàn toàn khác nhau, nên phân biệt được là bước đầu tiên.
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Bỏ qua hệ số đỉnh | Đủ máy lúc trung bình, sập lúc đỉnh | Nhân 3–10× |
-| Nhìn trung bình thay vì phân vị | Không thấy nhóm người dùng đang khổ | Đo p50/p95/p99 |
-| Tối ưu CPU trước khi xem I/O | Mất công vào chỗ chiếm 5% thời gian | Đo trước, tìm I/O |
-| N+1 truy vấn | Chậm tuyến tính theo số bản ghi | Gộp bằng `IN` |
-| App và database khác vùng | Mỗi truy vấn cộng 100–200ms | Đặt cùng vùng |
-| Đo hiệu năng trên dữ liệu 100 dòng | Không có index nào bộc lộ vấn đề | Test với dữ liệu cỡ thật |
-| Thiết kế cho quy mô chưa tồn tại | Phức tạp hoá, chậm giao hàng | Thiết kế cho 10× hiện tại |
-
-## Ghi nhớ
-
-- Mạng đắt hơn tính toán vài bậc — chọn vùng đặt máy trước khi tối ưu code.
-- RPS đỉnh = (lượt/ngày ÷ 100.000) × hệ số đỉnh 3–10.
-- Định luật Little: số việc đồng thời = RPS × thời gian xử lý.
-- Trung bình không mô tả ai cả; p99 của service thành p80 của trang khi gọi nhiều service.
-
-## Tự kiểm tra
-
-1. 2 triệu lượt xem/ngày, mỗi request 100ms. Đỉnh cần bao nhiêu request đồng thời?
-2. Vì sao p99 = 1% ở service lại thành 18% ở trang gọi 20 service?
-3. `ttfb` thấp nhưng `total` cao. Nguyên nhân nằm ở đâu?
+Ba câu để trả lời: bạn cần **đo** những gì để trả lời có căn cứ; bạn dự đoán cái nào vỡ trước và vì sao; và bạn diễn đạt câu trả lời thế nào cho **trung thực** — không hứa quá, cũng không né. Câu khó nhất: nếu sếp cần con số **ngay bây giờ**, chưa kịp đo gì, bạn nói gì?
