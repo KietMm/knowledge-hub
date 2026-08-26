@@ -4,171 +4,218 @@ slug: su-co-va-hau-kiem
 summary: Ai chỉ huy, nói gì với ai lúc đang cháy, và cách viết hậu kiểm không quy tội mà vẫn có kết quả.
 level: trung-cap
 tags: [van-hanh, su-co, postmortem, on-call]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** dẫn một sự cố mà không để nhóm rơi vào hỗn loạn, và viết hậu kiểm thật sự làm hệ thống tốt lên.
+> **Sau bài này bạn sẽ:** biết ba vai trong một sự cố, và vì sao hậu kiểm quy tội làm hệ thống kém an toàn hơn.
 
-## Lúc sự cố, vấn đề lớn nhất là phối hợp
+## Ý tưởng chính
 
-Sự cố tệ đi không phải vì thiếu người giỏi, mà vì:
+Lúc sự cố, thứ hỏng trước hệ thống là **sự phối hợp**: năm người cùng gõ lệnh, không ai biết ai đang làm gì, không ai cập nhật cho bên ngoài.
 
-- Năm người cùng sửa, không ai biết người kia đang sửa gì
-- Hai người thay đổi cùng lúc, thứ ba không biết vừa có gì đổi
-- Người giỏi nhất về hệ thống đó vừa trả lời câu hỏi của giám đốc trong 20 phút
-- Không ai nhớ đã thử gì → thử lại vòng hai
+Nên quy trình sự cố chủ yếu không phải về kỹ thuật. Nó là về **phân vai** và **liên lạc**.
 
-Ba vai, và ba vai này phải là **ba người khác nhau** khi sự cố kéo dài:
+## Mental model
 
-**Chỉ huy (IC).** Không tự sửa. Việc của họ: quyết định, ghi lại dòng thời gian, gọi thêm người. Đây là vai bị bỏ qua nhiều nhất và cũng quan trọng nhất — người giỏi nhất về mặt kỹ thuật thường là người *tệ nhất* để làm IC, vì họ nên đang gõ.
+Hãy nghĩ tới **đội chữa cháy**.
 
-**Người xử lý.** Làm việc kỹ thuật. Báo lại IC trước và sau mỗi thay đổi.
+> Ở hiện trường không phải ai cũng cầm vòi nước. Có **chỉ huy** — người không cầm vòi, chỉ nhìn toàn cảnh và ra quyết định. Có người **chữa cháy**. Có người **liên lạc** với bên ngoài.
+>
+> Chỉ huy mà nhảy vào cầm vòi thì không còn ai nhìn toàn cảnh. Và đó chính xác là điều xảy ra khi người giỏi kỹ thuật nhất tự nhận vai chỉ huy rồi lao vào sửa.
 
-**Người liên lạc.** Nói với bên ngoài: hỗ trợ khách hàng, quản lý, trang trạng thái. Chắn cho người xử lý khỏi bị hỏi.
+Sự tách vai đó là toàn bộ nội dung của quy trình sự cố. Phần còn lại là chi tiết.
 
-Nhóm nhỏ thì một người có thể gánh hai vai — nhưng **IC không được đồng thời là người gõ**.
+## Ví dụ nhỏ
 
-## Bốn việc theo thứ tự
-
-**1. Tuyên bố sự cố.** Ngưỡng thấp. Tuyên bố rồi hạ cấp sau 10 phút rẻ hơn nhiều so với xử lý im lặng 40 phút rồi mới gọi người.
-
-**2. Khôi phục trước, hiểu sau.** Đây là thứ tự người ta hay làm ngược:
-
-```
-❌ Tìm ra nguyên nhân → viết fix → review → deploy → hết sự cố   (2 giờ)
-✅ Rollback ngay → hết sự cố → điều tra bình tĩnh                 (5 phút)
+```text
+14:32  Cảnh báo: 5xx = 12%
+14:33  An nhận vai Chỉ huy sự cố (IC)
+14:35  Bình điều tra; Chi thông báo cho bên liên quan
+14:41  Quay lui v1.4.2 → 5xx giảm về 0,1%
+14:50  Tuyên bố kết thúc; hẹn hậu kiểm thứ Năm
 ```
 
-Rollback không cần biết nguyên nhân. Feature flag tắt cũng vậy. **Hiểu nguyên nhân là việc của giờ hành chính, không phải việc của lúc đang cháy** — xem [[trien-khai-an-toan]].
+## Code chạy thế nào
 
-**3. Một kênh, một dòng thời gian.** Mọi thứ trong một channel, ghi lại từng bước có mốc giờ:
+**Ba vai — với đội nhỏ, một người có thể kiêm, nhưng phải nói rõ:**
 
-```
-14:02  Báo động: tỉ lệ 5xx checkout 12%
-14:03  IC: Kiệt. Xử lý: Hà. Liên lạc: Nam
-14:05  Hà: p99 database 4s, kết nối đang đầy pool
-14:07  Kiệt: quyết định rollback deploy 13:58
-14:09  Hà: rollback xong, 5xx bắt đầu giảm
-14:14  5xx về 0,2%. Hạ cấp xuống theo dõi
-14:20  Nam: đã cập nhật trang trạng thái
-```
+```text
+CHỈ HUY (IC)
+  KHÔNG gõ lệnh sửa.   ← điều quan trọng nhất
+  Quyết định, phân công, giữ dòng thời gian, quyết khi nào kết thúc.
 
-Dòng thời gian ghi **lúc đang xảy ra**, không phải dựng lại sau. Dựng lại sau luôn thiếu và luôn thiên vị theo kết luận đã biết.
+NGƯỜI XỬ LÝ
+  Điều tra và sửa. Báo cáo cho IC. Không tự ý thay đổi lớn.
 
-**4. Một người thay đổi một lúc.** Hai người cùng sửa thì không ai biết thay đổi nào có tác dụng — và khi hết sự cố cũng không biết cái gì đã cứu.
-
-## Nói gì với bên ngoài
-
-Chậm và mơ hồ tệ hơn tin xấu rõ ràng:
-
-```
-❌ "Chúng tôi đang gặp một số vấn đề kỹ thuật nhỏ."
-❌ (im lặng 40 phút)
-
-✅ 14:05 — "Checkout đang lỗi với một phần người dùng. Chúng tôi đã xác định
-   nguyên nhân và đang xử lý. Cập nhật tiếp trong 15 phút."
-✅ 14:20 — "Đã khắc phục. Đơn hàng tạo trong khoảng 13:58–14:09 có thể thất bại,
-   không có đơn nào bị trừ tiền hai lần. Chúng tôi sẽ liên hệ những khách hàng
-   bị ảnh hưởng."
+NGƯỜI LIÊN LẠC
+  Cập nhật bên trong và bên ngoài theo nhịp cố định.
+  Giữ cho người xử lý KHÔNG bị hỏi liên tục.
 ```
 
-Ba thứ bên ngoài cần: **cái gì hỏng**, **ảnh hưởng ai**, **bao giờ cập nhật lại**. Cam kết thời điểm cập nhật rồi giữ đúng — đó là thứ mua được sự kiên nhẫn. Đừng đoán nguyên nhân trước khi biết chắc; đoán sai công khai rồi phải rút lại còn tệ hơn im lặng.
+Vai thứ ba hay bị bỏ qua và tốn kém nhất khi thiếu: không có nó, người đang sửa phải trả lời câu hỏi mỗi hai phút từ những người đang lo lắng.
 
-## Hậu kiểm không quy tội
+**Ưu tiên khi đang cháy — thứ tự này không đổi:**
 
-"Không quy tội" **không phải** là "không ai chịu trách nhiệm". Nó là một giả định về nhân quả:
-
-> Người đó đã hành động hợp lý với thông tin và công cụ họ có lúc đó. Nếu hành động đó gây ra sự cố, thì **hệ thống** đã cho phép nó xảy ra.
-
-Lý do không phải vì tử tế, mà vì hiệu quả: nhóm sợ bị quy tội sẽ **che thông tin**, và bạn mất đúng thứ bạn cần để sửa. Sự cố tiếp theo sẽ xảy ra với ít dữ liệu hơn.
-
-```
-❌ "Hà chạy migration sai giờ cao điểm."
-✅ "Migration chạy được vào giờ cao điểm mà không có cảnh báo nào, và không có
-   bước xác nhận. Một người mới trong nhóm không có cách nào biết điều đó là
-   nguy hiểm."
+```text
+① KHÔI PHỤC DỊCH VỤ      ← không phải tìm nguyên nhân
+② Thu thập bằng chứng     ← TRƯỚC khi restart xoá mất
+③ Tìm nguyên nhân gốc     ← sau khi đã yên
 ```
 
-Câu thứ hai dẫn tới một việc sửa được. Câu thứ nhất dẫn tới một người sợ.
+```text
+Quay lui trước, hiểu sau.
+  Quay lui: 2 phút, đường đã đi rồi.
+  Sửa tới:  30–60 phút, dưới áp lực, dễ sai tiếp.
 
-### "Vì sao" năm lần, đi tới hệ thống
-
-```
-Checkout lỗi
- └─ Vì sao? Database hết kết nối
-     └─ Vì sao? Một truy vấn báo cáo chạy 40 giây, giữ kết nối
-         └─ Vì sao? Truy vấn thiếu index sau khi bảng lớn lên
-             └─ Vì sao? Không ai theo dõi truy vấn chậm
-                 └─ Vì sao? Không có báo động cho p99 truy vấn
+"Nhưng tôi gần tìm ra rồi" — đây là câu kéo dài sự cố nhiều nhất.
 ```
 
-Điểm dừng đúng là chỗ bạn tìm được **thứ sửa được và ngăn được cả một lớp sự cố**, không phải chỗ tìm ra ai gõ lệnh. Ở đây có ba việc sửa ở ba tầng khác nhau: thêm index (sửa ca này), báo động truy vấn chậm (bắt ca sau), bulkhead cho pool báo cáo (chặn lớp sự cố này) — xem [[thiet-ke-cho-that-bai]].
+**Nói gì với bên ngoài — nhịp cố định quan trọng hơn nội dung:**
 
-### Cấu trúc một bản hậu kiểm
+```text
+Ngay khi xác nhận:
+  "Chúng tôi đang gặp sự cố ảnh hưởng tới thanh toán.
+   Đang xử lý. Cập nhật sau 30 phút."
 
-```markdown
-## Tóm tắt
-Checkout lỗi 12% trong 11 phút (14:02–14:13). ~180 đơn hàng thất bại.
+Mỗi 30 phút, KỂ CẢ KHI CHƯA CÓ GÌ MỚI:
+  "Vẫn đang xử lý, đã xác định được hướng. Cập nhật lúc 15:30."
 
-## Ảnh hưởng
-- 180 đơn thất bại, người dùng thấy lỗi 500
-- Không có đơn nào bị trừ tiền hai lần (đã kiểm tra)
-- Error budget tháng: dùng 11 phút / 43 phút
-
-## Dòng thời gian
-(ghi lúc đang xảy ra)
-
-## Nguyên nhân
-Truy vấn báo cáo mới thiếu index; bảng orders vượt 2 triệu dòng nên nó
-chuyển sang seq scan, mỗi lần chạy giữ kết nối 40 giây.
-
-## Cái gì đã hoạt động tốt
-- Báo động kích hoạt trong 60 giây
-- Rollback mất 2 phút
-(phần này phải có: nó cho biết cái gì ĐANG hiệu quả và đừng bỏ)
-
-## Việc phải làm
-| Việc | Người | Hạn | Loại |
-|---|---|---|---|
-| Thêm index cho truy vấn báo cáo | Hà | 19/8 | Sửa ca này |
-| Báo động p99 truy vấn > 5s | Kiệt | 26/8 | Phát hiện sớm |
-| Pool riêng cho báo cáo | Nam | 5/9 | Chặn lớp sự cố |
-| `statement_timeout` cho role báo cáo | Hà | 22/8 | Giới hạn thiệt hại |
+Khi xong:
+  "Đã khắc phục lúc 14:41. Nguyên nhân: ... Chúng tôi sẽ ..."
 ```
 
-Hai phần bị bỏ nhiều nhất và đều quan trọng: **"cái gì đã hoạt động tốt"** (không có nó, người ta chỉ nhớ thất bại và có thể bỏ đi những thứ đang hiệu quả), và **người + hạn cụ thể** cho từng việc. Hậu kiểm không có tên và hạn là một bài văn, không phải một kế hoạch.
+Nguyên tắc: **im lặng tệ hơn tin xấu**. Người dùng không biết gì sẽ tự đoán ra thứ tệ hơn thực tế, và sẽ liên hệ hỗ trợ — làm mọi thứ nặng thêm ([[giao-tiep-va-anh-huong]]).
 
-## Việc phải làm mà không ai làm
+## Cú pháp
 
-Đây là chỗ quy trình hậu kiểm chết ở phần lớn công ty. Hai biện pháp:
+**Hậu kiểm không quy tội — vì sao đó không phải chuyện tử tế:**
 
-- Đưa việc vào **cùng backlog** với tính năng, không phải một danh sách riêng bị lãng quên
-- Rà lại trong retro tiếp theo: bao nhiêu việc từ hậu kiểm trước đã xong?
+```text
+❌ Quy tội:
+   "An deploy mã chưa test và làm sập production."
+   ⇒ An giấu lỗi lần sau.
+   ⇒ Mọi người giấu lỗi.
+   ⇒ Bạn MẤT NGUỒN THÔNG TIN về những gì suýt hỏng.
+   ⇒ Hệ thống KÉM AN TOÀN HƠN.
 
-Cùng một sự cố xảy ra lần thứ hai là dấu hiệu rõ nhất cho thấy quy trình hậu kiểm của bạn chỉ là hình thức.
+✅ Không quy tội:
+   "Mã chưa test lên được production vì CI không chặn merge,
+    và quy trình review không yêu cầu kiểm tra kết quả test."
+   ⇒ Sửa được bằng cấu hình. Áp dụng cho MỌI người, không chỉ An.
+```
 
-## Lỗi hay gặp
+Lập luận nền tảng: **giả định ai cũng đã làm điều hợp lý nhất với thông tin họ có lúc đó**. Nếu một người thông minh và có thiện chí vẫn gây ra sự cố, thì vấn đề nằm ở **hệ thống cho phép điều đó xảy ra**, không ở người đó.
 
-| Lỗi | Hậu quả | Sửa thế nào |
+**Mẫu hậu kiểm:**
+
+```text
+① TÓM TẮT       chuyện gì, ảnh hưởng ai, bao lâu
+② ẢNH HƯỞNG     số: bao nhiêu người dùng, bao nhiêu request,
+                doanh thu, và error budget đã tiêu
+③ DÒNG THỜI GIAN  giờ nào ai làm gì — sự kiện, không phán xét
+④ NGUYÊN NHÂN   hỏi "vì sao" nhiều lần; thường có NHIỀU nguyên nhân
+⑤ CÁI GÌ ĐÃ CHẠY TỐT   ← đừng bỏ mục này
+⑥ HÀNH ĐỘNG     có người phụ trách, có hạn, có ticket
+```
+
+Mục ⑤ không phải để an ủi: nó ghi lại những cơ chế đã hoạt động, để không ai vô tình gỡ bỏ chúng ở lần tối ưu sau.
+
+**Hành động phải cụ thể và đo được:**
+
+```text
+❌ "Cẩn thận hơn khi deploy"      → không phải hành động
+❌ "Cải thiện quy trình test"     → ai làm? bao giờ? xong là thế nào?
+
+✅ "Bật required status check cho main — An — 25/08 — #1234"
+✅ "Thêm cảnh báo 5xx > 1% trong 5 phút — Bình — 27/08 — #1235"
+```
+
+Và **theo dõi tới khi xong**: hậu kiểm có hành động không ai làm còn tệ hơn không viết, vì nó tạo cảm giác đã xử lý.
+
+## Tại sao cần nó
+
+Vì phân loại mức độ quyết định ai bị đánh thức:
+
+```text
+SEV1  toàn bộ dịch vụ chết, hoặc mất dữ liệu
+      → gọi ngay, kể cả 3 giờ sáng, hậu kiểm bắt buộc
+SEV2  chức năng chính hỏng với nhiều người dùng
+      → gọi trong giờ, hậu kiểm nên có
+SEV3  suy giảm nhẹ, có đường vòng
+      → xử lý trong giờ làm việc
+```
+
+Không có phân loại thì hoặc mọi thứ đều gọi lúc nửa đêm (đội kiệt sức), hoặc chẳng cái gì gọi (SEV1 bị bỏ lỡ).
+
+**On-call bền vững:**
+
+```text
+□ Phiên trực có giới hạn, có luân phiên rõ ràng
+□ Bị gọi ban đêm ⇒ hôm sau được nghỉ bù
+□ Mỗi cảnh báo phải kèm RUNBOOK: triệu chứng, cách kiểm, cách xử lý
+□ Cảnh báo không hành động được ⇒ XOÁ hoặc sửa, đừng để đó
+□ Đếm số lần bị gọi mỗi phiên — tăng lên là tín hiệu phải sửa hệ thống
+```
+
+Dòng cuối biến on-call thành một vòng phản hồi: đội phải chịu hậu quả của hệ thống ồn ào chính là đội có động lực và khả năng sửa nó.
+
+## So sánh
+
+| | Hậu kiểm quy tội | Hậu kiểm không quy tội |
 |---|---|---|
-| IC vừa chỉ huy vừa gõ | Không ai theo dõi toàn cảnh | Tách vai |
-| Điều tra nguyên nhân trước khi khôi phục | Sự cố dài gấp 10 lần | Rollback trước |
-| Nhiều người sửa cùng lúc | Không biết cái gì có tác dụng | Một thay đổi một lúc |
-| Im lặng với bên ngoài | Mất tin cậy nhiều hơn chính sự cố | Cập nhật đều, có hẹn giờ |
-| Đoán nguyên nhân công khai | Phải rút lại, mất tin cậy | Chỉ nói cái đã chắc |
-| Hậu kiểm chỉ ra người | Nhóm che thông tin | Chỉ ra lỗ hổng hệ thống |
-| Dựng dòng thời gian sau | Thiếu và thiên vị | Ghi lúc đang xảy ra |
-| Việc phải làm không có tên/hạn | Không ai làm, sự cố lặp lại | Đưa vào backlog chính |
-| Bỏ phần "cái gì đã tốt" | Bỏ mất thứ đang hiệu quả | Luôn có phần đó |
+| Câu hỏi | "ai làm?" | "hệ thống nào cho phép?" |
+| Kết quả | người ta giấu lỗi | thông tin đầy đủ |
+| Hành động | "cẩn thận hơn" | thay đổi hệ thống |
+| Lần sau | lặp lại | ít khả năng hơn |
 
-## Ghi nhớ
+## Dễ nhầm
 
-- IC không gõ. Đó là quy tắc quan trọng nhất của việc dẫn sự cố.
-- Khôi phục trước, hiểu sau — rollback không cần biết nguyên nhân.
-- Không quy tội là vì **hiệu quả**: nhóm sợ thì che thông tin bạn cần.
-- Hậu kiểm không có tên và hạn cho từng việc là một bài văn, không phải kế hoạch.
+**1. IC vừa chỉ huy vừa gõ lệnh sửa.** Không còn ai nhìn toàn cảnh.
 
-## Tự kiểm tra
+**2. Tìm nguyên nhân trước khi khôi phục.** Kéo dài sự cố.
 
-1. Vì sao người giỏi nhất về hệ thống thường không nên làm IC?
-2. Vì sao rollback đứng trước việc tìm nguyên nhân?
-3. "Không quy tội" mang lại lợi ích thực dụng gì, ngoài chuyện tử tế?
+**3. Restart trước khi thu bằng chứng.** Mất manh mối, sự cố sẽ quay lại.
+
+**4. Im lặng với bên ngoài.** Người dùng đoán ra thứ tệ hơn.
+
+**5. Hậu kiểm quy tội.** Người ta giấu lỗi ⇒ hệ thống kém an toàn hơn.
+
+**6. Hành động chung chung.** "Cẩn thận hơn" không sửa gì.
+
+**7. Không theo dõi hành động tới khi xong.** Cảm giác đã xử lý mà thật ra chưa.
+
+**8. Không phân loại mức độ.** Đội kiệt sức hoặc bỏ lỡ sự cố lớn.
+
+**9. Cảnh báo không có runbook.** Người trực không biết làm gì.
+
+**10. Bỏ mục "cái gì đã chạy tốt".** Vô tình gỡ bỏ cơ chế đang bảo vệ mình.
+
+## Mẹo nhớ
+
+> **IC KHÔNG gõ lệnh sửa. Đó là điều quan trọng nhất.**
+>
+> **Khôi phục trước, điều tra sau — nhưng thu bằng chứng trước khi restart.**
+>
+> **Quy tội làm người ta giấu lỗi ⇒ hệ thống KÉM an toàn hơn.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Ba vai trong sự cố, vai nào tuyệt đối không gõ lệnh sửa?
+2. Ba ưu tiên khi đang cháy, theo thứ tự?
+3. Vì sao hậu kiểm quy tội làm hệ thống kém an toàn hơn?
+4. Sáu mục của một hậu kiểm, mục nào hay bị bỏ và vì sao nó quan trọng?
+5. Thế nào là một hành động khắc phục **cụ thể**?
+
+## Tự viết lại
+
+Sự cố: deploy lúc 14:00 gây lỗi 40% request thanh toán, phát hiện lúc 14:25 nhờ khiếu nại người dùng, quay lui lúc 14:45. Không nhìn lại, viết hậu kiểm đầy đủ sáu mục, với ít nhất **ba** hành động cụ thể.
+
+Tự kiểm: trong ba hành động của bạn, có cái nào chỉ là "cẩn thận hơn" viết theo cách khác không?
+
+## Thử sức
+
+Sự cố trên có một chi tiết đáng chú ý: **phát hiện nhờ khiếu nại người dùng**, 25 phút sau khi bắt đầu.
+
+Ba câu để trả lời: đó là dấu hiệu của lỗ hổng nào; hai hành động rút thời gian phát hiện xuống dưới 5 phút; và bạn viết nó thế nào trong hậu kiểm để **không** nghe như đổ lỗi cho ai. Câu khó nhất: nếu người deploy là một bạn mới vào và cả đội đang bực, bạn — với vai người viết hậu kiểm — mở đầu cuộc họp bằng câu gì?

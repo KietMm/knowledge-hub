@@ -4,168 +4,224 @@ slug: slo-va-error-budget
 summary: Đặt mục tiêu độ tin cậy bằng số, và dùng nó để quyết định khi nào ngừng làm tính năng.
 level: trung-cap
 tags: [van-hanh, slo, sli, error-budget, bao-dong]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** viết được một SLO có nghĩa, và dùng error budget để chấm dứt tranh luận "làm tính năng hay đi sửa hệ thống".
+> **Sau bài này bạn sẽ:** đặt được SLO có ý nghĩa, và dùng error budget để biến "ổn định hay tính năng" thành một quyết định có số.
 
-## Vì sao "làm cho nó ổn định" là mục tiêu vô dụng
+## Ý tưởng chính
 
-Không ai phản đối câu đó, và cũng không ai làm được gì với nó. Nó không nói được: ổn định tới mức nào là đủ? Đủ rồi thì chuyển sang làm tính năng chứ? Chưa đủ thì ưu tiên hơn tính năng không?
+"Hệ thống phải ổn định" là một mong muốn, không phải một mục tiêu — vì không ai biết khi nào đã đạt.
 
-**100% uptime không phải mục tiêu** — nó là mục tiêu sai, vì:
+**SLO** biến nó thành số. Và số đó cho ra một thứ hữu ích hơn nhiều: một **ngân sách lỗi** để tiêu.
 
-- Chi phí tăng theo hàm mũ ở mỗi con số 9 thêm vào
-- Người dùng vào bằng mạng 4G có tỉ lệ lỗi cao hơn hệ thống của bạn, nên họ **không cảm nhận được** phần bạn cải thiện
-- Zero lỗi nghĩa là zero thay đổi — mọi deploy đều có rủi ro
+## Mental model
 
-## Ba khái niệm, quan hệ rõ ràng
+Hãy nghĩ tới **ngân sách chi tiêu hằng tháng**.
 
-**SLI** (Indicator) — con số bạn đo:
-```
-tỉ lệ thành công = số request không phải 5xx / tổng số request
-```
+> "Tiêu ít thôi" không dẫn tới quyết định nào cả.
+>
+> "Tháng này có 10 triệu, đã tiêu 7" thì khác hẳn — bạn biết còn 3 triệu, và **biết mình được phép tiêu**. Không ai đặt ngân sách để rồi không tiêu đồng nào.
+>
+> Và khi hết tiền, quyết định tự đến: dừng chi tiêu không thiết yếu cho tới đầu tháng sau.
 
-**SLO** (Objective) — mục tiêu bạn đặt cho SLI đó:
-```
-99,9% request thành công, tính trên cửa sổ 30 ngày
-```
+Error budget hoạt động y hệt. Điểm khiến nhiều người bất ngờ: **budget còn dư nhiều nghĩa là bạn đang quá thận trọng** — bạn đang trả giá bằng tốc độ để mua một mức ổn định không ai yêu cầu.
 
-**SLA** (Agreement) — cam kết hợp đồng có tiền đền. Nội bộ thường không cần; nếu có thì SLO phải **chặt hơn** SLA để bạn còn thời gian phản ứng.
+## Ví dụ nhỏ
 
-## Error budget: phần được phép hỏng
+```text
+SLO: 99,9% request thành công trong 30 ngày.
 
-Đây là ý tưởng có giá trị nhất của cả bài.
-
-```
-SLO 99,9% trong 30 ngày
-→ được phép lỗi 0,1%
-→ 30 ngày × 24 × 60 = 43.200 phút
-→ ngân sách = 43,2 phút không khả dụng mỗi tháng
+Error budget = 0,1% × 30 ngày
+             = 43 phút 12 giây downtime
 ```
 
-| SLO | Ngân sách/tháng | Thực tế nghĩa là |
-|---|---|---|
-| 99% | 7,2 giờ | Rất dễ đạt |
-| 99,9% | 43 phút | Mục tiêu hợp lý cho hầu hết sản phẩm |
-| 99,95% | 22 phút | Cần deploy tự động, rollback nhanh |
-| 99,99% | 4,3 phút | Cần dự phòng nhiều vùng, on-call thật |
-| 99,999% | 26 giây | Rất ít hệ thống thật sự cần |
+## Code chạy thế nào
 
-43 phút/tháng nghe ít, nhưng nó **đủ cho một sự cố nhỏ**. Và đó là điểm quan trọng: ngân sách không phải để tránh, mà là **để dùng**.
+**SLI, SLO, SLA — ba thứ hay bị lẫn:**
 
-Còn ngân sách → cứ deploy, cứ thử nghiệm, rủi ro nằm trong mức đã thoả thuận.
-Hết ngân sách → **đóng băng tính năng, cả nhóm chuyển sang việc độ tin cậy** cho tới khi cửa sổ 30 ngày trượt qua.
+```text
+SLI  chỉ số ĐO ĐƯỢC
+     "% request trả về < 500ms"
 
-Giá trị thật của cơ chế này: nó biến "làm tính năng hay đi sửa hệ thống" từ một **cuộc tranh luận theo cảm tính và theo cấp bậc** thành một **quy tắc đã thoả thuận trước**. Không ai phải thắng cuộc họp — số liệu quyết định.
+SLO  MỤC TIÊU nội bộ cho SLI đó
+     "99,9% trong 30 ngày"
 
-## Viết SLO có nghĩa
+SLA  CAM KẾT với khách hàng, có hậu quả pháp lý/tài chính
+     "99,5%, không đạt thì hoàn tiền"
 
-SLO tồi:
-
-```
-❌ "Server uptime 99,9%"
+⇒ SLO luôn CHẶT HƠN SLA. Khoảng cách đó là chỗ bạn kịp phản ứng
+  trước khi phải đền.
 ```
 
-Server sống mà mọi request trả `500` thì uptime vẫn 100%. Đo cái người dùng không cảm nhận được là đo sai chỗ.
+**Error budget theo từng mức — con số làm rõ mọi thứ:**
 
-SLO tốt: đo ở **góc nhìn người dùng**, chia theo **luồng nghiệp vụ**:
+```text
+SLO       Downtime cho phép/tháng   Ghi chú
+99%       7 giờ 18 phút             dễ đạt
+99,9%     43 phút                   mục tiêu hợp lý cho phần lớn hệ thống
+99,99%    4 phút 19 giây            cần dự phòng đa vùng, on-call nghiêm túc
+99,999%   26 giây                   rất ít hệ thống thực sự cần
 
-```
-✅ Checkout thành công:  99,95% request POST /api/orders trả 2xx, cửa sổ 28 ngày
-✅ Trang chủ nhanh:      99% request GET / có p95 dưới 800 ms
-✅ Tìm kiếm chính xác:   99,9% truy vấn tìm kiếm trả kết quả trong 2 s
-```
-
-Ba điều làm chúng khác hẳn SLO tồi:
-
-- **Chia theo luồng.** Checkout hỏng nghiêm trọng hơn trang "Về chúng tôi" hỏng rất nhiều. Một SLO chung cho cả hệ thống cho phép checkout hỏng ẩn sau lượng lớn request lành mạnh của trang tĩnh.
-- **Có cả độ trễ, không chỉ lỗi.** Trang trả `200` sau 30 giây là hỏng theo mọi nghĩa mà người dùng quan tâm.
-- **Cửa sổ trượt 28 ngày.** Chia hết cho 7 nên không bị lệch vì cuối tuần có mẫu lưu lượng khác ngày thường.
-
-## Báo động theo triệu chứng, không theo nguyên nhân
-
-```
-❌ CPU > 80%                    ← có thể hoàn toàn bình thường
-❌ RAM > 90%                    ← nhiều runtime cố tình dùng hết RAM
-❌ Có exception trong log       ← luôn có exception trong log
-
-✅ Tỉ lệ 5xx của checkout > 1% trong 5 phút
-✅ p95 checkout > 2 s trong 10 phút
-✅ Độ sâu hàng đợi tăng liên tục 15 phút
-✅ Tốc độ tiêu error budget cao gấp 10 lần bình thường
+Mỗi số 9 thêm vào thường NHÂN chi phí lên nhiều lần.
 ```
 
-Nguyên tắc: **báo động chỉ khi người dùng đang bị ảnh hưởng, hoặc sắp bị.** CPU 95% mà mọi request vẫn nhanh thì đó là dấu hiệu bạn dùng máy hiệu quả, không phải sự cố.
+Cách dùng bảng này khi thương lượng: hỏi ngược lại *"99,99% nghĩa là mỗi tháng chỉ được sập 4 phút — và cần chừng này đầu tư. Nghiệp vụ có thật sự cần không?"* Thường câu trả lời là không.
 
-### Cảnh báo theo tốc độ tiêu ngân sách
+**Dùng error budget để ra quyết định:**
 
-Ngưỡng tĩnh có hai chế độ thất bại: báo động quá nhạy với đợt lỗi ngắn vô hại, và **quá chậm** với rò rỉ nhỏ kéo dài. Cảnh báo theo tốc độ tiêu (burn rate) giải quyết cả hai:
+```text
+Còn nhiều budget  → deploy nhanh hơn, thử nghiệm nhiều hơn,
+                    chấp nhận rủi ro. Budget sinh ra để tiêu.
 
+Sắp hết           → chậm lại: tăng kiểm thử, canary lâu hơn,
+                    hoãn thay đổi rủi ro.
+
+Hết               → ĐÓNG BĂNG tính năng. Cả đội chuyển sang
+                    ổn định hoá cho tới khi budget hồi lại.
 ```
-burn rate = (tỉ lệ lỗi hiện tại) / (tỉ lệ lỗi cho phép theo SLO)
+
+Giá trị lớn nhất không phải kỹ thuật mà là **chính trị**: nó biến cuộc tranh luận "ổn định hay tính năng" — vốn dựa vào ai nói to hơn — thành một quy tắc thoả thuận trước, áp dụng bằng số.
+
+## Cú pháp
+
+**Đặt SLO đúng cách:**
+
+```text
+① Đo cái NGƯỜI DÙNG cảm nhận, không đo cái dễ đo
+   ❌ "CPU < 80%"           ← người dùng không quan tâm
+   ✅ "99,9% request đăng nhập thành công < 1 giây"
+
+② SLO khác nhau cho luồng khác nhau
+   Thanh toán:  99,95%   ← hỏng là mất tiền
+   Trang chủ:   99,9%
+   Gợi ý:       99%      ← hỏng thì chỉ thiếu một khối
+   ⇒ Một SLO cho cả hệ thống nghĩa là bạn bảo vệ thứ ít quan trọng
+     bằng chi phí của thứ quan trọng.
+
+③ ĐỪNG đặt 100%
+   Không đạt được, và nó xoá bỏ chính khái niệm budget.
+   Không có budget ⇒ mọi thay đổi đều là rủi ro không được phép
+   ⇒ hệ thống đóng băng.
+
+④ Đo từ phía NGƯỜI DÙNG khi có thể
+   Server báo 200 mà JS lỗi ⇒ người dùng vẫn không dùng được.
 ```
 
-Dùng hai cửa sổ song song:
+**Cảnh báo theo tốc độ tiêu budget** — thay vì theo ngưỡng tĩnh:
 
-| Burn rate | Cửa sổ | Nghĩa | Hành động |
+```text
+Ngưỡng tĩnh:  "5xx > 1%"
+  → kêu cả khi có một cú nhảy 2 phút rồi tự hết ⇒ nhiễu.
+
+Tốc độ tiêu:
+  Nhanh:  tiêu 2% budget trong 1 giờ   → gọi người NGAY
+  Chậm:   tiêu 10% budget trong 3 ngày → tạo ticket, xử lý trong giờ làm
+
+⇒ Cảnh báo tỉ lệ với mức độ NGƯỜI DÙNG bị ảnh hưởng,
+  không tỉ lệ với độ ồn của biểu đồ.
+```
+
+Đây là cách hiệu quả nhất để giảm cảnh báo giả mà không giảm độ nhạy ([[su-co-va-hau-kiem]]).
+
+## Tại sao cần nó
+
+Vì không có SLO thì mọi cuộc tranh luận về độ tin cậy đều là tranh luận về cảm giác:
+
+```text
+Không có SLO:
+  "Hệ thống hay lỗi quá!"  "Đâu có, tôi thấy ổn mà."
+  → ai to tiếng hơn thì thắng.
+
+Có SLO:
+  "Tháng này đã tiêu 80% error budget."
+  → dữ liệu chung, quy tắc thoả thuận trước, quyết định tự đến.
+```
+
+**Cửa sổ trượt, không phải theo lịch tháng:**
+
+```text
+Tính theo 30 ngày TRƯỢT, không phải "từ ngày 1 tới ngày 30".
+Nếu không, một sự cố ngày 28 sẽ được "xoá nợ" vào ngày 1
+— trong khi người dùng vẫn nhớ nó.
+```
+
+**Bắt đầu nhẹ nhàng:**
+
+```text
+① Chọn MỘT luồng quan trọng nhất (đăng nhập, đặt hàng)
+② Định nghĩa SLI đo được
+③ Đặt SLO thấp hơn hiện trạng một chút — để nó có ý nghĩa ngay
+④ Đo một tháng, không ra quyết định gì vội
+⑤ Điều chỉnh, rồi mới áp dụng quy tắc budget
+```
+
+Bước ③ quan trọng: SLO đặt cao hơn thực tế nhiều sẽ luôn đỏ, và một chỉ số luôn đỏ sẽ bị bỏ qua — cùng cơ chế với test chập chờn ([[kiem-thu-tu-dong-trong-ci]]).
+
+## So sánh
+
+| | SLI | SLO | SLA |
 |---|---|---|---|
-| 14,4× | 1 giờ | Hết ngân sách tháng trong 2 ngày | Gọi người dậy |
-| 6× | 6 giờ | Hết trong 5 ngày | Gọi người dậy |
-| 3× | 1 ngày | Hết trong 10 ngày | Tạo ticket, giờ hành chính |
-| 1× | 3 ngày | Đúng mức dự kiến | Không làm gì |
+| Là gì | chỉ số đo được | mục tiêu nội bộ | cam kết với khách |
+| Ai quan tâm | kỹ thuật | đội + sản phẩm | pháp lý, khách hàng |
+| Không đạt thì | — | đóng băng tính năng | hoàn tiền |
+| Mức | — | chặt hơn SLA | lỏng hơn SLO |
 
-Cửa sổ ngắn bắt sự cố cấp tính; cửa sổ dài bắt rò rỉ chậm mà ngưỡng tĩnh không bao giờ thấy.
+## Dễ nhầm
 
-## Mỗi báo động phải kèm việc phải làm
+**1. Đặt SLO 100%.** Không có budget, hệ thống đóng băng.
 
-```yaml
-- alert: CheckoutErrorRateCao
-  expr: |
-    sum(rate(http_requests_total{route="/api/orders", status=~"5.."}[5m]))
-    / sum(rate(http_requests_total{route="/api/orders"}[5m])) > 0.01
-  for: 5m
-  annotations:
-    summary: "Tỉ lệ lỗi checkout {{ $value | humanizePercentage }}"
-    # Ba dòng dưới là phần khiến báo động này hữu ích lúc 3 giờ sáng.
-    dashboard: "https://grafana.../checkout"
-    runbook: "https://wiki.../runbook-checkout"
-    viec_dau_tien: "Xem log order.failed theo reason; kiểm tra trạng thái payment provider"
+**2. Đo cái dễ đo thay vì cái người dùng cảm nhận.**
+
+**3. Một SLO cho cả hệ thống.** Bảo vệ nhầm chỗ.
+
+**4. Không dùng budget khi còn dư.** Đang trả giá bằng tốc độ mà không ai yêu cầu.
+
+**5. Đặt SLO cao hơn thực tế nhiều.** Luôn đỏ ⇒ bị bỏ qua.
+
+**6. SLO chặt bằng SLA.** Không còn khoảng đệm để phản ứng.
+
+**7. Cảnh báo theo ngưỡng tĩnh.** Nhiều cảnh báo giả.
+
+**8. Tính theo tháng lịch.** Sự cố được xoá nợ một cách giả tạo.
+
+**9. Không có quy tắc rõ khi hết budget.** Có số mà không có hành động.
+
+**10. Đo ở server thay vì phía người dùng.** Bỏ sót lỗi phía client.
+
+## Mẹo nhớ
+
+> **SLI đo — SLO nhắm — SLA cam kết. SLO luôn chặt hơn SLA.**
+>
+> **Error budget sinh ra để TIÊU. Dư nhiều = quá thận trọng.**
+>
+> **Cảnh báo theo TỐC ĐỘ TIÊU budget, không theo ngưỡng tĩnh.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. SLI, SLO, SLA khác nhau thế nào?
+2. 99,9% cho phép sập bao lâu mỗi tháng? 99,99%?
+3. Vì sao SLO 100% là sai?
+4. Error budget dùng để ra quyết định gì?
+5. Vì sao cảnh báo theo tốc độ tiêu tốt hơn theo ngưỡng tĩnh?
+
+## Tự viết lại
+
+Sàn thương mại điện tử có: duyệt sản phẩm, tìm kiếm, giỏ hàng, thanh toán, gợi ý. Không nhìn lại:
+
+```text
+① SLI và SLO cho từng luồng, kèm lý do mức đó
+② error budget tương ứng, tính ra phút
+③ hai cảnh báo theo tốc độ tiêu
+④ quy tắc khi hết budget
 ```
 
-**Báo động không nói được phải làm gì thì nên xoá.** Nó chỉ dạy người ta bỏ qua báo động — và thói quen đó sẽ áp cả lên báo động thật.
+Tự kiểm: luồng nào bạn đặt SLO cao nhất, và bạn giải thích chi phí của nó cho sếp thế nào?
 
-## Bắt đầu thực tế
+## Thử sức
 
-1. Chọn **một** luồng quan trọng nhất (thường là checkout hoặc đăng nhập)
-2. Đo SLI của nó trong 2–4 tuần **mà không đặt mục tiêu** — để biết hiện trạng
-3. Đặt SLO **hơi tốt hơn** hiện trạng, không phải con số lý tưởng
-4. Một báo động burn rate
-5. Rà lại mỗi quý
+Đội bạn tranh cãi mỗi tuần: sản phẩm muốn tính năng nhanh, vận hành muốn ổn định. Không ai có số.
 
-SLO đặt cao hơn khả năng hiện tại quá nhiều sẽ liên tục báo đỏ, và cả nhóm sẽ học cách phớt lờ nó — lúc đó bạn mất luôn công cụ.
-
-## Lỗi hay gặp
-
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Mục tiêu 100% uptime | Không dám deploy, chi phí vô hạn | Đặt SLO có ngân sách |
-| Đo uptime của server | Mọi request `500` mà vẫn 100% | Đo ở góc nhìn người dùng |
-| Một SLO cho cả hệ thống | Checkout hỏng ẩn sau request trang tĩnh | Chia theo luồng nghiệp vụ |
-| SLO chỉ có lỗi, không có độ trễ | Trang 30 giây vẫn tính là đạt | Thêm SLO độ trễ |
-| Báo động theo CPU/RAM | Gọi dậy khi không ai bị ảnh hưởng | Báo động theo triệu chứng |
-| Chỉ dùng ngưỡng tĩnh | Bỏ lọt rò rỉ chậm | Burn rate hai cửa sổ |
-| Báo động không có runbook | Người bị gọi không biết làm gì | Kèm dashboard + việc đầu tiên |
-| SLO đặt quá cao so với thực tế | Đỏ liên tục, cả nhóm phớt lờ | Bắt đầu từ hiện trạng |
-
-## Ghi nhớ
-
-- Error budget biến tranh luận ưu tiên thành một quy tắc thoả thuận trước.
-- Ngân sách là để **dùng**: còn thì cứ deploy, hết thì đóng băng tính năng.
-- Đo ở góc nhìn người dùng, chia theo luồng, có cả lỗi và độ trễ.
-- Báo động không nói được phải làm gì thì xoá nó đi.
-
-## Tự kiểm tra
-
-1. SLO 99,9% cho bạn bao nhiêu phút lỗi mỗi tháng, và nên dùng nó thế nào?
-2. Vì sao "uptime server 99,9%" là SLI sai?
-3. Burn rate hai cửa sổ bắt được điều gì mà ngưỡng tĩnh không bắt được?
+Ba câu để trả lời: bạn đề xuất **quy trình** nào để chấm dứt tranh cãi này; các bước triển khai trong tháng đầu; và bạn xử lý thế nào khi hết budget mà sản phẩm có một deadline không dời được. Câu khó nhất: nếu sau ba tháng error budget **chưa bao giờ** tiêu quá 20%, điều đó nói lên gì — và bạn đề xuất gì?

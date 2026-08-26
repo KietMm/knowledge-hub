@@ -4,175 +4,253 @@ slug: quan-sat-he-thong
 summary: Log, metric, trace — mỗi loại trả lời câu hỏi gì, và vì sao dashboard đẹp vẫn không cứu được bạn.
 level: co-ban
 tags: [van-hanh, observability, log, metric, trace]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** biết đo cái gì và ghi log thế nào để lúc 3 giờ sáng bạn tìm ra nguyên nhân trong vài phút.
+> **Sau bài này bạn sẽ:** biết ba loại tín hiệu trả lời câu hỏi gì, và vì sao "giám sát" khác "quan sát được".
 
-## Monitoring và observability khác nhau
+## Ý tưởng chính
 
-**Monitoring** trả lời câu hỏi bạn **đã biết trước**: "CPU có cao không?", "còn sống không?". Bạn dựng dashboard cho những câu đó.
+**Giám sát** trả lời những câu hỏi bạn **đã biết trước** để hỏi: CPU cao chưa, còn sống không.
 
-**Observability** là khả năng trả lời câu hỏi bạn **chưa nghĩ tới**: *"vì sao riêng khách hàng X, chỉ trên Safari, chỉ khi giỏ hàng có hơn 10 món, thì checkout chậm 8 giây?"*
+**Quan sát được** là khả năng trả lời những câu hỏi bạn **chưa từng nghĩ tới** — mà không phải deploy thêm mã.
 
-Không dashboard nào dựng sẵn được câu đó. Bạn cần **dữ liệu đủ chiều để tự đặt câu hỏi mới** — và đó là điều quyết định giữa "gỡ trong 5 phút" và "gỡ trong 5 giờ".
+Sự cố thật hầu như luôn thuộc loại thứ hai. Nếu nó thuộc loại thứ nhất, bạn đã tự động xử lý nó rồi.
 
-## Ba trụ, ba câu hỏi khác nhau
+## Mental model
 
-| | Trả lời | Chi phí | Dùng để |
-|---|---|---|---|
-| **Metric** | *Có đang xảy ra không?* | Rẻ (số đã gộp) | Báo động, dashboard, xu hướng |
-| **Log** | *Chuyện gì đã xảy ra?* | Trung bình | Điều tra một trường hợp cụ thể |
-| **Trace** | *Thời gian đi đâu?* | Đắt (nên lấy mẫu) | Tìm chặng chậm trong nhiều service |
+Hãy nghĩ tới **đèn báo trên xe hơi so với chẩn đoán ở gara**.
 
-Quy trình thực tế khi có sự cố: **metric báo động → trace tìm ra chặng chậm → log nói vì sao**. Thiếu một trụ là mất một bước.
+> **Đèn báo** — vài cái đèn cho vài tình huống người thiết kế đã lường trước: hết xăng, nóng máy, áp suất lốp. Rẻ, luôn nhìn thấy, và **chỉ biết những gì đã được nghĩ tới**.
+>
+> **Máy chẩn đoán ở gara** — cắm vào và đọc được hàng trăm thông số, kể cả những thứ bạn không biết mình cần cho tới lúc xe kêu tiếng lạ.
+>
+> Xe kêu tiếng lạ mà không có đèn nào sáng — đó chính là mọi sự cố production thú vị.
 
-## Log có cấu trúc, không phải câu văn
+Metric là đèn báo. Log và trace là máy chẩn đoán.
+
+## Ví dụ nhỏ
 
 ```ts
-// ❌ Không lọc được, không đếm được, không nối được với request nào
-console.log(`Người dùng ${id} đặt hàng thất bại: ${loi.message}`)
+logger.info({
+  event: 'don_hang.tao',
+  donHangId: don.id,
+  userId: user.id,
+  tongTien: don.tongTien,
+  duration_ms: Date.now() - batDau,
+})
+```
 
-// ✅ JSON: truy vấn được như dữ liệu
+## Code chạy thế nào
+
+**Ba loại tín hiệu, mỗi loại trả lời một câu hỏi khác:**
+
+```text
+METRICS  — số theo thời gian
+  Trả lời: "CÓ gì lệch không?"
+  Rẻ để lưu, nhanh để truy vấn, dùng cho CẢNH BÁO.
+  Không trả lời được "vì sao".
+
+LOGS     — sự kiện rời rạc có ngữ cảnh
+  Trả lời: "lệch CÁI GÌ, với AI, lúc NÀO?"
+  Đắt để lưu, chậm để tìm nếu không có cấu trúc.
+
+TRACES   — một request đi qua nhiều dịch vụ
+  Trả lời: "chậm Ở ĐÂU trong chuỗi này?"
+  Bắt buộc khi có nhiều dịch vụ.
+```
+
+Thiếu một loại thì mất một khả năng cụ thể: chỉ có metric ⇒ biết hỏng mà không biết vì sao. Chỉ có log ⇒ không biết có hỏng cho tới khi ai đó báo.
+
+**Log có cấu trúc — khác biệt thật sự:**
+
+```ts
+// ❌ Chuỗi văn bản — tìm được, nhưng không lọc và không tổng hợp được
+console.log(`Đơn ${don.id} của ${user.email} thất bại: ${err.message}`)
+
+// ✅ JSON — truy vấn được như dữ liệu
 logger.error({
-  event: 'order.failed',
-  requestId,          // nối mọi log của cùng một request
-  userId: id,
-  orderId,
-  reason: 'out_of_stock',
-  productId,
-  durationMs: 234,
-}, 'Đặt hàng thất bại')
-```
-
-Với log có cấu trúc bạn hỏi được: *"đếm `order.failed` theo `reason` trong 1 giờ qua"*. Với log dạng câu văn, bạn chỉ grep được — và grep không trả lời được câu hỏi gộp nhóm.
-
-### `requestId` xuyên suốt là thứ đáng làm nhất
-
-```ts
-import { AsyncLocalStorage } from 'node:async_hooks'
-
-const store = new AsyncLocalStorage<{ requestId: string }>()
-
-export function withRequestId<T>(requestId: string, fn: () => T): T {
-  return store.run({ requestId }, fn)
-}
-
-// Mọi log tự có requestId — không phải truyền tay qua từng lớp hàm,
-// và không thể quên ở một nhánh nào.
-export const logger = base.child({
-  get requestId() { return store.getStore()?.requestId },
+  event: 'don_hang.that_bai',
+  donHangId: don.id,
+  userId: user.id,
+  loi: err.message,
+  traceId: ctx.traceId,
 })
 ```
 
-Nhận `requestId` từ header nếu có (để nối với hệ thống gọi tới), sinh mới nếu không. Trả nó trong response — đó chính là `requestId` trong hình dạng lỗi ở [[loi-versioning-va-tai-lieu]]. Người dùng đọc mã đó cho bạn, bạn tìm ra đúng request trong vài giây.
+```text
+Với log có cấu trúc, bạn hỏi được:
+  "Đếm lỗi theo mã lỗi trong 1 giờ qua"
+  "Mọi log của userId X, sắp theo thời gian"
+  "p95 duration của event don_hang.tao theo từng giờ"
 
-### Đừng log những thứ này
-
-```ts
-// ❌ Mật khẩu, token, số thẻ, và cả object request thô (nó chứa header Authorization)
-logger.info({ body: req.body, headers: req.headers })
-
-// ✅ Danh sách trắng những field được log
-logger.info({ email: mask(body.email), soLuong: body.soLuong })
+Với log dạng chuỗi: bạn grep, và hy vọng định dạng chưa từng đổi.
 ```
 
-Log thường được giữ lâu, gửi sang bên thứ ba, và nhiều người đọc được. Secret vào log là secret bị lộ — xem [[quan-ly-secret-va-cau-hinh]].
+**`traceId` — trường quan trọng nhất trong log:**
 
-## Metric: bốn tín hiệu vàng
+```text
+Sinh một id ở biên (hoặc nhận từ header), truyền qua MỌI tầng
+và MỌI dịch vụ, ghi vào MỌI dòng log.
 
-Đo bốn thứ này cho mọi service, trước khi đo bất cứ thứ gì khác:
-
-| Tín hiệu | Nghĩa |
-|---|---|
-| **Latency** | Nhanh chậm — tách riêng request thành công và thất bại |
-| **Traffic** | Lượng request |
-| **Errors** | Tỉ lệ lỗi |
-| **Saturation** | Mức đầy của tài nguyên chật nhất (pool, hàng đợi, RAM) |
-
-Chi tiết dễ bỏ sót: **tách latency của request lỗi ra khỏi request thành công**. Lỗi thường trả về rất nhanh (`400` mất 2ms), nên khi tỉ lệ lỗi tăng, latency trung bình lại *giảm* — dashboard trông đẹp hơn đúng lúc hệ thống đang tệ hơn.
-
-```ts
-// Histogram, không phải trung bình: chỉ histogram cho ra được phân vị,
-// và trung bình không mô tả trải nghiệm của ai — xem [[uoc-luong-va-tim-diem-nghen]].
-const httpDuration = new Histogram({
-  name: 'http_request_duration_seconds',
-  labelNames: ['method', 'route', 'status'],
-  buckets: [0.01, 0.05, 0.1, 0.3, 1, 3, 10],
-})
+⇒ Người dùng báo lỗi lúc 14:32.
+  Có traceId: lọc một lần, ra toàn bộ hành trình của request đó.
+  Không có:   ghép log thủ công theo thời gian và đoán.
 ```
 
-### Cardinality: cái làm nổ hoá đơn
+Đây là thứ rẻ nhất để thêm và có giá trị cao nhất khi có sự cố.
 
-```ts
-// ❌ route chứa id → mỗi id là một chuỗi thời gian riêng. Một triệu người dùng
-//    = một triệu chuỗi. Đây là cách phổ biến nhất làm sập hệ thống metric.
-httpDuration.observe({ route: '/api/users/u-8813' }, 0.2)
+## Cú pháp
 
-// ✅ Dùng mẫu route, id để cho log
-httpDuration.observe({ route: '/api/users/:id' }, 0.2)
+**Log cái gì, và cái gì thì đừng:**
+
+```text
+✅ LOG:
+   Sự kiện nghiệp vụ (đơn hàng, thanh toán, đăng nhập)
+   Lỗi kèm ngữ cảnh đầy đủ
+   Lời gọi ra ngoài: đích, thời gian, kết quả
+   Quyết định quan trọng ("dùng đường dự phòng vì X")
+
+❌ ĐỪNG LOG:
+   Mật khẩu, token, số thẻ, dữ liệu cá nhân   ← rò rỉ qua log là chuyện thật
+   Mọi dòng của một vòng lặp
+   "đã vào hàm foo"                            ← nhiễu, che mất tín hiệu
 ```
 
-Quy tắc: label chỉ nhận giá trị thuộc **tập hữu hạn nhỏ** (method, status, route pattern, tên service). Mọi thứ có độ đa dạng cao — user id, order id, URL đầy đủ — thuộc log hoặc trace, không thuộc metric.
+**Mức log dùng cho đúng:**
 
-## Trace: khi có nhiều service
-
-Trace là cây các span, mỗi span là một chặng công việc:
-
-```
-[trace 4f2a] POST /api/orders                          412 ms
-  ├─ [span] kiểm tra tồn kho                            18 ms
-  ├─ [span] db: SELECT products                          6 ms
-  ├─ [span] db: UPDATE kho                              11 ms
-  ├─ [span] payments.charge (HTTP)                     351 ms  ← đây
-  │    └─ [span] doi-tac: POST /v1/charges              340 ms
-  └─ [span] queue.add order.created                      4 ms
+```text
+ERROR  cần người xử lý           → nên có cảnh báo
+WARN   bất thường, tự phục hồi   → xem lại định kỳ
+INFO   sự kiện nghiệp vụ         → mặc định ở production
+DEBUG  chi tiết kỹ thuật         → chỉ bật khi cần
 ```
 
-Chỉ cần nhìn cây này là biết tối ưu ở đâu — điều mà log và metric đều không nói được trực tiếp.
+Lỗi thường gặp: log mọi thứ ở mức ERROR. Khi mọi thứ là lỗi thì không có gì là lỗi.
 
-Lấy mẫu để chịu được chi phí: **giữ 100% trace có lỗi hoặc chậm, lấy mẫu 1% phần còn lại**. Trace bình thường có giá trị thống kê; trace lỗi có giá trị điều tra, nên đừng bỏ cái nào.
+**Bốn tín hiệu vàng — bộ metric tối thiểu:**
 
-## Dashboard đẹp không cứu được bạn
+```text
+① Độ trễ     p50, p95, p99 (không dùng trung bình)
+② Lưu lượng  req/s
+③ Lỗi        % 5xx
+④ Bão hoà    CPU, RAM, đĩa, kết nối CSDL, độ dài hàng đợi
+```
 
-Ba lỗi làm cả hệ thống quan sát trở nên vô dụng:
+**Metric nghiệp vụ — thứ hay bị bỏ quên:**
 
-**1. Không ai xem dashboard lúc bình thường.** Nên bạn không biết đâu là "bình thường", và lúc sự cố không phân biệt được số bất thường với số vẫn luôn như vậy.
+```text
+Kỹ thuật: CPU 40%, lỗi 0.1%, p95 200ms   → "mọi thứ ổn"
+Nghiệp vụ: số đơn hàng/giờ GIẢM 80%       → "có gì đó rất sai"
 
-**2. Báo động theo nguyên nhân thay vì triệu chứng.** "CPU > 80%" báo động lúc 3 giờ sáng trong khi người dùng không hề bị ảnh hưởng. Báo động phải theo thứ người dùng cảm nhận — xem [[slo-va-error-budget]].
+Một lỗi ở giao diện thanh toán không tạo ra 5xx nào.
+Chỉ metric nghiệp vụ bắt được.
+```
 
-**3. Quá nhiều báo động.** 40 cảnh báo mỗi ngày thì người ta tắt thông báo, và cái thứ 41 — cái thật — bị bỏ qua. Đây là kết cục thực tế của việc thêm báo động mà không bao giờ xoá báo động.
+Với nhiều hệ thống, "số đơn hàng mỗi giờ" là chỉ số cảnh báo tốt hơn mọi chỉ số hạ tầng cộng lại.
 
-## Bắt đầu tối thiểu, làm được ngay hôm nay
+## Tại sao cần nó
 
-Không cần cả bộ công cụ đắt tiền. Thứ tự có giá trị giảm dần:
+Vì dashboard đẹp không cứu được bạn:
 
-1. **Log có cấu trúc + `requestId`** — giá trị lớn nhất, làm trong một buổi
-2. **Bốn tín hiệu vàng** cho endpoint chính
-3. **Một báo động** theo tỉ lệ lỗi
-4. Trace, khi bắt đầu có nhiều service
+```text
+Sự cố xảy ra lúc 3 giờ sáng.
+Không ai đang nhìn dashboard.
+Dashboard cho câu trả lời khi bạn ĐÃ BIẾT phải hỏi gì.
 
-## Lỗi hay gặp
+⇒ Thứ cứu bạn là CẢNH BÁO (biết có chuyện)
+  cộng khả năng TRUY VẤN (tìm ra chuyện gì).
+  Dashboard là công cụ thứ ba, không phải thứ nhất.
+```
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Log dạng câu văn | Không gộp nhóm, không đếm được | JSON có cấu trúc |
-| Không có `requestId` | Không nối được các log của một request | `AsyncLocalStorage` |
-| Log request/header thô | Lộ token, mật khẩu | Danh sách trắng field |
-| Metric label chứa id | Nổ cardinality, sập hệ thống metric | Dùng route pattern |
-| Đo trung bình thay vì histogram | Không có phân vị | Histogram + phân vị |
-| Gộp latency của lỗi và thành công | Tỉ lệ lỗi tăng mà latency trông đẹp hơn | Tách theo `status` |
-| Báo động theo CPU/RAM | Gọi dậy khi không ai bị ảnh hưởng | Báo động theo triệu chứng |
-| Thêm báo động, không bao giờ xoá | Nhiễu tới mức bị tắt hết | Rà soát định kỳ |
+**Chi phí — lý do phải chọn lọc:**
 
-## Ghi nhớ
+```text
+Log ở quy mô rất đắt. 1 TB/tháng có thể tốn hơn cả máy chủ.
 
-- Metric nói *có đang xảy ra*, trace nói *thời gian đi đâu*, log nói *vì sao*.
-- `requestId` xuyên suốt là việc có tỉ lệ hoàn vốn cao nhất trong cả bài này.
-- Label metric chỉ nhận tập giá trị nhỏ; id thuộc log/trace.
-- Tách latency của request lỗi, nếu không tỉ lệ lỗi tăng sẽ làm dashboard trông đẹp hơn.
+Cách kiểm soát:
+  □ Lấy mẫu log DEBUG/INFO ở đường nóng
+  □ Giữ ERROR/WARN đầy đủ
+  □ Thời hạn lưu khác nhau: 7 ngày chi tiết, 90 ngày tổng hợp
+  □ Chuyển những thứ đếm được sang metric — rẻ hơn nhiều lần
+```
 
-## Tự kiểm tra
+Dòng cuối đáng nhấn: nếu bạn đang log để **đếm** thứ gì đó, hãy dùng metric. Log để **điều tra**, metric để **đếm**.
 
-1. Metric, log, trace — dùng cái nào ở bước nào khi điều tra sự cố?
-2. Vì sao `route: '/api/users/u-8813'` làm nổ hệ thống metric?
-3. Vì sao tỉ lệ lỗi tăng lại có thể làm latency trung bình giảm?
+**Bắt đầu tối thiểu:**
+
+```text
+□ Log có cấu trúc JSON, có traceId
+□ Bốn tín hiệu vàng
+□ 2–3 metric nghiệp vụ quan trọng nhất
+□ Cảnh báo cho ERROR và cho metric nghiệp vụ bất thường
+□ Kiểm tra uptime từ bên ngoài
+```
+
+## So sánh
+
+| | Metrics | Logs | Traces |
+|---|---|---|---|
+| Trả lời | có gì lệch | lệch cái gì | chậm ở đâu |
+| Chi phí | thấp | **cao** | vừa |
+| Dùng cho | cảnh báo | điều tra | hệ nhiều dịch vụ |
+| Trả lời câu hỏi mới | ❌ | ✅ | ✅ |
+
+## Dễ nhầm
+
+**1. Log dạng chuỗi không cấu trúc.** Không truy vấn được.
+
+**2. Không có traceId.** Ghép log thủ công lúc đang cháy.
+
+**3. Log dữ liệu nhạy cảm.** Rò rỉ qua hệ thống log.
+
+**4. Mọi thứ đều là ERROR.** Mất khả năng phân biệt.
+
+**5. Chỉ có metric hạ tầng.** Lỗi nghiệp vụ vẫn "xanh".
+
+**6. Dùng trung bình.** Che mất đuôi.
+
+**7. Tin vào dashboard thay vì cảnh báo.** Không ai nhìn lúc 3 giờ sáng.
+
+**8. Không kiểm soát chi phí log.** Hoá đơn vượt cả chi phí máy chủ.
+
+**9. Không có trace trong hệ nhiều dịch vụ.** Không định vị được chỗ chậm.
+
+**10. Dùng log để đếm.** Metric rẻ hơn nhiều lần.
+
+## Mẹo nhớ
+
+> **Metric: CÓ lệch không. Log: lệch CÁI GÌ. Trace: chậm Ở ĐÂU.**
+>
+> **`traceId` trong mọi dòng log — rẻ nhất, giá trị cao nhất.**
+>
+> **Metric nghiệp vụ bắt được thứ metric hạ tầng luôn bỏ sót.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Giám sát khác quan sát được ở điểm nào?
+2. Ba loại tín hiệu, mỗi loại trả lời câu hỏi gì?
+3. Vì sao log có cấu trúc quan trọng hơn log dạng chuỗi?
+4. `traceId` giải quyết gì?
+5. Vì sao metric nghiệp vụ cần thiết dù metric hạ tầng đều xanh?
+
+## Tự viết lại
+
+Ứng dụng đặt hàng. Không nhìn lại, thiết kế:
+
+```text
+① năm sự kiện cần log, mỗi cái kèm những trường nào
+② năm metric: 3 kỹ thuật, 2 nghiệp vụ
+③ ba cảnh báo, kèm ngưỡng
+④ cách truyền traceId qua các tầng
+```
+
+Tự kiểm: nếu trang thanh toán hỏng nhưng không sinh 5xx nào, cảnh báo nào của bạn kêu?
+
+## Thử sức
+
+Người dùng báo: *"Đơn hàng của tôi lúc 14:32 báo lỗi."* Bạn có log dạng chuỗi, không có traceId, và ba dịch vụ.
+
+Ba câu để trả lời: bạn điều tra thế nào **với hiện trạng**; ba thay đổi giúp lần sau chỉ mất vài phút; và bạn thuyết phục đội đầu tư vào đó bằng lập luận nào. Câu khó nhất: nếu chỉ được thêm **một** thứ, bạn chọn gì và vì sao?
