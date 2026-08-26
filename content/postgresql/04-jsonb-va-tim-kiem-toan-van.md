@@ -4,170 +4,229 @@ slug: jsonb-va-tim-kiem-toan-van
 summary: Lưu dữ liệu bán cấu trúc và làm tìm kiếm tiếng Việt mà không cần thêm hệ thống nào.
 level: nang-cao
 tags: [postgresql, jsonb, full-text-search]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** truy vấn JSONB có dùng index, và dựng chức năng tìm kiếm không cần Elasticsearch.
+> **Sau bài này bạn sẽ:** dùng JSONB đúng chỗ (và biết chỗ nào không nên), và làm được tìm kiếm tiếng Việt có dấu mà không cần Elasticsearch.
 
-## JSONB
+## Ý tưởng chính
+
+Hai tính năng này cho phép Postgres thay hai hệ thống chuyên dụng — MongoDB và Elasticsearch — ở mức đủ tốt cho phần lớn hệ thống.
+
+Nhưng cả hai đều dễ bị lạm dụng. Câu hỏi quan trọng nhất trong bài: **cái gì nên là cột thật, cái gì nên nằm trong JSON?**
+
+## Mental model
+
+Hãy nghĩ tới **tủ hồ sơ có ngăn kéo dán nhãn** và **một cái hộp "linh tinh"**.
+
+> Ngăn dán nhãn (**cột thật**): mỗi hồ sơ có đúng chỗ, tìm nhanh, và không ai bỏ nhầm thứ vào.
+>
+> Hộp linh tinh (**JSONB**): tiện, bỏ gì vào cũng được — nhưng tìm thì phải bới, và không ai bảo đảm bên trong có gì.
+>
+> Sai lầm phổ biến: **bỏ cả những thứ có ngăn riêng vào hộp linh tinh** vì lười mở ngăn.
+
+Ranh giới thực dụng: **trường nào bạn lọc, sắp xếp hoặc ràng buộc theo — trường đó phải là cột thật.**
+
+## Ví dụ nhỏ
 
 ```sql
+-- ✅ Cột thật cho thứ luôn có và luôn dùng; JSONB cho phần thay đổi theo ngành hàng
 CREATE TABLE san_pham (
-  id          BIGSERIAL PRIMARY KEY,
-  ten         TEXT NOT NULL,
-  gia         NUMERIC(12,2) NOT NULL,
-  thuoc_tinh  JSONB NOT NULL DEFAULT '{}'
+  id         UUID PRIMARY KEY,
+  ten        TEXT NOT NULL,
+  gia        BIGINT NOT NULL,
+  thuoc_tinh JSONB NOT NULL DEFAULT '{}'   -- {"ram":"8GB"} hoặc {"size":"XL","mau":"đỏ"}
 );
-
-INSERT INTO san_pham (ten, gia, thuoc_tinh) VALUES
-  ('Áo thun', 200000, '{"mau": ["đỏ","xanh"], "size": ["M","L"], "chat_lieu": "cotton"}');
 ```
 
-### Toán tử
+## Code chạy thế nào
 
-```sql
-thuoc_tinh -> 'mau'                    -- trả về JSONB
-thuoc_tinh ->> 'chat_lieu'             -- trả về TEXT
-thuoc_tinh #> '{kich_thuoc,cao}'       -- theo đường dẫn, trả JSONB
-thuoc_tinh #>> '{kich_thuoc,cao}'      -- theo đường dẫn, trả TEXT
+**Luôn dùng `JSONB`, không dùng `JSON`:**
 
-thuoc_tinh @> '{"chat_lieu":"cotton"}' -- CHỨA — dùng được index GIN
-thuoc_tinh ? 'mau'                     -- có khoá này không
-thuoc_tinh ?| array['mau','size']      -- có ít nhất một trong các khoá
+```text
+JSON   lưu nguyên văn bản   → giữ khoảng trắng, giữ thứ tự khoá, KHÔNG index được
+JSONB  lưu dạng nhị phân     → parse sẵn, tra nhanh, index được  ← luôn chọn cái này
 ```
 
-Phân biệt `->` và `->>` là thứ hay nhầm: `->>` cho chuỗi dùng ngay được, `->` cho JSONB để tiếp tục đi sâu.
-
-### Index cho JSONB
+**Toán tử — phần cần thuộc:**
 
 ```sql
--- Index GIN cho toán tử chứa
-CREATE INDEX idx_thuoc_tinh ON san_pham USING GIN (thuoc_tinh);
-SELECT * FROM san_pham WHERE thuoc_tinh @> '{"chat_lieu":"cotton"}';   -- dùng index
-
--- Index B-tree cho MỘT khoá cụ thể hay dùng
-CREATE INDEX idx_chat_lieu ON san_pham ((thuoc_tinh ->> 'chat_lieu'));
-SELECT * FROM san_pham WHERE thuoc_tinh ->> 'chat_lieu' = 'cotton';    -- dùng index
+thuoc_tinh -> 'ram'          -- trả về JSONB   ("8GB" kèm dấu nháy)
+thuoc_tinh ->> 'ram'         -- trả về TEXT    (8GB)
+thuoc_tinh #> '{a,b}'        -- đi sâu nhiều tầng
+thuoc_tinh @> '{"mau":"đỏ"}' -- CHỨA  ← toán tử dùng index GIN
+thuoc_tinh ? 'ram'           -- có khoá này không
 ```
 
-Điểm quan trọng: toán tử `@>` dùng được index GIN, còn `->>` **không** — nó cần index riêng trên biểu thức đó. Đây là nguyên nhân phổ biến của "đã đánh index mà vẫn chậm".
-
-### Cập nhật trong JSONB
+Phân biệt `->` và `->>` là chỗ vấp đầu tiên: so sánh chuỗi thì luôn dùng `->>`.
 
 ```sql
-UPDATE san_pham SET thuoc_tinh = thuoc_tinh || '{"moi":"gia_tri"}' WHERE id = 1;
-UPDATE san_pham SET thuoc_tinh = thuoc_tinh - 'chat_lieu' WHERE id = 1;
-UPDATE san_pham SET thuoc_tinh = jsonb_set(thuoc_tinh, '{gia_goc}', '250000') WHERE id = 1;
+WHERE thuoc_tinh->>'mau' = 'đỏ'      -- ✅
+WHERE thuoc_tinh->'mau' = 'đỏ'       -- ❌ so JSONB với text
 ```
 
-### Mở JSONB thành dòng
+**Index cho JSONB:**
 
 ```sql
--- Mỗi màu một dòng
-SELECT id, ten, jsonb_array_elements_text(thuoc_tinh -> 'mau') AS mau
-FROM san_pham;
+-- Index toàn bộ: phục vụ @> và ?
+CREATE INDEX ON san_pham USING GIN (thuoc_tinh);
 
--- Đếm số sản phẩm theo từng màu
-SELECT mau, COUNT(*) FROM san_pham,
-  jsonb_array_elements_text(thuoc_tinh -> 'mau') AS mau
-GROUP BY mau;
+-- Index MỘT trường: nhỏ hơn nhiều, nhanh hơn cho truy vấn cụ thể
+CREATE INDEX ON san_pham ((thuoc_tinh->>'thuong_hieu'));
 ```
 
-### Ranh giới nên nhớ
+Quan trọng: **index GIN chỉ phục vụ `@>`, không phục vụ `->>` với `=`**. Nếu truy vấn của bạn viết `thuoc_tinh->>'mau' = 'đỏ'` thì index GIN vô dụng — bạn cần index trên biểu thức, hoặc viết lại thành `@> '{"mau":"đỏ"}'`.
 
-JSONB tốt cho: thuộc tính khác nhau theo loại sản phẩm, payload webhook, cấu hình tuỳ biến, dữ liệu chưa biết hình dạng.
+## Cú pháp
 
-JSONB **sai** cho: dữ liệu cần khoá ngoại, cần ràng buộc `CHECK` phức tạp, hoặc là điều kiện lọc/join chính. Những thứ đó phải là cột thật.
+**Tìm kiếm toàn văn** — ba khái niệm:
 
-Dấu hiệu bạn đã đi quá xa: truy vấn nào cũng phải `->>`, và bạn bắt đầu viết `CHECK` để kiểm tra cấu trúc JSON.
-
-## Tìm kiếm toàn văn
-
-```sql
--- Chuyển văn bản thành vector từ đã chuẩn hoá
-SELECT to_tsvector('simple', 'Hướng dẫn học PostgreSQL cơ bản');
-
--- Truy vấn
-SELECT * FROM bai_viet
-WHERE to_tsvector('simple', tieu_de || ' ' || noi_dung) @@ to_tsquery('simple', 'postgresql & index');
+```text
+tsvector   văn bản đã "băm" thành các từ gốc, có vị trí
+tsquery    câu truy vấn tìm kiếm
+@@         toán tử "khớp"
 ```
 
-Postgres **không có** bộ phân tích tiếng Việt sẵn. Dùng `'simple'` (tách theo khoảng trắng, chuyển chữ thường) — nó không nhận biết từ gốc nhưng hoạt động khá tốt với tiếng Việt vì tiếng Việt không biến đổi hình thái như tiếng Anh.
+```sql
+SELECT to_tsvector('simple', 'Áo thun nam màu đỏ');
+-- 'màu':4 'nam':3 'thun':2 'áo':1 'đỏ':5
+```
 
-### Cột tsvector sinh tự động
+Với tiếng Việt, dùng cấu hình `'simple'`: các cấu hình ngôn ngữ khác (english, french) sẽ cắt gốc từ sai và loại bỏ nhầm từ.
+
+**Cách làm đúng — cột sinh sẵn + index:**
 
 ```sql
-ALTER TABLE bai_viet ADD COLUMN tim_kiem tsvector
+ALTER TABLE san_pham ADD COLUMN tim_kiem tsvector
 GENERATED ALWAYS AS (
-  setweight(to_tsvector('simple', coalesce(tieu_de, '')), 'A') ||
-  setweight(to_tsvector('simple', coalesce(tom_tat, '')), 'B') ||
-  setweight(to_tsvector('simple', coalesce(noi_dung, '')), 'C')
+  setweight(to_tsvector('simple', coalesce(ten, '')), 'A') ||
+  setweight(to_tsvector('simple', coalesce(mo_ta, '')), 'B')
 ) STORED;
 
-CREATE INDEX idx_tim_kiem ON bai_viet USING GIN (tim_kiem);
+CREATE INDEX ON san_pham USING GIN (tim_kiem);
 ```
 
-Cột sinh tự động (generated column) luôn đồng bộ với dữ liệu — không cần trigger, không thể quên cập nhật.
-
-`setweight` gán trọng số: khớp ở tiêu đề (A) được xếp cao hơn khớp ở nội dung (C).
-
-### Xếp hạng kết quả
-
 ```sql
-SELECT tieu_de, ts_rank(tim_kiem, truy_van) AS diem,
-       ts_headline('simple', noi_dung, truy_van) AS doan_trich
-FROM bai_viet, to_tsquery('simple', 'index & hieu_nang') AS truy_van
-WHERE tim_kiem @@ truy_van
+SELECT ten, ts_rank(tim_kiem, query) AS diem
+FROM san_pham, websearch_to_tsquery('simple', 'áo thun nam') query
+WHERE tim_kiem @@ query
 ORDER BY diem DESC
 LIMIT 20;
 ```
 
-`ts_headline` trả về đoạn trích có tô đậm từ khoá — chính là thứ hiển thị trong kết quả tìm kiếm.
+Hai chi tiết đáng chú ý:
 
-### Tìm gần đúng với pg_trgm
-
-Cho gõ sai chính tả và tìm theo chuỗi con:
-
-```sql
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE INDEX idx_ten_trgm ON san_pham USING GIN (ten gin_trgm_ops);
-
--- Tìm gần đúng, sắp theo độ giống
-SELECT ten, similarity(ten, 'ao thunn') AS do_giong
-FROM san_pham
-WHERE ten % 'ao thunn'
-ORDER BY do_giong DESC;
-
--- LIKE '%...%' cũng dùng được index trigram
-SELECT * FROM san_pham WHERE ten ILIKE '%thun%';
+```text
+setweight(..., 'A')  → từ khoá trong TÊN được tính điểm cao hơn trong MÔ TẢ
+websearch_to_tsquery → hiểu cú pháp người dùng quen: "áo thun" -nam or đỏ
+GENERATED ... STORED → cột tự cập nhật khi ten/mo_ta đổi, không cần trigger
 ```
 
-`pg_trgm` là câu trả lời cho `LIKE '%...%'` chậm — index trigram làm được điều mà B-tree không làm được.
+**Tìm gần đúng (gõ sai chính tả):**
 
-## Khi nào cần Elasticsearch
+```sql
+CREATE EXTENSION pg_trgm;
+CREATE INDEX ON san_pham USING GIN (ten gin_trgm_ops);
 
-Postgres đủ cho phần lớn nhu cầu tìm kiếm. Cân nhắc hệ thống riêng khi cần: gợi ý khi gõ với độ trễ dưới 50ms trên hàng chục triệu tài liệu, phân tích ngôn ngữ phức tạp, tổng hợp theo nhiều chiều, hoặc tách hoàn toàn tải tìm kiếm khỏi CSDL chính.
+SELECT ten, similarity(ten, 'ao thn') AS diem
+FROM san_pham
+WHERE ten % 'ao thn'          -- % = "đủ giống"
+ORDER BY diem DESC;
+```
 
-Đổi lại là một hệ thống nữa phải vận hành, đồng bộ và giám sát — cái giá thường bị đánh giá thấp.
+`pg_trgm` còn có tác dụng phụ rất giá trị: nó làm `LIKE '%giữa%'` **dùng được index** — điều mà B-tree không làm được.
 
-## Lỗi hay gặp
+## Tại sao cần nó
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Index GIN nhưng truy vấn dùng `->>` | Index không được dùng | Index trên biểu thức, hoặc dùng `@>` |
-| Nhồi dữ liệu quan hệ vào JSONB | Mất ràng buộc, truy vấn phức tạp | Cột thật |
-| Tính `to_tsvector` mỗi lần truy vấn | Chậm, không dùng index | Cột sinh tự động + GIN |
-| `LIKE '%x%'` không có trigram | Quét toàn bảng | `pg_trgm` |
-| Thêm Elasticsearch quá sớm | Một hệ thống nữa phải vận hành | Thử Postgres trước |
+Vì với bỏ dấu tiếng Việt (người dùng gõ "ao thun" muốn tìm "áo thun"), bạn cần thêm một bước:
 
-## Ghi nhớ
+```sql
+CREATE EXTENSION unaccent;
 
-- `@>` dùng index GIN; `->>` cần index riêng trên biểu thức.
-- Cột `tsvector` sinh tự động không bao giờ lệch dữ liệu.
-- `setweight` cho tiêu đề trọng số cao hơn nội dung.
-- `pg_trgm` giải quyết `LIKE '%...%'` và gõ sai chính tả.
+-- Index trên phiên bản đã bỏ dấu
+ALTER TABLE san_pham ADD COLUMN tim_kiem_khong_dau tsvector
+GENERATED ALWAYS AS (to_tsvector('simple', unaccent(coalesce(ten, '')))) STORED;
+```
 
-## Tự kiểm tra
+Và câu hỏi cuối: **khi nào thì cần Elasticsearch thật?**
 
-1. Vì sao đã có index GIN mà `WHERE thuoc_tinh ->> 'mau' = 'đỏ'` vẫn chậm?
-2. Cột `tsvector` sinh tự động hơn gì so với dùng trigger?
-3. Khi nào JSONB là lựa chọn sai?
+```text
+Postgres đủ khi:
+  · Dưới ~10 triệu tài liệu
+  · Tìm kiếm không phải nghiệp vụ CHÍNH
+  · Không cần gợi ý gõ, sửa lỗi chính tả nâng cao, phân tích ngôn ngữ sâu
+
+Cần Elasticsearch khi:
+  · Tìm kiếm LÀ sản phẩm (trang thương mại điện tử lớn)
+  · Cần xếp hạng phức tạp, cá nhân hoá, học từ hành vi
+  · Khối lượng rất lớn và cần mở rộng ngang riêng cho tìm kiếm
+```
+
+Cái giá của Elasticsearch: **một hệ thống nữa phải vận hành, và dữ liệu phải đồng bộ hai chiều** — đồng bộ lệch là nguồn lỗi thường trực.
+
+## So sánh
+
+| Nhu cầu | Công cụ Postgres |
+|---|---|
+| Thuộc tính thay đổi theo loại bản ghi | `JSONB` + GIN |
+| Tìm theo từ khoá trong văn bản | `tsvector` + GIN |
+| Gõ sai chính tả, tìm gần đúng | `pg_trgm` |
+| `LIKE '%giữa%'` cần nhanh | `pg_trgm` |
+| Bỏ dấu tiếng Việt | `unaccent` |
+
+## Dễ nhầm
+
+**1. Dùng `JSON` thay vì `JSONB`.** Mất khả năng index.
+
+**2. Nhồi trường luôn có vào JSONB.** `gia` nằm trong JSON thì bạn mất `CHECK (gia >= 0)`, mất index B-tree cho sắp xếp theo giá, và mọi truy vấn thành chuỗi khó đọc.
+
+**3. Tưởng index GIN phục vụ mọi truy vấn JSONB.** Nó phục vụ `@>` và `?`, **không** phục vụ `->>` với `=`.
+
+**4. Nhầm `->` với `->>`.** So sánh chuỗi luôn dùng `->>`.
+
+**5. Dùng cấu hình `'english'` cho tiếng Việt.** Nó cắt gốc từ sai và loại bỏ nhầm những từ nó tưởng là stop-word.
+
+**6. Tính `to_tsvector` ngay trong `WHERE`.**
+
+```sql
+WHERE to_tsvector('simple', ten) @@ query   -- ❌ tính lại cho MỖI dòng, không dùng index
+WHERE tim_kiem @@ query                      -- ✅ cột đã lưu sẵn, có index
+```
+
+**7. Thêm Elasticsearch quá sớm.** Bạn nhận thêm một hệ thống phải giám sát và một bài toán đồng bộ, để giải một vấn đề chưa xảy ra — xem [[vi-sao-chon-postgresql]].
+
+## Mẹo nhớ
+
+> **Ngăn dán nhãn (cột thật) vs hộp linh tinh (JSONB) — trường nào bạn LỌC theo thì phải có ngăn riêng.**
+>
+> **JSONB luôn, không bao giờ JSON. `@>` dùng index, `->>` thì không.**
+>
+> **Tiếng Việt dùng cấu hình `'simple'`, và cột `tsvector` phải LƯU SẴN.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. `JSON` và `JSONB` khác nhau ở đâu, và vì sao luôn chọn cái sau?
+2. `->` và `->>` khác nhau thế nào?
+3. Index GIN trên JSONB phục vụ toán tử nào, không phục vụ toán tử nào?
+4. Vì sao cột `tsvector` phải lưu sẵn thay vì tính trong `WHERE`?
+5. Hai điều kiện để biết bạn thật sự cần Elasticsearch?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, thiết kế bảng và index cho:
+
+```text
+Sàn thương mại nhiều ngành hàng: điện thoại có RAM/bộ nhớ, quần áo có size/màu,
+sách có tác giả/nhà xuất bản. Cần: lọc theo giá, sắp xếp theo giá, lọc theo
+thuộc tính riêng của ngành, và tìm kiếm theo tên sản phẩm (có dấu và không dấu).
+```
+
+Tự kiểm: `gia` của bạn là cột thật hay nằm trong JSONB, và **vì sao**? Bạn cần mấy index?
+
+## Thử sức
+
+Tìm kiếm của bạn dùng `WHERE ten ILIKE '%' || $1 || '%'`. Với 3 triệu sản phẩm, mỗi truy vấn mất 4 giây.
+
+Nêu **ba** cách cải thiện, xếp theo công sức bỏ ra. Câu khó nhất: cách đơn giản nhất (`pg_trgm`) cải thiện được bao nhiêu, và **khi nào** nó vẫn không đủ — dấu hiệu để biết phải chuyển sang tìm kiếm toàn văn thật?

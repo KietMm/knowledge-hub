@@ -4,150 +4,224 @@ slug: transaction-va-khoa-trong-postgres
 summary: MVCC, các loại khoá, SKIP LOCKED cho hàng đợi, và cách tìm nguyên nhân nghẽn.
 level: nang-cao
 tags: [postgresql, transaction, khoa, mvcc]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** hiểu vì sao đọc không bao giờ chặn ghi trong Postgres, và dùng `SKIP LOCKED` để làm hàng đợi công việc.
+> **Sau bài này bạn sẽ:** hiểu vì sao "đọc không bao giờ chặn ghi" trong Postgres, và tìm được thủ phạm khi hệ thống nghẽn vì khoá.
 
-## MVCC
+## Ý tưởng chính
 
-Postgres dùng **Multi-Version Concurrency Control**: mỗi lần `UPDATE` tạo ra một **phiên bản mới** của dòng thay vì sửa tại chỗ. Phiên bản cũ vẫn còn cho các transaction đang đọc.
+Postgres không dùng khoá cho việc **đọc**. Nó dùng **MVCC** — mỗi transaction nhìn thấy một *ảnh chụp* của dữ liệu tại thời điểm nó bắt đầu.
 
-Hệ quả quan trọng: **đọc không bao giờ chặn ghi, ghi không bao giờ chặn đọc.**
+Từ đó ra một tính chất định hình toàn bộ cách Postgres hành xử: **đọc không bao giờ chặn ghi, ghi không bao giờ chặn đọc**.
 
-Đổi lại có hai chi phí:
+## Mental model
 
-1. **Bloat** — phiên bản cũ chiếm chỗ tới khi `VACUUM` dọn. Bảng cập nhật nhiều có thể phình lớn hơn dữ liệu thật.
-2. **Transaction dài giữ phiên bản cũ** — một transaction mở nhiều giờ ngăn `VACUUM` dọn dẹp, làm bảng phình và truy vấn chậm dần.
+Hãy nghĩ tới **một cuốn sổ mà mỗi lần sửa là viết thêm dòng mới, không xoá dòng cũ**.
 
-```sql
--- Xem mức bloat và lần VACUUM/ANALYZE gần nhất
-SELECT relname, n_live_tup, n_dead_tup,
-       round(n_dead_tup * 100.0 / NULLIF(n_live_tup + n_dead_tup, 0), 1) AS pct_chet,
-       last_autovacuum, last_autoanalyze
-FROM pg_stat_user_tables
-WHERE n_dead_tup > 1000
-ORDER BY n_dead_tup DESC;
+```text
+Sửa số dư từ 100 → 70:
+
+dòng cũ:  so_du = 100   [hiệu lực: từ giao dịch #5 đến #12]   ← vẫn còn đó
+dòng mới: so_du =  70   [hiệu lực: từ giao dịch #12 trở đi]
 ```
 
-## Các loại khoá dòng
+> Ai bắt đầu đọc **trước** giao dịch #12 vẫn thấy 100 — họ đọc dòng cũ, và **không phải chờ ai cả**.
+>
+> Đổi lại: cuốn sổ **phình ra**, đầy dòng không ai còn đọc nữa. Phải có người đi gạch bỏ chúng — đó là `VACUUM`.
+
+Hai hệ quả quan trọng của mô hình này: **đọc không chờ**, và **`UPDATE` thực chất là ghi dòng mới** — nên nó tốn chỗ hơn bạn tưởng.
+
+## Ví dụ nhỏ
 
 ```sql
-SELECT * FROM ve WHERE id = 1 FOR UPDATE;        -- khoá độc quyền, ai cũng phải chờ
-SELECT * FROM ve WHERE id = 1 FOR NO KEY UPDATE; -- nhẹ hơn, cho phép tham chiếu FK
-SELECT * FROM ve WHERE id = 1 FOR SHARE;         -- nhiều người đọc-khoá cùng lúc được
-SELECT * FROM ve WHERE id = 1 FOR UPDATE NOWAIT; -- lỗi ngay nếu đang bị khoá
-SELECT * FROM ve WHERE id = 1 FOR UPDATE SKIP LOCKED;  -- bỏ qua dòng đang bị khoá
+-- Phiên A                          -- Phiên B
+BEGIN;
+SELECT so_du FROM tk WHERE id=1;    -- 100
+                                    UPDATE tk SET so_du=70 WHERE id=1;
+                                    COMMIT;
+SELECT so_du FROM tk WHERE id=1;    -- vẫn 100 nếu REPEATABLE READ
+                                    -- 70 nếu READ COMMITTED (mặc định)
+COMMIT;
 ```
 
-`NOWAIT` hữu ích cho giao diện tương tác: thà báo "đang có người sửa, thử lại" hơn là để người dùng chờ vô định.
+## Code chạy thế nào
 
-## Hàng đợi công việc bằng SKIP LOCKED
-
-Đây là một trong những tính năng đáng giá nhất của Postgres — nó thay được một hệ thống hàng đợi riêng:
+**Các loại khoá dòng**, từ nhẹ tới nặng:
 
 ```sql
--- Nhiều worker chạy đồng thời, mỗi cái lấy công việc KHÁC nhau
-WITH cong_viec AS (
-  SELECT id FROM hang_doi
-  WHERE trang_thai = 'cho' AND chay_sau <= now()
-  ORDER BY uu_tien DESC, id
+SELECT ... FOR KEY SHARE     -- nhẹ nhất: chặn xoá và đổi khoá
+SELECT ... FOR SHARE         -- chặn mọi thay đổi, cho phép người khác cùng đọc-khoá
+SELECT ... FOR NO KEY UPDATE -- khoá tự động khi UPDATE cột thường
+SELECT ... FOR UPDATE        -- nặng nhất: độc quyền dòng
+```
+
+```sql
+SELECT ... FOR UPDATE NOWAIT;        -- lỗi NGAY nếu dòng đang bị khoá
+SELECT ... FOR UPDATE SKIP LOCKED;   -- BỎ QUA dòng đang bị khoá
+```
+
+**`SKIP LOCKED` cho hàng đợi công việc** — đây là ứng dụng giá trị nhất:
+
+```sql
+BEGIN;
+  SELECT * FROM cong_viec
+  WHERE trang_thai = 'cho'
+  ORDER BY tao_luc
   LIMIT 10
-  FOR UPDATE SKIP LOCKED          -- bỏ qua dòng worker khác đang giữ
-)
-UPDATE hang_doi h
-SET trang_thai = 'dang_chay', bat_dau_luc = now()
-FROM cong_viec c
-WHERE h.id = c.id
-RETURNING h.*;
+  FOR UPDATE SKIP LOCKED;        -- ← worker khác lấy 10 việc KHÁC, không ai chờ
+
+  UPDATE cong_viec SET trang_thai = 'dang_xu_ly' WHERE id = ANY($1);
+COMMIT;
 ```
 
-Không có `SKIP LOCKED`, mọi worker sẽ xếp hàng chờ cùng những dòng đầu tiên và bạn mất hết lợi ích của việc chạy song song.
+```text
+Không có SKIP LOCKED:
+  worker 1 khoá 10 việc đầu
+  worker 2..5 CHỜ           ← toàn bộ hệ thống thành tuần tự
 
-Bảng hàng đợi nên có: `so_lan_thu`, `loi_cuoi`, `chay_sau` (cho retry có độ trễ tăng dần), và một index từng phần trên `WHERE trang_thai = 'cho'`.
+Có SKIP LOCKED:
+  worker 1 lấy việc 1-10
+  worker 2 lấy việc 11-20   ← bỏ qua dòng đang bị khoá
+  ⇒ 5 worker chạy song song thật
+```
 
-## Advisory lock
+Đây là lý do Postgres thay được RabbitMQ cho hàng đợi vừa và nhỏ: bạn có hàng đợi **trong cùng transaction với dữ liệu nghiệp vụ** — không có bài toán đồng bộ giữa hai hệ thống.
 
-Khoá theo một con số bạn tự chọn, không gắn với dòng nào:
+## Cú pháp
+
+**Advisory lock** — khoá theo một con số bạn tự đặt, không gắn với dòng nào:
 
 ```sql
--- Đảm bảo chỉ một tiến trình chạy job này trên toàn hệ thống
-SELECT pg_try_advisory_lock(12345);      -- true nếu lấy được
--- ... làm việc ...
+SELECT pg_advisory_lock(12345);        -- giữ tới khi nhả hoặc hết phiên
+SELECT pg_try_advisory_lock(12345);    -- trả false ngay nếu không lấy được
 SELECT pg_advisory_unlock(12345);
 
--- Bản tự nhả khi transaction kết thúc — an toàn hơn
+-- Tự nhả khi kết thúc transaction — thường an toàn hơn
 SELECT pg_advisory_xact_lock(12345);
 ```
 
-Dùng cho: chống chạy trùng cron job khi có nhiều instance, migration, và các thao tác cần độc quyền toàn cục.
+Dùng cho: **bảo đảm chỉ một instance chạy một job**.
 
-Ưu tiên bản `_xact_`: nó tự nhả khi transaction kết thúc, nên tiến trình chết đột ngột không để lại khoá treo.
+```ts
+// Chỉ một instance chạy job dọn dẹp, dù có 6 instance đang chạy
+const { rows } = await db.query('SELECT pg_try_advisory_lock($1) AS co', [90001])
+if (rows[0].co) { await donDep() }
+```
 
-## Tìm nguyên nhân nghẽn
+Không có nó, sáu instance cùng chạy job đêm, và bạn có sáu bản email gửi cho mỗi khách.
+
+## Tại sao cần nó
+
+Vì khi hệ thống nghẽn vì khoá, bạn cần **tìm ra thủ phạm trong vài phút**, không phải vài giờ:
 
 ```sql
 -- Ai đang chờ ai
 SELECT
-  cho.pid AS pid_cho, cho.query AS truy_van_cho,
-  giu.pid AS pid_giu, giu.query AS truy_van_giu,
-  now() - giu.query_start AS giu_bao_lau
-FROM pg_stat_activity cho
-JOIN pg_stat_activity giu ON giu.pid = ANY(pg_blocking_pids(cho.pid))
-WHERE cardinality(pg_blocking_pids(cho.pid)) > 0;
-
--- Transaction mở lâu — thủ phạm phổ biến nhất
-SELECT pid, state, now() - xact_start AS mo_bao_lau, left(query, 80)
-FROM pg_stat_activity
-WHERE xact_start IS NOT NULL AND now() - xact_start > interval '1 minute'
-ORDER BY xact_start;
-
--- Biện pháp cuối
-SELECT pg_cancel_backend(pid);      -- huỷ truy vấn, giữ kết nối
-SELECT pg_terminate_backend(pid);   -- ngắt hẳn kết nối
+  bi_chan.pid        AS pid_bi_chan,
+  bi_chan.query      AS truy_van_bi_chan,
+  chan.pid           AS pid_gay_chan,
+  chan.query         AS truy_van_gay_chan,
+  now() - chan.query_start AS chan_bao_lau
+FROM pg_stat_activity bi_chan
+JOIN pg_stat_activity chan ON chan.pid = ANY(pg_blocking_pids(bi_chan.pid))
+WHERE cardinality(pg_blocking_pids(bi_chan.pid)) > 0;
 ```
-
-`pg_blocking_pids()` là hàm quan trọng nhất trong bài này — nó trả lời trực tiếp câu hỏi "cái gì đang chặn cái gì".
-
-Nhiều dòng `idle in transaction` nghĩa là ứng dụng mở transaction rồi quên `COMMIT` — thường do một lỗi trong xử lý ngoại lệ.
-
-## Timeout — nên đặt ở mọi nơi
 
 ```sql
--- Ở cấp phiên hoặc trong chuỗi kết nối
-SET statement_timeout = '30s';         -- huỷ truy vấn quá lâu
-SET lock_timeout = '5s';               -- không chờ khoá quá 5 giây
-SET idle_in_transaction_session_timeout = '60s';  -- ngắt transaction bị bỏ quên
+-- Transaction mở lâu bất thường — thủ phạm phổ biến nhất
+SELECT pid, state, now() - xact_start AS mo_bao_lau, query
+FROM pg_stat_activity
+WHERE state <> 'idle' AND xact_start < now() - interval '1 minute'
+ORDER BY xact_start;
+
+-- Dừng khẩn cấp
+SELECT pg_cancel_backend(pid);     -- huỷ truy vấn, lịch sự
+SELECT pg_terminate_backend(pid);  -- ngắt cả kết nối
 ```
 
-Ba tham số này biến những sự cố "hệ thống đứng im" thành những lỗi cụ thể xuất hiện trong log — dễ chẩn đoán hơn rất nhiều.
+Trạng thái `idle in transaction` là dấu hiệu nguy hiểm nhất: ứng dụng đã `BEGIN` rồi **quên `COMMIT`** — nó giữ khoá và chặn `VACUUM` vô thời hạn.
 
-## Nguyên tắc
+**Timeout — nên đặt ở mọi nơi:**
 
-- Transaction **ngắn**: mở muộn, đóng sớm.
-- **Không** gọi API bên ngoài trong transaction.
-- Khoá theo **thứ tự nhất quán** (id tăng dần) để tránh deadlock.
-- Thao tác đọc thuần thì không cần transaction.
-- Luôn có `statement_timeout` ở production.
+```sql
+-- Ở cấp cơ sở dữ liệu
+ALTER DATABASE app SET statement_timeout = '30s';
+ALTER DATABASE app SET lock_timeout = '5s';
+ALTER DATABASE app SET idle_in_transaction_session_timeout = '60s';
+```
 
-## Lỗi hay gặp
+Ba tham số này là **lưới an toàn**: chúng biến một truy vấn treo vô hạn thành một lỗi nhanh mà bạn nhìn thấy trong log. Không có chúng, một truy vấn hỏng có thể giữ khoá cả tiếng.
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Transaction mở dài | Ngăn VACUUM, bảng phình, chậm dần | Giữ transaction ngắn |
-| Gọi HTTP trong transaction | Giữ khoá suốt thời gian chờ mạng | Gọi bên ngoài |
-| Hàng đợi không `SKIP LOCKED` | Worker xếp hàng, mất tính song song | Thêm `SKIP LOCKED` |
-| Không có `statement_timeout` | Một truy vấn treo cả hệ thống | Đặt ở chuỗi kết nối |
-| Khoá theo thứ tự khác nhau | Deadlock | Luôn theo id tăng dần |
+## So sánh
 
-## Ghi nhớ
+| Tình huống | Công cụ |
+|---|---|
+| Trừ tồn kho | `UPDATE ... WHERE ton >= n` — [[truy-cap-dong-thoi-va-khoa]] |
+| Đặt chỗ, tranh chấp cao | `FOR UPDATE` |
+| Hàng đợi nhiều worker | `FOR UPDATE SKIP LOCKED` |
+| Chỉ một instance chạy job | `pg_try_advisory_lock` |
+| Chặn trùng lịch đặt phòng | Ràng buộc `EXCLUDE` — [[index-trong-postgresql]] |
 
-- MVCC: đọc không chặn ghi — đổi lại là bloat và VACUUM.
-- `SKIP LOCKED` biến một bảng thành hàng đợi công việc dùng được thật.
-- `pg_blocking_pids()` trả lời "ai đang chặn ai".
-- `statement_timeout` + `lock_timeout` nên có ở mọi production.
+**Nguyên tắc:**
 
-## Tự kiểm tra
+```text
+· Transaction NGẮN — không gọi API, không chờ I/O bên trong
+· Khoá theo THỨ TỰ CỐ ĐỊNH (id tăng dần) — chống deadlock
+· Đặt timeout ở mọi cấp
+· Đọc thuần thì không cần transaction
+```
 
-1. Vì sao transaction mở một giờ lại làm truy vấn trên bảng khác chậm đi?
-2. `SKIP LOCKED` giải quyết vấn đề gì với nhiều worker?
-3. Vì sao nên dùng `pg_advisory_xact_lock` thay vì `pg_advisory_lock`?
+## Dễ nhầm
+
+**1. `idle in transaction` do quên `COMMIT`.** Giữ khoá, chặn `VACUUM`, và làm bảng phình ra.
+
+**2. Gọi API bên ngoài trong transaction.** Khoá dòng suốt thời gian chờ mạng.
+
+**3. Không đặt `statement_timeout`.** Một truy vấn hỏng chạy mãi và kéo cả hệ thống.
+
+**4. Tưởng `UPDATE` sửa tại chỗ.** Nó ghi **dòng mới** và đánh dấu dòng cũ là chết — nên cập nhật hàng loạt làm bảng phình gấp đôi cho tới khi `VACUUM` chạy.
+
+**5. Dùng advisory lock mà quên nhả.** `pg_advisory_lock` giữ tới hết **phiên**; dùng `pg_advisory_xact_lock` an toàn hơn vì nó tự nhả khi transaction kết thúc.
+
+**6. Khoá theo thứ tự khác nhau ở các chỗ khác nhau.** Deadlock ngẫu nhiên.
+
+**7. Dùng `LOCK TABLE`.** Gần như không bao giờ cần, và nó chặn toàn bộ bảng.
+
+## Mẹo nhớ
+
+> **MVCC là cuốn sổ chỉ viết thêm — đọc không chờ, nhưng sổ phình ra và cần `VACUUM`.**
+>
+> **`SKIP LOCKED` biến Postgres thành hàng đợi công việc thật.**
+>
+> **`idle in transaction` là dấu hiệu nguy hiểm nhất trong `pg_stat_activity`.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. MVCC làm gì, và hai hệ quả của nó là gì?
+2. Vì sao `UPDATE` trong Postgres tốn chỗ hơn bạn tưởng?
+3. `SKIP LOCKED` giải quyết vấn đề gì cho hàng đợi nhiều worker?
+4. Advisory lock dùng cho tình huống nào mà khoá dòng không giải được?
+5. `idle in transaction` nghĩa là gì, và vì sao nguy hiểm?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, viết SQL cho:
+
+```text
+a) 5 worker cùng lấy việc từ bảng cong_viec, không ai chờ ai
+b) Bảo đảm chỉ một instance chạy job gửi báo cáo hằng đêm
+c) Tìm truy vấn đang chặn các truy vấn khác trên production
+```
+
+Tự kiểm: câu (b) — bạn dùng `pg_advisory_lock` hay `pg_advisory_xact_lock`, và vì sao?
+
+## Thử sức
+
+Lúc 9 giờ sáng, mọi request tới hệ thống của bạn treo. `pg_stat_activity` cho thấy **40 truy vấn ở trạng thái chờ**, tất cả đều chờ cùng một `pid`.
+
+`pid` đó đang ở trạng thái `idle in transaction`, mở từ 8 giờ 47.
+
+Mô tả **chuyện gì đã xảy ra**, cách xử lý ngay lập tức, và — câu quan trọng nhất — **hai** thay đổi để tình huống này không thể kéo dài 13 phút lần sau.

@@ -4,159 +4,226 @@ slug: sao-luu-va-van-hanh-postgres
 summary: pg_dump và WAL archiving, VACUUM, replica, và các tham số cấu hình nên chỉnh.
 level: nang-cao
 tags: [postgresql, sao-luu, van-hanh]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** chọn được chiến lược sao lưu theo RPO thực tế, và biết chỉnh những tham số ảnh hưởng nhiều nhất.
+> **Sau bài này bạn sẽ:** biết bản sao lưu của mình cho phép mất tối đa bao nhiêu dữ liệu, và hiểu vì sao `VACUUM` là việc bắt buộc chứ không phải tuỳ chọn.
 
-## Hai loại sao lưu
+## Ý tưởng chính
 
-**Logic (`pg_dump`)** — xuất ra câu lệnh SQL hoặc file nén:
+Có hai câu hỏi định hình mọi quyết định về sao lưu, và bạn phải trả lời chúng **bằng con số**:
+
+```text
+RPO  (Recovery Point Objective)   Mất tối đa BAO NHIÊU dữ liệu thì chấp nhận được?
+RTO  (Recovery Time Objective)    Khôi phục xong trong BAO LÂU thì chấp nhận được?
+```
+
+Không trả lời hai câu này thì bạn không biết bản sao lưu hiện tại có đủ hay không — và bạn chỉ phát hiện ra khi cần dùng tới nó.
+
+## Mental model
+
+Hãy nghĩ tới **ảnh chụp** so với **camera quay liên tục**.
+
+> **`pg_dump` là chụp ảnh**: mỗi đêm một tấm. Nếu hỏng lúc 3 giờ chiều, bạn quay về ảnh 2 giờ sáng — **mất 13 tiếng dữ liệu**.
+>
+> **WAL archiving là camera quay liên tục**: bạn tua lại tới **đúng giây** trước sự cố. Mất vài giây dữ liệu.
+>
+> Camera tốn dung lượng và phức tạp hơn nhiều. Nhưng nếu 13 tiếng đơn hàng là không chấp nhận được, bạn không có lựa chọn.
+
+Câu hỏi không phải *"cách nào tốt hơn"* mà là ***"mất bao nhiêu dữ liệu thì doanh nghiệp chịu được"*** — và đó là câu hỏi cho người quản lý, không phải cho kỹ thuật.
+
+## Ví dụ nhỏ
 
 ```bash
-pg_dump -Fc "$DATABASE_URL" > sao-luu.dump          # định dạng custom, nén sẵn
-pg_dump -Fc --schema-only "$DATABASE_URL" > schema.dump
-pg_dump -Fc -t don_hang "$DATABASE_URL" > don_hang.dump
+# Sao lưu logic — di động, chọn được từng bảng
+pg_dump -Fc -d app > app.dump
+pg_restore -d app_moi app.dump
 
-pg_restore -d "$DATABASE_URL" --clean --if-exists sao-luu.dump
-pg_restore -d "$DATABASE_URL" -t don_hang sao-luu.dump   # chỉ một bảng
-pg_restore --jobs=4 -d "$DATABASE_URL" sao-luu.dump      # song song, nhanh hơn
+# Chỉ một bảng
+pg_dump -Fc -t don_hang -d app > don_hang.dump
 ```
 
-Ưu: nhỏ gọn, khôi phục được từng bảng, chuyển được giữa các phiên bản Postgres khác nhau.
-Nhược: chậm với dữ liệu lớn, và chỉ khôi phục được về **thời điểm sao lưu**.
+## Code chạy thế nào
 
-**Vật lý (`pg_basebackup` + WAL)** — sao chép file dữ liệu kèm nhật ký ghi:
+Hai loại sao lưu và điểm khác nhau cốt lõi:
+
+```text
+LOGIC (pg_dump)
+  · Xuất ra câu lệnh SQL / định dạng nén
+  · Khôi phục sang PHIÊN BẢN KHÁC, MÁY KHÁC, kiến trúc khác  ✅
+  · Chọn được từng bảng, từng schema                          ✅
+  · CHẬM với cơ sở dữ liệu lớn (hàng giờ cho vài trăm GB)     ❌
+  · Chỉ khôi phục về ĐÚNG thời điểm chụp                       ❌
+
+VẬT LÝ (pg_basebackup + WAL)
+  · Sao chép file dữ liệu thật + nhật ký thay đổi
+  · Khôi phục nhanh, kể cả cơ sở dữ liệu rất lớn              ✅
+  · Khôi phục về BẤT KỲ THỜI ĐIỂM nào (point-in-time)         ✅
+  · Chỉ dùng được với CÙNG phiên bản Postgres                  ❌
+  · Phức tạp hơn để thiết lập                                  ❌
+```
 
 ```bash
-pg_basebackup -D /sao-luu/base -Fp -Xs -P
+pg_basebackup -D /backup/base -Fp -Xs -P
+# postgresql.conf:
+#   archive_mode = on
+#   archive_command = 'cp %p /backup/wal/%f'
 ```
 
-Ưu: khôi phục về **bất kỳ thời điểm** (point-in-time recovery), nhanh với dữ liệu lớn.
-Nhược: phụ thuộc phiên bản và kiến trúc, không chọn được từng bảng.
+Với point-in-time recovery, bạn nói: *"khôi phục về 14:29:30, ngay trước khi ai đó chạy `DELETE` nhầm"* — và đó là thứ `pg_dump` không bao giờ làm được.
 
-## Chọn theo RPO
+## Cú pháp
 
-| RPO (mất tối đa) | Chiến lược |
-|---|---|
-| 24 giờ | `pg_dump` hằng ngày |
-| 1 giờ | `pg_dump` mỗi giờ, hoặc WAL archiving |
-| Vài phút | WAL archiving liên tục |
-| Gần như không | Streaming replication đồng bộ |
+**`VACUUM` — hệ quả trực tiếp của MVCC:**
 
-Công cụ nên dùng cho production: **pgBackRest** hoặc **WAL-G**. Chúng lo nén, mã hoá, sao lưu tăng dần, kiểm tra tính toàn vẹn, và xoá bản cũ theo chính sách — những thứ script tự viết luôn thiếu một vài phần.
-
-## Diễn tập khôi phục
-
-**Bản sao lưu chưa từng thử khôi phục thì chưa phải bản sao lưu.**
-
-Quy trình nên chạy mỗi quý:
-
-1. Tải bản sao lưu mới nhất về môi trường riêng.
-2. Khôi phục, đo **thời gian thật** mất bao lâu.
-3. Chạy kiểm tra: đếm dòng các bảng chính, kiểm tra vài bản ghi cụ thể.
-4. Ghi lại RTO thật và so với mục tiêu.
-
-Những vấn đề chỉ phát hiện được khi diễn tập: thiếu extension trên máy đích, phiên bản không tương thích, khôi phục mất 6 giờ chứ không phải 30 phút, hoặc bản sao lưu thiếu một schema.
-
-## VACUUM
-
-MVCC để lại phiên bản dòng cũ (dead tuple). `VACUUM` dọn chúng.
-
-```sql
-VACUUM ANALYZE ten_bang;      -- dọn + cập nhật thống kê
-VACUUM FULL ten_bang;         -- viết lại bảng, KHOÁ ĐỘC QUYỀN — tránh ở production
+```text
+UPDATE không sửa tại chỗ — nó ghi dòng MỚI và đánh dấu dòng cũ là "chết"
+⇒ bảng phình ra theo số lần cập nhật
+⇒ VACUUM đi dọn dòng chết, trả lại chỗ cho dòng mới
 ```
 
-`autovacuum` chạy tự động, nhưng ngưỡng mặc định quá cao cho bảng lớn: mặc định chờ tới khi 20% số dòng là dead. Với bảng 100 triệu dòng, đó là 20 triệu dead tuple trước khi bắt đầu dọn.
+```sql
+VACUUM don_hang;             -- dọn dòng chết, trả chỗ cho chính bảng đó
+VACUUM ANALYZE don_hang;     -- dọn + cập nhật thống kê cho bộ tối ưu
+VACUUM FULL don_hang;        -- ⚠️ viết lại cả bảng, KHOÁ HOÀN TOÀN — tránh
+```
+
+Autovacuum chạy tự động, nhưng với bảng cập nhật rất nhiều, mặc định thường **quá thưa**:
 
 ```sql
--- Bảng cập nhật nhiều: dọn thường xuyên hơn
 ALTER TABLE don_hang SET (
-  autovacuum_vacuum_scale_factor = 0.02,   -- 2% thay vì 20%
-  autovacuum_analyze_scale_factor = 0.01
+  autovacuum_vacuum_scale_factor = 0.05,   -- chạy khi 5% dòng chết (mặc định 20%)
+  autovacuum_analyze_scale_factor = 0.02
 );
 ```
 
-Cần viết lại bảng phình mà không khoá? Dùng `pg_repack` thay cho `VACUUM FULL`.
+Kiểm tra bảng phình:
 
-## Replica
-
+```sql
+SELECT relname,
+       n_dead_tup AS dong_chet,
+       last_autovacuum
+FROM pg_stat_user_tables
+WHERE n_dead_tup > 10000
+ORDER BY n_dead_tup DESC;
 ```
-# Trên máy chính: postgresql.conf
-wal_level = replica
-max_wal_senders = 10
+
+`n_dead_tup` lớn và `last_autovacuum` cũ là dấu hiệu: hoặc autovacuum chưa đủ mạnh, hoặc có một transaction mở lâu đang **chặn** nó ([[transaction-va-khoa-trong-postgres]]).
+
+## Tại sao cần nó
+
+Vì **replica** giải quyết ba việc cùng lúc, và cấu hình sai một tham số thì bạn mất một trong ba:
+
+```text
+① Dự phòng khi máy chính chết
+② Chia tải đọc (báo cáo, dashboard)
+③ Chạy truy vấn nặng mà không ảnh hưởng người dùng
 ```
 
 ```bash
-# Dựng replica
-pg_basebackup -h may-chinh -D /var/lib/postgresql/data -U replicator -Fp -Xs -P -R
+# Trên máy chính: postgresql.conf
+wal_level = replica
+max_wal_senders = 10
+
+# Tạo replica
+pg_basebackup -h primary -D /var/lib/postgresql/data -U replicator -R
 ```
 
 ```sql
--- Kiểm tra độ trễ replica
-SELECT now() - pg_last_xact_replay_timestamp() AS do_tre;
+-- Kiểm độ trễ sao chép — chỉ số cần giám sát
+SELECT client_addr, state,
+       pg_wal_lsn_diff(sent_lsn, replay_lsn) AS tre_byte
+FROM pg_stat_replication;
 ```
 
-Replica dùng cho: đọc song song (báo cáo, phân tích), dự phòng khi máy chính chết, và sao lưu mà không ảnh hưởng máy chính.
+Điểm phải nhớ: **sao chép là bất đồng bộ**. Ghi vào máy chính rồi đọc ngay từ replica có thể **chưa thấy dữ liệu mới**. Với luồng đọc-sau-ghi (người dùng lưu xong, trang tải lại), luôn đọc từ máy chính.
 
-Lưu ý: replica bất đồng bộ **có độ trễ**. Ghi vào máy chính rồi đọc ngay từ replica có thể không thấy dữ liệu mới — luồng "ghi rồi hiển thị lại" phải đọc từ máy chính.
+**Tham số nên chỉnh** — mặc định của Postgres rất bảo thủ:
 
-## Tham số nên chỉnh
-
-Mặc định của Postgres rất thận trọng, dành cho máy nhỏ. Với máy 8GB RAM:
-
-```
-shared_buffers = 2GB              # ~25% RAM
-effective_cache_size = 6GB        # ~75% RAM — chỉ là gợi ý cho trình tối ưu
-work_mem = 32MB                   # cho MỖI thao tác sort/hash
-maintenance_work_mem = 512MB      # cho VACUUM, CREATE INDEX
-max_connections = 100
-random_page_cost = 1.1            # SSD: giảm từ 4.0 xuống
-effective_io_concurrency = 200    # SSD
-wal_compression = on
+```conf
+shared_buffers = 25% RAM              # bộ đệm của Postgres
+effective_cache_size = 75% RAM        # gợi ý cho bộ tối ưu, không cấp phát thật
+work_mem = 16MB                       # cho MỖI thao tác sắp xếp/băm
+maintenance_work_mem = 512MB          # cho VACUUM, CREATE INDEX
+max_connections = 100                 # nhỏ + PgBouncer
+random_page_cost = 1.1                # SSD (mặc định 4.0 là cho ổ cứng quay)
 ```
 
-`random_page_cost = 1.1` là một trong những thay đổi có tác động lớn nhất trên SSD: mặc định 4.0 giả định ổ đĩa cơ, khiến trình tối ưu ngại dùng index.
+`random_page_cost` đáng chú ý: mặc định `4.0` giả định ổ đĩa cơ, nên bộ tối ưu **ngại dùng index**. Trên SSD, để `1.1` là một trong những thay đổi một dòng có tác dụng lớn nhất.
 
-Cẩn thận với `work_mem`: nó áp dụng cho **mỗi thao tác** trong **mỗi kết nối**. `work_mem = 256MB` với 100 kết nối, mỗi truy vấn có 3 thao tác sort là 75GB — máy chủ sẽ hết bộ nhớ.
+`work_mem` là bẫy: nó áp dụng cho **mỗi thao tác**, không phải mỗi truy vấn. `work_mem = 256MB` với 50 kết nối, mỗi truy vấn 3 thao tác sắp xếp ⇒ có thể tiêu 37 GB RAM.
 
-Dùng [pgtune](https://pgtune.leopard.in.ua) làm điểm khởi đầu, rồi đo và điều chỉnh.
+## So sánh
 
-## Theo dõi hằng ngày
+| RPO cần | Cách sao lưu |
+|---|---|
+| Mất 24 giờ chấp nhận được | `pg_dump` hằng đêm |
+| Mất 1 giờ | `pg_dump` + WAL archiving |
+| Mất vài giây | WAL archiving liên tục + replica |
+| Không được mất gì | Sao chép đồng bộ (chậm hơn khi ghi) |
 
-```sql
--- Kích thước database và bảng
-SELECT pg_size_pretty(pg_database_size(current_database()));
+**Và điều quan trọng nhất của cả bài:**
 
--- Tỷ lệ cache hit — nên trên 99%
-SELECT round(sum(blks_hit) * 100.0 / NULLIF(sum(blks_hit + blks_read), 0), 2) AS ty_le_cache
-FROM pg_stat_database;
+> **Một bản sao lưu chưa từng phục hồi thử thì chưa phải bản sao lưu.**
 
--- Kết nối theo trạng thái
-SELECT state, count(*) FROM pg_stat_activity GROUP BY state;
+```bash
+# Diễn tập định kỳ, ít nhất mỗi quý
+pg_restore -d app_test app.dump
+psql -d app_test -c "SELECT count(*) FROM don_hang;"
 ```
 
-Tỷ lệ cache hit dưới 95% nghĩa là dữ liệu nóng không nằm trong RAM — tăng `shared_buffers` hoặc thêm RAM.
+Ghi lại **mất bao lâu** — đó chính là RTO thật của bạn, không phải con số trong tài liệu. Rất nhiều đội phát hiện bản sao lưu hỏng, thiếu bảng, hoặc mất 6 tiếng để khôi phục — đúng vào lúc đang có sự cố.
 
-## Lỗi hay gặp
+## Dễ nhầm
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| Chưa từng thử khôi phục | Phát hiện vấn đề lúc khủng hoảng | Diễn tập hàng quý |
-| `VACUUM FULL` trên production | Khoá bảng độc quyền | `pg_repack` |
-| `work_mem` quá lớn | Hết bộ nhớ khi nhiều kết nối | Tính theo số kết nối × số thao tác |
-| Ngưỡng autovacuum mặc định cho bảng lớn | Bloat tích tụ, chậm dần | Giảm `scale_factor` |
-| Đọc từ replica ngay sau khi ghi | Không thấy dữ liệu mới | Đọc từ máy chính cho luồng đó |
+**1. Không bao giờ thử khôi phục.** Lỗi nghiêm trọng nhất trong bài.
 
-## Ghi nhớ
+**2. Sao lưu để cùng máy chủ.** Máy chết là mất cả hai. Sao lưu phải ở **nơi khác**.
 
-- `pg_dump` cho linh hoạt; WAL archiving cho RPO ngắn.
-- Diễn tập khôi phục là phần bắt buộc của quy trình sao lưu.
-- `random_page_cost = 1.1` cho SSD — thay đổi nhỏ, tác động lớn.
-- `work_mem` nhân với số kết nối và số thao tác.
+**3. Không mã hoá bản sao lưu.** File dump chứa toàn bộ dữ liệu người dùng ở dạng rõ.
 
-## Tự kiểm tra
+**4. `VACUUM FULL` trên production.** Khoá bảng hoàn toàn suốt thời gian chạy.
 
-1. RPO 5 phút — `pg_dump` hằng ngày có đáp ứng được không? Cần gì?
-2. Vì sao `work_mem = 256MB` có thể làm máy chủ hết bộ nhớ?
-3. Ba vấn đề chỉ phát hiện được khi diễn tập khôi phục?
+**5. Bỏ qua bảng phình.** Bảng cập nhật nhiều có thể phình gấp 5 lần và mọi truy vấn chậm theo.
+
+**6. Đọc-sau-ghi từ replica.** Người dùng lưu xong, tải lại trang, và thấy dữ liệu cũ.
+
+**7. `work_mem` quá lớn.** Xem phép tính ở trên — hết RAM ở giờ cao điểm.
+
+**8. Giữ mặc định `random_page_cost = 4.0` trên SSD.** Bộ tối ưu bỏ qua index và chọn quét tuần tự.
+
+## Mẹo nhớ
+
+> **`pg_dump` là chụp ảnh; WAL là camera quay liên tục.**
+>
+> **Bản sao lưu chưa phục hồi thử thì chưa tồn tại.**
+>
+> **`VACUUM` không phải tuỳ chọn — nó là hệ quả bắt buộc của MVCC.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. RPO và RTO là gì, và ai trả lời hai câu hỏi đó?
+2. `pg_dump` và sao lưu vật lý khác nhau ở bốn điểm nào?
+3. Vì sao `VACUUM` là bắt buộc trong Postgres?
+4. Vì sao không được đọc-sau-ghi từ replica?
+5. Vì sao `work_mem` lớn lại nguy hiểm — nêu phép tính?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, thiết kế chiến lược sao lưu cho:
+
+```text
+Sàn thương mại điện tử, 200 GB dữ liệu, 5000 đơn/ngày.
+Mất một đơn hàng là mất tiền và mất uy tín.
+Ngân sách hạ tầng có hạn.
+```
+
+Tự kiểm: RPO bạn đặt là bao nhiêu, và bạn **chứng minh** hệ thống đạt được nó bằng cách nào?
+
+## Thử sức
+
+Lúc 14:30, một script chạy nhầm và `DELETE` mất 40.000 dòng của bảng `don_hang`. Bạn có `pg_dump` hằng đêm lúc 2 giờ sáng và WAL archiving đang bật.
+
+Lập kế hoạch khôi phục **chỉ 40.000 dòng đó** mà không mất 12 tiếng dữ liệu còn lại. Gợi ý: bạn không khôi phục đè lên cơ sở dữ liệu đang chạy. Ba bước của bạn là gì?

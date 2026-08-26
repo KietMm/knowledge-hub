@@ -4,154 +4,214 @@ slug: index-trong-postgresql
 summary: Năm loại index, index từng phần, index trên biểu thức, và cách tìm index thừa.
 level: trung-cap
 tags: [postgresql, index, hieu-nang]
+khung: v2
 ---
 
-> **Sau bài này bạn sẽ:** chọn đúng loại index cho từng kiểu truy vấn, và tìm được index nào đang chỉ tốn chỗ.
+> **Sau bài này bạn sẽ:** chọn đúng loại index cho từng kiểu truy vấn, và tìm ra những index đang chỉ làm chậm việc ghi.
 
-## Năm loại index
+## Ý tưởng chính
 
-| Loại | Dùng cho | Ví dụ |
-|---|---|---|
-| **B-tree** | Mặc định: `=`, `<`, `>`, `BETWEEN`, `ORDER BY` | Gần như mọi trường hợp |
-| **GIN** | Nhiều giá trị trong một cột: JSONB, mảng, toàn văn | `@>`, `?`, `@@` |
-| **GiST** | Dữ liệu hình học, khoảng, láng giềng gần | `&&`, `<->` |
-| **BRIN** | Bảng rất lớn, dữ liệu sắp theo thứ tự tự nhiên | Log theo thời gian |
-| **Hash** | Chỉ `=` | Hiếm dùng — B-tree thường tốt hơn |
+Postgres có **năm loại index**, mỗi loại tối ưu cho một kiểu câu hỏi khác nhau. Dùng nhầm loại thì index tồn tại nhưng không bao giờ được dùng.
+
+Và có hai kỹ thuật ít người biết nhưng giá trị rất cao: **index từng phần** và **index trên biểu thức** — chúng biến những truy vấn tưởng không tối ưu được thành nhanh.
+
+## Mental model
+
+Hãy nghĩ tới **các cách sắp xếp một hiệu sách**.
+
+> **B-tree** là xếp theo **thứ tự bảng chữ cái**. Tìm "Kiếm hiệp" nhanh, tìm khoảng "K đến M" cũng nhanh, và duyệt theo thứ tự thì đọc thẳng.
+>
+> **GIN** là **mục lục chủ đề ở cuối sách**: một từ khoá → danh sách nhiều trang chứa nó. Đúng cho *"những cuốn nào NÓI VỀ Hà Nội"*.
+>
+> **BRIN** là **biển ghi ở đầu mỗi kệ**: *"kệ này: sách xuất bản 2020–2021"*. Không chính xác từng cuốn, nhưng cực nhẹ và đủ để loại bỏ 90% số kệ.
+
+Chọn loại index là chọn **cách sắp xếp phù hợp với câu hỏi bạn hay hỏi nhất**.
+
+## Ví dụ nhỏ
 
 ```sql
-CREATE INDEX idx_ten ON bang (cot);                        -- B-tree
-CREATE INDEX idx_json ON san_pham USING GIN (thuoc_tinh);  -- JSONB
-CREATE INDEX idx_tag ON bai_viet USING GIN (tags);         -- mảng
-CREATE INDEX idx_time ON su_kien USING BRIN (thoi_diem);   -- bảng khổng lồ
+CREATE INDEX ON don_hang (khach_id);                    -- B-tree (mặc định)
+CREATE INDEX ON san_pham USING GIN (thuoc_tinh);        -- JSONB
+CREATE INDEX ON log USING BRIN (tao_luc);               -- bảng rất lớn, ghi tuần tự
 ```
 
-BRIN đáng chú ý: trên bảng một tỷ dòng sắp theo thời gian, index BRIN chỉ vài MB trong khi B-tree tương ứng mất hàng chục GB.
+## Code chạy thế nào
 
-## Index từng phần
+Năm loại và chỗ dùng:
 
-Chỉ đánh index cho phần dòng bạn thật sự truy vấn:
+```text
+B-TREE   mặc định — =, <, >, BETWEEN, ORDER BY, LIKE 'x%'
+         ⇒ 95% trường hợp
 
-```sql
--- Chỉ 2% đơn đang chờ xử lý, nhưng đó là phần được truy vấn liên tục
-CREATE INDEX idx_don_cho ON don_hang (ngay_dat)
-WHERE trang_thai = 'cho';
+GIN      nhiều giá trị trong một ô: JSONB, mảng, tsvector
+         WHERE thuoc_tinh @> '{"mau":"đỏ"}'
+         WHERE the @> ARRAY['sale']
+         ⇒ tra nhanh, nhưng GHI CHẬM hơn đáng kể
 
--- Bỏ qua dòng đã xoá mềm
-CREATE INDEX idx_sp_hien_hanh ON san_pham (ten)
-WHERE ngay_xoa IS NULL;
+GiST     dữ liệu hình học, khoảng, tìm gần đúng
+         PostGIS, ràng buộc EXCLUDE (chống trùng lịch)
+
+BRIN     bảng RẤT lớn, dữ liệu sắp sẵn theo thứ tự vật lý (log theo thời gian)
+         ⇒ index chỉ vài chục KB cho bảng 100 GB
+
+HASH     chỉ cho phép so sánh =
+         ⇒ hầu như không cần: B-tree làm được và làm nhiều hơn
 ```
 
-Index nhỏ hơn nhiều lần: nhanh hơn khi đọc, rẻ hơn khi ghi, và nằm gọn trong bộ nhớ.
+Quy tắc: **mặc định B-tree**; đổi sang loại khác khi câu hỏi của bạn không phải kiểu "so sánh và sắp thứ tự".
 
-Điều kiện: mệnh đề `WHERE` của truy vấn phải **bao hàm** điều kiện của index thì trình tối ưu mới dùng được.
+## Cú pháp
 
-## Index trên biểu thức
+**Index từng phần** — chỉ index phần dữ liệu bạn thật sự truy vấn:
 
 ```sql
--- Truy vấn LOWER(email) không dùng được index thường trên email
-CREATE INDEX idx_email_thuong ON nguoi_dung (LOWER(email));
-SELECT * FROM nguoi_dung WHERE LOWER(email) = 'a@b.com';   -- dùng được index
-
-CREATE INDEX idx_thang ON don_hang (DATE_TRUNC('month', ngay_dat));
+-- 95% đơn đã hoàn tất, bạn chỉ truy vấn đơn đang xử lý
+CREATE INDEX ON don_hang (tao_luc)
+WHERE trang_thai IN ('moi', 'dang_giao');
 ```
 
-Biểu thức trong index phải **khớp chính xác** biểu thức trong truy vấn.
+```text
+Index đầy đủ:   10 triệu dòng  → ~300 MB, khó nằm gọn trong RAM
+Index từng phần: 500 nghìn dòng → ~15 MB, luôn nằm trong RAM
 
-## Ràng buộc duy nhất có điều kiện
-
-```sql
--- Mỗi người dùng chỉ một địa chỉ mặc định
-CREATE UNIQUE INDEX uq_dia_chi_mac_dinh
-ON dia_chi (nguoi_dung_id) WHERE la_mac_dinh;
-
--- Email duy nhất, nhưng chỉ tính tài khoản chưa xoá
-CREATE UNIQUE INDEX uq_email_hoat_dong
-ON nguoi_dung (email) WHERE ngay_xoa IS NULL;
+⇒ nhanh hơn, ghi rẻ hơn, và tốn ít bộ nhớ đệm hơn
 ```
 
-Đây là cách diễn đạt những quy tắc nghiệp vụ mà `UNIQUE` thường không làm được.
+Đây là kỹ thuật giá trị cao mà ít người dùng. Điều kiện: truy vấn của bạn phải chứa **cùng điều kiện** với `WHERE` của index, để bộ tối ưu biết dùng nó.
 
-## Index bao phủ
+**Index trên biểu thức** — cứu những truy vấn bọc cột trong hàm:
 
 ```sql
-CREATE INDEX idx_bao_phu ON don_hang (khach_hang_id) INCLUDE (tong_tien, ngay_dat);
+-- Truy vấn: WHERE lower(email) = 'a@x.com'  → index thường KHÔNG dùng được
+CREATE INDEX ON nguoi_dung (lower(email));    -- ✅ giờ dùng được
 ```
 
-Cột trong `INCLUDE` được lưu trong index nhưng không tham gia sắp xếp. Truy vấn chỉ cần những cột đó sẽ dùng **Index Only Scan** — không phải đọc bảng chính.
-
-## Tạo index không khoá bảng
-
 ```sql
-CREATE INDEX CONCURRENTLY idx_ten ON bang (cot);
-DROP INDEX CONCURRENTLY idx_cu;
+CREATE INDEX ON don_hang (date_trunc('day', tao_luc));
+CREATE INDEX ON san_pham ((thuoc_tinh->>'mau'));    -- một trường trong JSONB
 ```
 
-Bắt buộc trên production. `CREATE INDEX` thường khoá mọi thao tác ghi cho tới khi xong — trên bảng lớn có thể là hàng chục phút.
-
-Lưu ý: `CONCURRENTLY` không chạy được trong transaction, và nếu thất bại sẽ để lại index `INVALID` cần xoá tay:
+**Ràng buộc duy nhất có điều kiện** — giải bài toán xoá mềm:
 
 ```sql
-SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid;
+CREATE UNIQUE INDEX ON nguoi_dung (email) WHERE xoa_luc IS NULL;
 ```
 
-## Tìm index thừa
+Chi tiết vì sao cần nó ở [[xoa-mem-va-vong-doi-ban-ghi]].
 
-Index không dùng vẫn làm chậm mọi lần ghi và chiếm dung lượng:
+**Ràng buộc `EXCLUDE`** — thứ chỉ Postgres có, và nó giải một bài toán khó:
 
 ```sql
--- Index gần như không được dùng
-SELECT
-  schemaname, relname AS bang, indexrelname AS index_name,
-  idx_scan AS so_lan_dung,
-  pg_size_pretty(pg_relation_size(indexrelid)) AS kich_thuoc
+CREATE EXTENSION btree_gist;
+ALTER TABLE dat_phong ADD CONSTRAINT khong_trung_lich
+EXCLUDE USING gist (
+  phong_id WITH =,
+  tsrange(nhan_luc, tra_luc) WITH &&      -- && = hai khoảng GIAO NHAU
+);
+```
+
+Ràng buộc này chặn **hai lượt đặt cùng phòng trùng khoảng thời gian** — điều mà `UNIQUE` không làm được, và tự kiểm ở ứng dụng thì luôn có điều kiện đua.
+
+## Tại sao cần nó
+
+Vì **tạo index trên bảng lớn sẽ khoá bảng**, và đó là sự cố production kinh điển:
+
+```sql
+CREATE INDEX ON don_hang (khach_id);              -- ❌ khoá GHI suốt thời gian tạo
+CREATE INDEX CONCURRENTLY ON don_hang (khach_id); -- ✅ không khoá
+```
+
+`CONCURRENTLY` đánh đổi: chậm hơn khoảng hai lần, không chạy được trong transaction, và **có thể để lại index hỏng** nếu bị lỗi giữa chừng:
+
+```sql
+SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid;   -- tìm index hỏng
+DROP INDEX CONCURRENTLY ten_index_hong;                            -- xoá rồi tạo lại
+```
+
+**Tìm index thừa** — việc nên làm định kỳ:
+
+```sql
+-- Index chưa bao giờ được dùng
+SELECT schemaname, relname, indexrelname, idx_scan,
+       pg_size_pretty(pg_relation_size(indexrelid)) AS kich_thuoc
 FROM pg_stat_user_indexes
-WHERE idx_scan < 50
+WHERE idx_scan = 0
 ORDER BY pg_relation_size(indexrelid) DESC;
 ```
 
-Xem cả tổng thể:
+Index có `idx_scan = 0` sau vài tuần chạy production là index **chỉ làm chậm mọi lệnh ghi và chiếm RAM**. Xoá nó là cải thiện thuần.
 
-```sql
-SELECT relname, pg_size_pretty(pg_total_relation_size(relid)) AS tong,
-       pg_size_pretty(pg_indexes_size(relid)) AS index
-FROM pg_catalog.pg_statio_user_tables
-ORDER BY pg_total_relation_size(relid) DESC LIMIT 10;
+Lưu ý khi đọc: đừng xoá ngay sau khi vừa restart máy chủ (bộ đếm về 0), và giữ lại index phục vụ ràng buộc `UNIQUE`.
+
+## So sánh
+
+| Câu hỏi của bạn | Loại index |
+|---|---|
+| `WHERE cot = ?`, khoảng, `ORDER BY` | B-tree |
+| `WHERE jsonb @> ?`, mảng chứa | GIN |
+| Tìm kiếm toàn văn | GIN trên `tsvector` |
+| `LIKE '%giữa%'` | GIN + `pg_trgm` |
+| Khoảng thời gian giao nhau | GiST |
+| Bảng log khổng lồ, lọc theo thời gian | BRIN |
+
+Và ba câu hỏi trước khi tạo bất kỳ index nào:
+
+```text
+① Truy vấn này có thật sự chậm không?  → EXPLAIN ANALYZE trước
+② Đã có index nào phục vụ được chưa?    → index (a,b) đã phục vụ WHERE a
+③ Bảng này ghi nhiều hay đọc nhiều?     → ghi nhiều thì mỗi index là một cái giá
 ```
 
-Nếu dung lượng index vượt dung lượng dữ liệu nhiều lần, gần như chắc chắn có index thừa.
+## Dễ nhầm
 
-Lưu ý trước khi xoá: `idx_scan` được tính từ lần reset thống kê gần nhất, và index có thể chỉ dùng cho báo cáo cuối tháng.
+**1. Tạo index không có `CONCURRENTLY` trên production.** Khoá ghi, gây sự cố.
 
-## Tìm bảng thiếu index
+**2. Dùng B-tree cho JSONB.** Nó index **cả object** như một giá trị, nên `@>` không dùng được. Cần GIN.
+
+**3. Bỏ qua index từng phần.** Bạn tạo index đầy đủ 300 MB trong khi 15 MB là đủ.
+
+**4. Quên index trên biểu thức khi truy vấn bọc hàm.** `lower(email)`, `date_trunc(...)` — index cột thường vô dụng ở đây.
+
+**5. Tạo index cho mọi cột "cho chắc".** Mỗi index làm `INSERT`/`UPDATE` chậm hơn; bảng 10 index có thể chậm gấp đôi bảng 2 index khi ghi.
+
+**6. Không bao giờ kiểm index thừa.** Dự án ba năm tuổi thường có vài index không ai dùng.
+
+**7. Quên `ANALYZE` sau khi nạp dữ liệu lớn.** Bộ tối ưu dựa vào thống kê; thống kê cũ thì nó chọn kế hoạch sai dù index đã có — xem [[doc-explain-analyze]].
+
+## Mẹo nhớ
+
+> **B-tree là xếp theo bảng chữ cái; GIN là mục lục chủ đề; BRIN là biển ghi ở đầu kệ.**
+>
+> **Index từng phần: chỉ index phần bạn thật sự truy vấn.**
+>
+> **Production luôn `CREATE INDEX CONCURRENTLY`.**
+
+## Tự nhớ
+
+Không nhìn lên, trả lời bằng lời của bạn:
+
+1. Năm loại index và câu hỏi mà mỗi loại phục vụ?
+2. Index từng phần tiết kiệm những gì, và điều kiện để nó được dùng?
+3. Khi nào cần index trên biểu thức?
+4. `CONCURRENTLY` đánh đổi gì, và rủi ro của nó là gì?
+5. Làm sao tìm ra index thừa, và cần lưu ý gì khi đọc kết quả?
+
+## Tự viết lại
+
+Không nhìn lại phần trên, đề xuất index cho từng truy vấn (nêu **loại** và **lý do**):
 
 ```sql
-SELECT relname, seq_scan, seq_tup_read, idx_scan
-FROM pg_stat_user_tables
-WHERE seq_scan > idx_scan AND seq_scan > 1000
-ORDER BY seq_tup_read DESC;
+WHERE email = ?                                   -- 5 triệu người dùng
+WHERE lower(ten) LIKE 'nguyen%'
+WHERE thuoc_tinh @> '{"thuong_hieu": "Apple"}'
+WHERE trang_thai = 'cho_duyet' ORDER BY tao_luc    -- 2% số dòng ở trạng thái này
+WHERE tao_luc >= ? AND tao_luc < ?                 -- bảng log 200 GB
 ```
 
-Bảng lớn có nhiều `seq_scan` là ứng viên cần đánh index.
+Tự kiểm: câu thứ tư — bạn tạo index đầy đủ hay index từng phần, và tiết kiệm được bao nhiêu?
 
-## Lỗi hay gặp
+## Thử sức
 
-| Lỗi | Hậu quả | Sửa thế nào |
-|---|---|---|
-| `CREATE INDEX` trên production | Khoá ghi hàng chục phút | `CONCURRENTLY` |
-| Index cho mọi cột | Ghi chậm, tốn dung lượng | Đánh theo truy vấn thật |
-| Không dùng index từng phần | Index to hơn cần thiết nhiều lần | `WHERE` trong index |
-| Xoá index chỉ dựa vào `idx_scan` | Mất index cho báo cáo định kỳ | Xem thêm chu kỳ sử dụng |
-| Bỏ quên index `INVALID` | Chiếm chỗ, không được dùng | Kiểm tra `pg_index` |
+Bạn tạo `CREATE INDEX CONCURRENTLY` trên bảng 80 triệu dòng. Sau 40 phút nó báo lỗi vì hết dung lượng đĩa tạm.
 
-## Ghi nhớ
-
-- B-tree cho hầu hết; GIN cho JSONB/mảng/toàn văn; BRIN cho bảng khổng lồ theo thời gian.
-- Index từng phần thường nhỏ hơn nhiều lần và hiệu quả hơn hẳn.
-- `CONCURRENTLY` là bắt buộc trên production.
-- Rà index không dùng định kỳ — chúng làm chậm mọi lần ghi.
-
-## Tự kiểm tra
-
-1. Truy vấn `WHERE LOWER(email) = ?` chậm dù đã có index trên `email` — vì sao?
-2. Khi nào BRIN tốt hơn B-tree?
-3. Làm sao đảm bảo "mỗi người dùng chỉ một địa chỉ mặc định" ở tầng CSDL?
+Ba câu để trả lời: hiện trạng cơ sở dữ liệu bây giờ ra sao (có index không, index đó dùng được không), bạn **kiểm tra** bằng lệnh gì, và **dọn dẹp** thế nào trước khi thử lại?
